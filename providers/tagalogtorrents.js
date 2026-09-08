@@ -5,8 +5,14 @@
  *   1. Torrentio    - IMDb-keyed Stremio API (indexes 1337x / TPB / YTS; carries
  *                     Filipino WEB-DL releases for Pinoy titles)
  *   2. TorrentsDB   - IMDb-keyed Stremio API (fresher seed counts, TPB mirror index)
- *   3. ThePirateBay - title search via apibay.org JSON API (works from residential
- *                     IPs; skipped silently when Cloudflare-gated, e.g. datacenters)
+ *   3. ThePirateBay - title search + IMDb search via apibay.org JSON API, all
+ *                     categories (works from residential IPs; skipped silently
+ *                     when Cloudflare-gated, e.g. datacenters)
+ *   4. 1337x        - word-AND search scrape tuned for Tagalog DUBS of foreign
+ *                     titles ("<title> tagalog"), detail pages yield infoHash +
+ *                     trackers; also picks up the dedicated Pinoy uploads that
+ *                     never carry an IMDb mapping. Cloudflare-gated for
+ *                     datacenter IPs, fine on residential devices.
  *
  * Tagalog relevance:
  *   - TMDB original_language === "tl" (or a Philippines production) -> the title
@@ -22,7 +28,7 @@
  * modules, chrome56-compatible string APIs, fail-soft everywhere.
  */
 
-var __version = "1.0.0";
+var __version = "1.1.0";
 
 // ---------- constants ----------
 var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
@@ -35,6 +41,11 @@ var LANE_TIMEOUT_MS = 12000;
 var TMDB_TIMEOUT_MS = 8000;
 var MAX_STREAMS = 25;
 var MIN_APIBAY_SEEDERS = 2;
+
+var X1337_BASE = "https://1337x.to";
+var X1337_MAX_DETAILS = 6;
+var X1337_TIMEOUT_MS = 10000;
+var X1337_MIN_SEEDERS = 1;
 
 var FILIPINO_RE = /filipino|tagalog|pinoy|pinay|pilipino|taglish|bisaya|cebuano/i;
 var DUB_RE = /dubbed|\bdub\b/i;
@@ -87,15 +98,26 @@ function withTimeout(promise, ms, label) {
   if (!hasTimers()) {
     return promise.catch(function () { return []; });
   }
-  return Promise.race([
-    promise,
-    new Promise(function (resolve) {
-      setTimeout(function () {
-        console.log("[TagalogTorrents] timeout: " + label);
-        resolve([]);
-      }, ms);
-    })
-  ]);
+  return new Promise(function (resolve) {
+    var done = false;
+    var timer = setTimeout(function () {
+      if (done) return;
+      done = true;
+      console.log("[TagalogTorrents] timeout: " + label);
+      resolve([]);
+    }, ms);
+    promise.then(function (v) {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(v);
+    }, function () {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve([]);
+    });
+  });
 }
 
 function settings() {
@@ -396,10 +418,16 @@ function stremioLane(sourceName, api, ctx) {
   );
 }
 
-// ---------- lane 3: ThePirateBay title search ----------
+// ---------- lane 3: ThePirateBay (title + IMDb, all categories) ----------
+function isCloudflareGate(text) {
+  var raw = String(text || "");
+  return raw.charAt(0) === "<" &&
+    /just a moment|cf-browser-verification|challenge-platform/i.test(raw.slice(0, 800));
+}
+
 function parseApibay(text, ctx) {
   var raw = String(text || "");
-  if (raw.charAt(0) === "<" || /just a moment|cf-browser-verification|challenge-platform/i.test(raw.slice(0, 500))) {
+  if (isCloudflareGate(raw)) {
     console.log("[TagalogTorrents][tpb] cloudflare-gated, skipping lane");
     return [];
   }
@@ -448,19 +476,185 @@ function parseApibay(text, ctx) {
   return out;
 }
 
+// Query plan: IMDb-keyed search (exact, catches dub uploads tagged with the
+// right IMDb id) + title search. cat=0 searches ALL categories because dub
+// uploads land in Movies / HD-TV / Other alike (202 is DVDR and misses TV).
+function buildApibayQueries(ctx) {
+  var queries = [];
+  if (ctx.imdbId) {
+    queries.push(APIBAY_BASE + "/q.php?search_imdb=" + encodeURIComponent(ctx.imdbId) + "&cat=0");
+  }
+  if (ctx.title) {
+    queries.push(APIBAY_BASE + "/q.php?q=" + encodeURIComponent(ctx.title) + "&cat=0");
+  }
+  return queries;
+}
+
 function apibayLane(ctx) {
-  if (!ctx.title) return Promise.resolve([]);
-  var url = APIBAY_BASE + "/q.php?q=" + encodeURIComponent(ctx.title) + "&cat=" + (ctx.isTv ? "202" : "201");
-  return withTimeout(
-    fetchText(url, LANE_TIMEOUT_MS).then(function (text) {
+  var queries = buildApibayQueries(ctx);
+  if (!queries.length) return Promise.resolve([]);
+  return Promise.all(queries.map(function (url) {
+    return fetchText(url, LANE_TIMEOUT_MS).then(function (text) {
       return parseApibay(text, ctx);
     }).catch(function (e) {
       console.log("[TagalogTorrents][tpb] " + (e && e.message));
       return [];
-    }),
-    LANE_TIMEOUT_MS + 2000,
-    "tpb"
+    });
+  })).then(function (batches) {
+    var out = [];
+    for (var i = 0; i < batches.length; i++) out = out.concat(batches[i] || []);
+    return out;
+  });
+}
+
+// ---------- lane 4: 1337x (Tagalog-dub focused scrape) ----------
+// 1337x search is word-AND, so "<title> tagalog" is a precise dub probe. If it
+// comes back empty (dub upload may not exist) we fall back to the plain title,
+// which also covers Pinoy originals that never carry an IMDb mapping.
+function buildX1337Queries(ctx) {
+  var title = String(ctx.title || "").trim();
+  if (!title) return [];
+  if (ctx.isTagalogOriginal) return [title];
+  return [title + " tagalog", title];
+}
+
+function stripTags(s) {
+  return String(s || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// List page rows (stable 1337x markup):
+//   <td class="coll-1 name"><a href="/torrent/<slug>/<id>/">Name</a>
+//   <td class="coll-2 seeds">157</td>
+//   <td class="coll-4 size">941.6<span class="seeds">MB</span></td>
+function parse1337xList(html) {
+  var raw = String(html || "");
+  if (isCloudflareGate(raw)) {
+    console.log("[TagalogTorrents][1337x] cloudflare-gated, skipping lane");
+    return [];
+  }
+  var out = [];
+  var chunks = raw.split(/<tr[\s>]/i);
+  for (var i = 0; i < chunks.length; i++) {
+    var chunk = chunks[i];
+    if (chunk.indexOf("coll-1") === -1) continue;
+    var hrefM = chunk.match(/href="(\/torrent\/[^"#]+)"/i);
+    if (!hrefM) continue;
+    var nameM = chunk.match(/<a href="\/torrent\/[^"]+"[^>]*>([\s\S]*?)<\/a>/i);
+    if (!nameM) continue;
+    var name = stripTags(nameM[1]);
+    if (!name) continue;
+    var seedsM = chunk.match(/coll-2[^>]*>[\s\S]{0,40}?([\d,]+)/i);
+    var sizeM = chunk.match(/coll-4[^>]*>([\s\S]*?)<\/td>/i);
+    out.push({
+      name: name,
+      href: hrefM[1],
+      seeders: seedsM ? parseInt(seedsM[1].replace(/,/g, ""), 10) || 0 : 0,
+      size: sizeM ? stripTags(sizeM[1]) : ""
+    });
+  }
+  return out;
+}
+
+// Detail page: the infoHash + trackers live inside the magnet: href.
+// HTML escapes "&" as "&amp;" inside attributes -> normalize before parsing.
+function parse1337xDetail(html) {
+  var raw = String(html || "").replace(/&amp;/gi, "&");
+  if (isCloudflareGate(raw)) return null;
+  var m = raw.match(/magnet:\?xt=urn:btih:([0-9a-zA-Z]{32,40})/i);
+  if (!m || !validHash(m[1])) return null;
+  var trackers = [];
+  var trRe = /[-&]tr=([^&"'\s]+)/gi;
+  var tm;
+  while ((tm = trRe.exec(raw)) !== null) {
+    var tr = tm[1];
+    try { tr = decodeURIComponent(tr); } catch (e) { /* keep raw */ }
+    tr = String(tr).replace(/^tracker:/i, "").trim();
+    if (/^(udp|https?):\/\//i.test(tr) && trackers.indexOf(tr) === -1) trackers.push(tr);
+    if (trackers.length >= 12) break;
+  }
+  return { infoHash: m[1], trackers: trackers };
+}
+
+function x1337BuildStream(row, detail, ctx) {
+  var name = row.name;
+  if (isJunk(name)) return null;
+  var seeders = row.seeders || 0;
+  if (seeders < X1337_MIN_SEEDERS) return null;
+  if (!tokenCoverage(normalizeName(name), tokensOf(ctx.title))) return null;
+  var filipino = isFilipinoRelease(name);
+  if (!ctx.isTagalogOriginal && !filipino && ctx.keepAllLanguages !== true) return null;
+  var quality = parseQuality(name);
+  var seasonBonus = ctx.isTv ? seasonEpBonus(name, ctx.season, ctx.episode) : 0;
+  var magnet = buildMagnet(detail.infoHash, name, detail.trackers, null);
+  var stream = {
+    name: "1337x 👤" + seeders + " ⏫" + quality,
+    title: buildTitle(name, ctx, quality, row.size || "", "1337x", filipino),
+    url: magnet,
+    quality: quality,
+    size: row.size || undefined,
+    language: languageLabel(filipino, name, ctx) || undefined,
+    seeders: seeders,
+    infoHash: detail.infoHash,
+    headers: {}
+  };
+  stream._filipino = filipino;
+  stream._score = scoreRelease(
+    { filipino: filipino, quality: quality, seeders: seeders, tracker: "1337x", seasonBonus: seasonBonus },
+    ctx
   );
+  return stream;
+}
+
+function x1337Search(query, ctx) {
+  var url = X1337_BASE + "/sort-search/" + encodeURIComponent(query) + "/seeders/desc/1/";
+  return fetchText(url, X1337_TIMEOUT_MS).then(function (text) {
+    return parse1337xList(text);
+  }).catch(function (e) {
+    console.log("[TagalogTorrents][1337x] search failed: " + (e && e.message));
+    return [];
+  });
+}
+
+function x1337FetchDetails(rows, ctx) {
+  var sorted = rows.slice().sort(function (a, b) { return (b.seeders || 0) - (a.seeders || 0); });
+  var top = sorted.slice(0, X1337_MAX_DETAILS);
+  return Promise.all(top.map(function (row) {
+    return fetchText(X1337_BASE + row.href, X1337_TIMEOUT_MS).then(function (html) {
+      return parse1337xDetail(html);
+    }).catch(function () { return null; }).then(function (detail) {
+      return detail ? x1337BuildStream(row, detail, ctx) : null;
+    });
+  })).then(function (streams) {
+    var out = [];
+    for (var i = 0; i < streams.length; i++) {
+      if (streams[i]) out.push(streams[i]);
+    }
+    return out;
+  });
+}
+
+function x1337Lane(ctx) {
+  var queries = buildX1337Queries(ctx);
+  if (!queries.length) return Promise.resolve([]);
+  return x1337Search(queries[0], ctx).then(function (rows) {
+    if (rows.length || queries.length < 2) return rows;
+    return x1337Search(queries[1], ctx);
+  }).then(function (rows) {
+    if (!rows.length) return [];
+    return x1337FetchDetails(rows, ctx);
+  }).catch(function (e) {
+    console.log("[TagalogTorrents][1337x] " + (e && e.message));
+    return [];
+  });
 }
 
 // ---------- finalize ----------
@@ -514,10 +708,13 @@ function getStreams(tmdbId, mediaType, season, episode) {
       var jobs = [];
       if (cfg.torrentioLane !== false) jobs.push(stremioLane("Torrentio", TORRENTIO_API, ctx));
       if (cfg.torrentsdbLane !== false) jobs.push(stremioLane("TorrentsDB", TORRENTSDB_API, ctx));
-      if (cfg.tpbLane !== false) jobs.push(apibayLane(ctx));
+      if (cfg.tpbLane !== false) jobs.push(withTimeout(apibayLane(ctx), LANE_TIMEOUT_MS * 2 + 2000, "tpb"));
+      if (cfg.x1337Lane !== false) jobs.push(withTimeout(x1337Lane(ctx), (X1337_TIMEOUT_MS + 2000) * 3, "1337x"));
       if (!jobs.length) return [];
       return Promise.all(jobs).then(function (results) {
-        return finalize([].concat(results[0] || [], results[1] || [], results[2] || []));
+        var merged = [];
+        for (var i = 0; i < results.length; i++) merged = merged.concat(results[i] || []);
+        return finalize(merged);
       });
     }).catch(function (e) {
       console.log("[TagalogTorrents] " + (e && e.message));
@@ -535,6 +732,7 @@ function onSettings() {
     { type: "toggle", key: "torrentioLane", label: "Torrentio (IMDb-keyed)", defaultValue: true },
     { type: "toggle", key: "torrentsdbLane", label: "TorrentsDB (IMDb-keyed)", defaultValue: true },
     { type: "toggle", key: "tpbLane", label: "ThePirateBay title search", defaultValue: true },
+    { type: "toggle", key: "x1337Lane", label: "1337x (Tagalog-dub search)", defaultValue: true },
     { type: "toggle", key: "keepAllLanguages", label: "Keep non-Tagalog releases too", defaultValue: false }
   ]);
 }
