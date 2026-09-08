@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "3.0.0",
-  "description": "Canonical Nuvio provider collection with consolidated provider work and duplicate variants removed.",
+  "version": "3.1.0",
+  "description": "Canonical Nuvio provider collection with consolidated provider work and restored PinoyHub embed visibility.",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -498,7 +498,7 @@
       "id": "pinoymovieshub",
       "name": "PinoyMoviesHub",
       "description": "Filipino movies and series from PinoyMoviesHub",
-      "version": "4.1.0",
+      "version": "4.0.0-embed",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
