@@ -1,6 +1,6 @@
 {
   "name": "NV Plugins",
-  "version": "3.3.1",
+  "version": "3.3.2",
   "description": "Canonical Nuvio provider collection with consolidated provider work, restored PinoyHub embed visibility, and the AsianHub multi-source provider (MyAsianTV + Dramacool).",
   "author": "xrexzerox",
   "scrapers": [
@@ -498,8 +498,8 @@
     {
       "id": "pinoymovieshub",
       "name": "PinoyMoviesHub",
-      "description": "Filipino movies & series from PinoyMoviesHub with direct-play Mixdrop/Byse/Dood extraction, search-based matching and Turnstile-aware skipping",
-      "version": "5.2.0",
+      "description": "Filipino movies & series from PinoyMoviesHub with direct-play Byse/Mixdrop extraction (Byse headerless = webOS/Tizen TV-safe), search-based matching and Turnstile-aware skipping",
+      "version": "5.2.1",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
