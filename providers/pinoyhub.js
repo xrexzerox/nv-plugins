@@ -4,36 +4,24 @@
  * Supports: Movies & TV Shows
  * Language: Filipino / Tagalog / English
  * Author: xrexzerox
- * Version: 5.2.1
+ * Version: 5.2.2
  *
- * v5.2.1 changelog:
- *  - TV FIX: Byse streams no longer carry playback Referer/User-Agent
- *    headers. Verified (master playlist -> media playlist -> TS segment, all
- *    200/206 with zero custom headers) that Byse's signed URLs are
- *    bearer-style: the token in the query string is the only credential.
- *    NuvioTVSmart on webOS is a browser app where hls.js and <video> are
- *    FORBIDDEN from setting Referer/UA, so every stream that carried those
- *    headers was forced through the webOS companion playback proxy - when
- *    that service is missing/degraded, headered streams fail or stall for
- *    ~5s first (proxy ping timeout) even though they would play fine direct.
- *    Headerless Byse streams now play directly on webOS (hls.js / native
- *    HLS), on Tizen AVPlay and on Mobile ExoPlayer, with no proxy involved.
- *    Mixdrop/Dood keep their headers: their CDNs really do check Referer
- *    (Mixdrop returns 403 without it) - on webOS those two need the
- *    companion proxy, and Byse (listed first) is the TV-safe default.
- *  - getStreams no longer requires resolved.headers to be truthy before
- *    building a stream (headerless direct results are valid now).
- *
- * v5.2.0 changelog:
- *  - PERF: global extraction deadline - getStreams now returns whatever
- *    streams resolved within 9s instead of waiting for every host (a single
- *    stalled embed server used to delay the whole stream list by up to 25s;
- *    this was the main reason Mixdrop titles felt "slow" to start).
- *  - PERF: default fetch timeout 25s -> 15s; embed-page/API fetches get 10s.
- *  - CHANGE: stream ordering - Byse (fast signed HLS) is listed first,
- *    Mixdrop second. Mixdrop's free CDN throttles playback bandwidth
- *    server-side; nothing client-side can speed it up, but with Byse on top
- *    the fast source is now the default pick.
+ * v5.2.2 changelog (NuvioTVSmart / webOS focus - mobile behavior unchanged):
+ *  - TV: Byse streams are now emitted HEADERLESS. Byse signed URLs are
+ *    bearer-style (master playlist, media playlist and segments all serve
+ *    200/206 with zero custom headers), and webOS players can never send
+ *    Referer/User-Agent anyway. Extraction still authenticates the
+ *    /api/videos call with Referer/Origin - only the playback URL sheds its
+ *    headers. Mobile plays a headerless signed URL identically, so nothing
+ *    changes on phones.
+ *  - TV: deterministic host priority. Byse (plays on every platform with
+ *    zero headers) is always the FIRST stream; Mixdrop and Dood follow.
+ *    Byse playback CDNs use randomized edge domains, so priority keys off
+ *    the player label "Byse" (stable) with a host-pattern fallback, and
+ *    the internal sort field is stripped before the list is returned.
+ *  - PERF: per-lane extraction deadline (20s). One stalled lane (slow CDN
+ *    body) can no longer delay or discard faster lanes; partial results
+ *    ship the moment the deadline fires.
  *
  * v5.1.0 changelog:
  *  - NEW: Byse host extraction (bysesayeveum.com and friends). The embed is a
@@ -116,7 +104,7 @@ function fetchText(url, options) {
     redirect: options.redirect || "follow",
     headers: merge(HEADERS, options.headers || {}),
     body: options.body
-  }, options.timeoutMs || 15000).then(function(res) {
+  }, options.timeoutMs || 25000).then(function(res) {
     if (!res.ok) throw new Error("HTTP " + res.status);
     return res.text();
   });
@@ -129,7 +117,7 @@ function fetchJson(url, options) {
     redirect: options.redirect || "follow",
     headers: merge(HEADERS, options.headers || {}),
     body: options.body
-  }, options.timeoutMs || 15000).then(function(res) {
+  }, options.timeoutMs || 25000).then(function(res) {
     if (!res.ok) return null;
     return res.json();
   }).catch(function() { return null; });
@@ -147,7 +135,7 @@ function fetchTextFollow(url, options) {
     method: "GET",
     redirect: "follow",
     headers: merge(HEADERS, options.headers || {})
-  }, options.timeoutMs || 15000).then(function(res) {
+  }, options.timeoutMs || 25000).then(function(res) {
     if (!res.ok) throw new Error("HTTP " + res.status);
     return res.text().then(function(text) {
       return { text: text, url: (res && res.url) ? String(res.url) : url };
@@ -762,8 +750,7 @@ function extractMixdropDirect(embedUrl) {
     headers: {
       "Referer": BASE_URL + "/",
       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-    },
-    timeoutMs: 10000
+    }
   }).then(function(html) {
     var packedMatch = html.match(/eval\(function\(p,a,c,k,e,d\)[\s\S]{0,3000}?\}\)\)/);
     var unpacked = packedMatch ? unpackPacker(packedMatch[0]) : "";
@@ -790,8 +777,49 @@ function extractMixdropDirect(embedUrl) {
 
 // ===== EXTRACTOR: BYSE (React SPA -> /api/videos/{code} -> AES-GCM payload) =====
 
+var LANE_TIMEOUT_MS = 20000; // per-player extraction deadline (v5.2.2)
+
 function isByse(host) {
   return /byse/.test(String(host || "").toLowerCase());
+}
+
+/**
+ * Deterministic stream ordering (v5.2.2). Lower sorts first:
+ *   0 Byse    - signed, self-authorizing URLs, play headerless everywhere
+ *   1 Mixdrop - CDN enforces Referer (fine on mobile, needs proxy on webOS)
+ *   2 Dood    - same Referer-enforcing family
+ *   3 unknown
+ * The site's own player chip (label) is the stable signal - Byse playback
+ * domains are randomized edges - with a host-pattern fallback.
+ */
+function hostPriority(label, embedHost) {
+  var l = String(label || "").toLowerCase();
+  var h = String(embedHost || "").toLowerCase();
+  if (/byse/.test(l) || /byse/.test(h)) return 0;
+  if (/mixdrop|mixdrp|mxdrop|miixdrop|mixdroop/.test(l) || /mixdrop|mixdrp|mxdrop|miixdrop|mixdroop/.test(h)) return 1;
+  if (/dood|dsvplay|dooo|playmogo|myvidplay|d000d|ds2play/.test(l) || /dood|dsvplay|dooo|playmogo|myvidplay|d000d|ds2play/.test(h)) return 2;
+  return 3;
+}
+
+/**
+ * Resolves null when the lane exceeds ms; the underlying work keeps running
+ * and its late result is discarded. One slow CDN can no longer stall (or
+ * via a global timeout, discard) the faster lanes - partial results ship
+ * as soon as the deadline fires.
+ */
+function withLaneDeadline(promise, ms) {
+  if (!hasTimers()) return promise.catch(function () { return null; });
+  return new Promise(function(resolve) {
+    var settled = false;
+    var timer = setTimeout(function() {
+      if (!settled) { settled = true; resolve(null); }
+    }, ms || LANE_TIMEOUT_MS);
+    promise.then(function(r) {
+      if (!settled) { settled = true; clearTimeout(timer); resolve(r); }
+    }, function() {
+      if (!settled) { settled = true; clearTimeout(timer); resolve(null); }
+    });
+  });
 }
 
 /**
@@ -815,8 +843,7 @@ function extractByseDirect(embedUrl) {
       "Accept": "application/json",
       "Referer": BASE_URL + "/",
       "Origin": BASE_URL
-    },
-    timeoutMs: 10000
+    }
   }).then(function(data) {
     if (!data || data.error || !data.playback) return null;
     if (data.premium_only) return null;
@@ -841,10 +868,10 @@ function extractByseDirect(embedUrl) {
     var q = (best.label && best.label !== "x")
       ? parseQuality(String(best.label))
       : (parseInt(best.height, 10) ? parseQuality(String(best.height) + "p") : "Auto");
-    // v5.2.1: NO playback headers on purpose. The signed URL is self-
-    // authorizing (verified: manifest/variant/segment all 200 with zero
-    // custom headers). Headerless = direct-playable on webOS/Tizen TVs,
-    // where Referer/UA cannot be sent outside the companion proxy.
+    // v5.2.2 TV-SAFE: the signed URL is self-authorizing (bearer-style), so
+    // NO playback headers are attached. webOS can play it directly with the
+    // stock player; ExoPlayer plays it identically. The Referer/Origin used
+    // above stay extraction-only.
     return {
       url: String(best.url),
       quality: q,
@@ -931,8 +958,7 @@ function extractDoodDirect(embedUrl) {
   var qualityHint = "";
 
   return fetchTextFollow(embedUrl, {
-    headers: { Referer: BASE_URL + "/" },
-    timeoutMs: 10000
+    headers: { Referer: BASE_URL + "/" }
   }).then(function(page) {
     var html = page.text;
     var host = hostOf(page.url) || hostOf(embedUrl);
@@ -970,62 +996,6 @@ function extractDoodDirect(embedUrl) {
   });
 }
 
-/**
- * Resolve as many extractor promises as possible within `ms`. Each promise
- * must never reject (extractors already catch internally); results land in a
- * sparse array. When the deadline fires first, the partial array is
- * returned so the user sees working hosts immediately instead of waiting on
- * a stalled server. Without timers (sandboxed runtimes), degrades to
- * Promise.all - all results, no early return.
- */
-function withExtractionDeadline(promises, ms) {
-  var records = new Array(promises.length);
-  var mapped = promises.map(function(p, i) {
-    return p.then(
-      function(r) { records[i] = r || null; return null; },
-      function() { records[i] = null; return null; }
-    );
-  });
-  if (!hasTimers() || !ms) return Promise.all(mapped).then(function() { return records; });
-  return new Promise(function(resolve) {
-    var settled = false;
-    var timer = null;
-    var finish = function(arr) {
-      if (settled) return;
-      settled = true;
-      if (timer) clearTimeout(timer);
-      resolve(arr);
-    };
-    timer = setTimeout(function() { finish(records.slice()); }, ms);
-    Promise.all(mapped).then(function() { finish(records.slice()); });
-  });
-}
-
-/**
- * Host priority for listing order: Byse serves fast per-device signed HLS
- * and (v5.2.1) plays headerless = TV-safe, Mixdrop is reliable but its free
- * CDN throttles bandwidth AND requires Referer (TV-unsafe), everything else
- * after. Byse's playback CDN uses randomized edge domains (r66nv9ed.com &
- * friends) that do NOT contain "byse", so the player label ("Byse") is the
- * reliable signal - buildStream stamps _hostPriority from label+host.
- * Stable sort - same-priority order is preserved.
- */
-function hostPriority(stream) {
-  if (stream && typeof stream._hostPriority === "number") return stream._hostPriority;
-  var h = hostOf(stream && stream.url).toLowerCase();
-  if (/byse/.test(h)) return 0;
-  if (/mixdrop|mixdrp|mxdrop|miixdrop|mixdroop|mxcontent/.test(h)) return 2;
-  return 1;
-}
-
-function sourcePriority(label, host) {
-  var s = String(label || "") + " " + String(host || "");
-  s = s.toLowerCase();
-  if (/byse/.test(s)) return 0;
-  if (/mixdrop|mixdrp|mxdrop|miixdrop|mixdroop|mxcontent/.test(s)) return 2;
-  return 1;
-}
-
 // ===== STREAM BUILDER =====
 
 function shortLabel(player) {
@@ -1034,8 +1004,10 @@ function shortLabel(player) {
   return label || "Source " + ((player && player.nume) || "?");
 }
 
-function buildStream(displayTitle, player, resolved, meta) {
-  // resolved: { url, headers, quality? } - direct links only.
+function buildStream(displayTitle, player, resolved, meta, embedHost) {
+  // resolved: { url, headers?, quality? } - direct links only. Byse lanes
+  // carry no headers at all (TV-safe); Mixdrop/Dood carry Referer+UA, which
+  // NuvioMobile's ExoPlayer sends natively.
   var host = hostOf(resolved.url);
   var lang = inferLang((player && player.label) || "");
   var label = shortLabel(player);
@@ -1047,17 +1019,21 @@ function buildStream(displayTitle, player, resolved, meta) {
   var line2 = "Direct | " + q + " | " + lang + (host ? " | " + host : "");
   var line3 = label;
 
-  return {
+  var stream = {
     name: PROVIDER_NAME + " | " + label + " | " + q,
     title: line1 + "\n" + line2 + "\n" + line3,
     url: resolved.url,
     quality: q,
-    headers: resolved.headers,
     behaviorHints: {
       bingeGroup: "pinoymovieshub-direct"
-    },
-    _hostPriority: sourcePriority(label, host)
+    }
   };
+  // Headers ONLY when the CDN enforces them. A missing headers field is the
+  // TV-safe signal: nothing for a webOS player to choke on.
+  if (resolved.headers) stream.headers = resolved.headers;
+  // Internal sort key, stripped in getStreams before returning.
+  stream._hostPriority = hostPriority(label, embedHost);
+  return stream;
 }
 
 // ===== MAIN ENTRY =====
@@ -1136,8 +1112,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
         }
         var chosen = realOptions.length ? realOptions : trailerOptions;
 
-        return withExtractionDeadline(chosen.slice(0, 8).map(function(player) {
-          return callDooPlayerAPI(player, page.url).then(function(embedUrl) {
+        return Promise.all(chosen.slice(0, 8).map(function(player) {
+          return withLaneDeadline(callDooPlayerAPI(player, page.url).then(function(embedUrl) {
             if (!embedUrl) return null;
             var host = hostOf(embedUrl);
             var extractor = null;
@@ -1163,21 +1139,28 @@ function getStreams(tmdbId, mediaType, season, episode) {
                   url: direct.url,
                   headers: direct.headers,
                   quality: direct.quality
-                }, meta);
+                }, meta, host);
               }
               // Extraction unavailable (captcha-gated dood, dead video,
               // unknown SPA): skip the player. Nuvio has no webview on any
               // platform, so an embed URL could never play anyway.
               return null;
             });
-          });
-        }), 9000).then(function(results) {
+          }, LANE_TIMEOUT_MS));
+        })).then(function(results) {
           var streams = [];
           var i;
           for (i = 0; i < results.length; i++) {
             if (results[i]) streams.push(results[i]);
           }
-          streams.sort(function(a, b) { return hostPriority(a) - hostPriority(b); });
+          // v5.2.2: Byse first (plays everywhere), then Mixdrop, then Dood.
+          streams.sort(function(a, b) {
+            var pa = a._hostPriority === undefined ? 3 : a._hostPriority;
+            var pb = b._hostPriority === undefined ? 3 : b._hostPriority;
+            if (pa !== pb) return pa - pb;
+            return 0;
+          });
+          for (i = 0; i < streams.length; i++) delete streams[i]._hostPriority;
           console.log("[PinoyMoviesHub] Returning", streams.length, "stream(s)");
           return streams;
         });
