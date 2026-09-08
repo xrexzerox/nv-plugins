@@ -97,7 +97,7 @@
       "id": "vidrock",
       "name": "Vidrock",
       "description": "Vidrock direct streams, TMDB-keyed (Streamline port of CineStream).",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -194,28 +194,6 @@
         "m3u8"
       ],
       "logo": "https://www.google.com/s2/favicons?domain=primesrc.me&sz=128",
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
-      "id": "showbox",
-      "name": "ShowBox",
-      "description": "ShowBox/FebBox quality lists. Needs a FebBox token (Streamline port of CineStream).",
-      "version": "1.2.0",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/showbox.js",
-      "enabled": true,
-      "hasSettings": true,
-      "formats": [
-        "mp4",
-        "m3u8"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=showbox.media&sz=128",
       "contentLanguage": [
         "en"
       ]
@@ -498,7 +476,7 @@
       "id": "pinoymovieshub",
       "name": "PinoyMoviesHub",
       "description": "Filipino movies & series from PinoyMoviesHub with direct-play Mixdrop/Byse/Dood extraction, search-based matching and Turnstile-aware skipping",
-      "version": "5.1.0",
+      "version": "5.2.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -543,7 +521,7 @@
       "id": "animepahe",
       "name": "AnimePahe",
       "description": "AnimePahe Sub/Dub streams",
-      "version": "4.0.0",
+      "version": "4.1.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -629,27 +607,6 @@
       ]
     },
     {
-      "id": "okru",
-      "name": "OK.ru",
-      "description": "OK.ru video streams",
-      "version": "4.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/okru.js",
-      "enabled": true,
-      "formats": [
-        "mp4",
-        "m3u8"
-      ],
-      "contentLanguage": [
-        "ru",
-        "en"
-      ]
-    },
-    {
       "id": "castle",
       "name": "Castle",
       "description": "Castle streaming provider",
@@ -693,7 +650,7 @@
       "id": "dvdplay",
       "name": "DVDPlay",
       "description": "DVDPlay streaming provider",
-      "version": "4.0.0",
+      "version": "4.1.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -797,33 +754,13 @@
       "id": "netmirror",
       "name": "NetMirror",
       "description": "NetMirror provider",
-      "version": "4.0.0",
+      "version": "4.1.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
         "tv"
       ],
       "filename": "providers/netmirror.js",
-      "enabled": true,
-      "formats": [
-        "m3u8",
-        "mp4"
-      ],
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
-      "id": "myflixer",
-      "name": "MyFlixer",
-      "description": "NVV-compatible provider",
-      "version": "4.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/myflixer-extractor.js",
       "enabled": true,
       "formats": [
         "m3u8",
