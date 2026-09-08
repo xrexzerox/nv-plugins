@@ -1,23 +1,16 @@
 {
-  "name": "streamline",
-  "version": "1.8.0",
-  "description": "Streamline — Nuvio streaming plugin (port of CineStream). Multi-source movies, series & anime running on-device.",
+  "name": "nv-plugins",
+  "version": "4.0.0",
+  "description": "Nuvio plugin collection with validated provider manifests and canonical provider bundles.",
   "scripts": {
-    "build": "bun build.js",
-    "build:watch": "bun --watch build.js",
-    "build:provider": "bun build.js",
-    "serve": "bun server.js",
-    "test": "bun test-streamline.js"
+    "build": "node build.js",
+    "build:provider": "node build.js",
+    "validate": "node scripts/validate-manifest.js"
   },
   "devDependencies": {
     "esbuild": "^0.20.0"
   },
-  "keywords": [
-    "nuvio",
-    "streamline",
-    "streaming",
-    "providers"
-  ],
+  "keywords": ["nuvio", "plugins", "providers"],
   "license": "GPL-3.0-only",
   "dependencies": {
     "cheerio-without-node-native": "^0.20.2",
