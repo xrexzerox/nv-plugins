@@ -1,0 +1,83 @@
+name: Sync Canonical Nuvio Work
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync canonical files from nuvio
+        run: |
+          set -e
+          git clone --depth 1 https://github.com/xrexzerox/nuvio.git /tmp/nuvio
+          mkdir -p providers
+
+          # Copy canonical provider bundles only. Skip numbered/variant duplicates.
+          find /tmp/nuvio/providers -maxdepth 1 -type f -name '*.js' -print | while read -r f; do
+            base=$(basename "$f")
+            case "$base" in
+              *[0-9].js|*new.js|*old.js|*backup.js|*bak.js) continue ;;
+            esac
+            cp "$f" "providers/$base"
+          done
+
+          # Ensure the explicitly fixed providers from our latest work are retained.
+          cp /tmp/nuvio/providers/netmirror.js providers/netmirror.js
+          cp /tmp/nuvio/providers/pinoyhub.js providers/pinoyhub.js
+
+          # Copy project metadata/docs that document the work.
+          for f in manifest.json build.js package.json PROVIDER-AUDIT.md PROVIDER-CLEANUP.md NVV-DOCUMENTATION.md STREAMLINE-LICENSE; do
+            if [ -f "/tmp/nuvio/$f" ]; then cp "/tmp/nuvio/$f" "$f"; fi
+          done
+
+      - name: Remove manifest entries for missing/duplicate variant files
+        run: |
+          python3 - <<'PY'
+          import json, os
+          path = 'manifest.json'
+          with open(path, 'r', encoding='utf-8') as f:
+              data = json.load(f)
+          out = []
+          seen = set()
+          for s in data.get('scrapers', []):
+              sid = s.get('id')
+              filename = s.get('filename', '')
+              if not sid or sid in seen:
+                  continue
+              if not filename or not os.path.isfile(filename):
+                  continue
+              base = os.path.basename(filename)
+              if any(x in base.lower() for x in ('1.js','2.js','new.js','old.js','backup.js','bak.js')):
+                  continue
+              seen.add(sid)
+              out.append(s)
+          data['name'] = 'NV Plugins'
+          data['version'] = '3.0.0'
+          data['description'] = 'Canonical Nuvio provider collection with consolidated provider work and duplicate variants removed.'
+          data['author'] = 'xrexzerox'
+          data['scrapers'] = out
+          with open(path, 'w', encoding='utf-8') as f:
+              json.dump(data, f, indent=2, ensure_ascii=False)
+              f.write('\n')
+          print('Registered providers:', len(out))
+          PY
+
+      - name: Publish
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add providers manifest.json build.js package.json PROVIDER-AUDIT.md PROVIDER-CLEANUP.md NVV-DOCUMENTATION.md STREAMLINE-LICENSE || true
+          git commit -m 'Consolidate all canonical Nuvio provider work' || true
+          git pull --rebase origin main
+          git push origin HEAD:main
