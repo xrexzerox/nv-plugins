@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   import:
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'TRIGGER: licensed community import'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout target
