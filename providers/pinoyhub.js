@@ -4,7 +4,25 @@
  * Supports: Movies & TV Shows
  * Language: Filipino / Tagalog / English
  * Author: xrexzerox
- * Version: 5.2.0
+ * Version: 5.2.1
+ *
+ * v5.2.1 changelog:
+ *  - TV FIX: Byse streams no longer carry playback Referer/User-Agent
+ *    headers. Verified (master playlist -> media playlist -> TS segment, all
+ *    200/206 with zero custom headers) that Byse's signed URLs are
+ *    bearer-style: the token in the query string is the only credential.
+ *    NuvioTVSmart on webOS is a browser app where hls.js and <video> are
+ *    FORBIDDEN from setting Referer/UA, so every stream that carried those
+ *    headers was forced through the webOS companion playback proxy - when
+ *    that service is missing/degraded, headered streams fail or stall for
+ *    ~5s first (proxy ping timeout) even though they would play fine direct.
+ *    Headerless Byse streams now play directly on webOS (hls.js / native
+ *    HLS), on Tizen AVPlay and on Mobile ExoPlayer, with no proxy involved.
+ *    Mixdrop/Dood keep their headers: their CDNs really do check Referer
+ *    (Mixdrop returns 403 without it) - on webOS those two need the
+ *    companion proxy, and Byse (listed first) is the TV-safe default.
+ *  - getStreams no longer requires resolved.headers to be truthy before
+ *    building a stream (headerless direct results are valid now).
  *
  * v5.2.0 changelog:
  *  - PERF: global extraction deadline - getStreams now returns whatever
@@ -823,11 +841,14 @@ function extractByseDirect(embedUrl) {
     var q = (best.label && best.label !== "x")
       ? parseQuality(String(best.label))
       : (parseInt(best.height, 10) ? parseQuality(String(best.height) + "p") : "Auto");
+    // v5.2.1: NO playback headers on purpose. The signed URL is self-
+    // authorizing (verified: manifest/variant/segment all 200 with zero
+    // custom headers). Headerless = direct-playable on webOS/Tizen TVs,
+    // where Referer/UA cannot be sent outside the companion proxy.
     return {
       url: String(best.url),
       quality: q,
-      isHls: isHls,
-      headers: { Referer: "https://" + host + "/", "User-Agent": HEADERS["User-Agent"] }
+      isHls: isHls
     };
   }).catch(function(e) {
     console.log("[PinoyMoviesHub] byse extract failed:", e.message);
@@ -981,14 +1002,27 @@ function withExtractionDeadline(promises, ms) {
 }
 
 /**
- * Host priority for listing order: Byse serves fast per-device signed HLS,
- * Mixdrop is reliable but its free CDN throttles bandwidth, everything else
- * after. Stable sort - same-host order is preserved.
+ * Host priority for listing order: Byse serves fast per-device signed HLS
+ * and (v5.2.1) plays headerless = TV-safe, Mixdrop is reliable but its free
+ * CDN throttles bandwidth AND requires Referer (TV-unsafe), everything else
+ * after. Byse's playback CDN uses randomized edge domains (r66nv9ed.com &
+ * friends) that do NOT contain "byse", so the player label ("Byse") is the
+ * reliable signal - buildStream stamps _hostPriority from label+host.
+ * Stable sort - same-priority order is preserved.
  */
 function hostPriority(stream) {
+  if (stream && typeof stream._hostPriority === "number") return stream._hostPriority;
   var h = hostOf(stream && stream.url).toLowerCase();
   if (/byse/.test(h)) return 0;
   if (/mixdrop|mixdrp|mxdrop|miixdrop|mixdroop|mxcontent/.test(h)) return 2;
+  return 1;
+}
+
+function sourcePriority(label, host) {
+  var s = String(label || "") + " " + String(host || "");
+  s = s.toLowerCase();
+  if (/byse/.test(s)) return 0;
+  if (/mixdrop|mixdrp|mxdrop|miixdrop|mixdroop|mxcontent/.test(s)) return 2;
   return 1;
 }
 
@@ -1021,7 +1055,8 @@ function buildStream(displayTitle, player, resolved, meta) {
     headers: resolved.headers,
     behaviorHints: {
       bingeGroup: "pinoymovieshub-direct"
-    }
+    },
+    _hostPriority: sourcePriority(label, host)
   };
 }
 
@@ -1123,7 +1158,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
             }
 
             return extractor.then(function(direct) {
-              if (direct && direct.url && direct.headers) {
+              if (direct && direct.url) {
                 return buildStream(displayTitle, player, {
                   url: direct.url,
                   headers: direct.headers,
