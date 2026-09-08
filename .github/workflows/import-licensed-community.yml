@@ -1,6 +1,8 @@
 name: Import Licensed Community Providers
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -59,7 +61,6 @@ jobs:
               with man.open(encoding='utf-8') as f:
                   data = json.load(f)
 
-              # Preserve the upstream license notice alongside imported code.
               lic = repo / 'LICENSE'
               if lic.exists():
                   shutil.copyfile(lic, ROOT / f'LICENSE-{label}.txt')
