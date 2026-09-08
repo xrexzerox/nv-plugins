@@ -1,9 +1,33 @@
 {
   "name": "NV Plugins",
-  "version": "3.3.3",
-  "description": "Canonical Nuvio provider collection with consolidated provider work, restored PinoyHub embed visibility, and the AsianHub multi-source provider (MyAsianTV + Dramacool).",
+  "version": "3.2.0",
+  "description": "Canonical Nuvio provider collection with consolidated provider work and restored PinoyHub embed visibility.",
   "author": "xrexzerox",
   "scrapers": [
+    {
+      "id": "pinoymovieshub",
+      "name": "PinoyMoviesHub",
+      "description": "Filipino movies & series from PinoyMoviesHub with TV-safe headerless Byse extraction (Byse first), Mixdrop/Dood direct-play, search-based matching",
+      "version": "5.2.2",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/pinoyhub.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8",
+        "mkv",
+        "webm"
+      ],
+      "contentLanguage": [
+        "tl",
+        "fil",
+        "en"
+      ]
+    },
     {
       "id": "vidlink",
       "name": "Vidlink",
@@ -97,7 +121,7 @@
       "id": "vidrock",
       "name": "Vidrock",
       "description": "Vidrock direct streams, TMDB-keyed (Streamline port of CineStream).",
-      "version": "1.3.0",
+      "version": "1.2.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -194,6 +218,28 @@
         "m3u8"
       ],
       "logo": "https://www.google.com/s2/favicons?domain=primesrc.me&sz=128",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "showbox",
+      "name": "ShowBox",
+      "description": "ShowBox/FebBox quality lists. Needs a FebBox token (Streamline port of CineStream).",
+      "version": "1.2.0",
+      "author": "Streamline",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/showbox.js",
+      "enabled": true,
+      "hasSettings": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=showbox.media&sz=128",
       "contentLanguage": [
         "en"
       ]
@@ -473,76 +519,6 @@
       ]
     },
     {
-      "id": "tagalogtorrents",
-      "name": "Tagalog Torrents",
-      "description": "Tagalog/Pinoy P2P torrents via Torrentio + TorrentsDB (IMDb-keyed), ThePirateBay (title + IMDb search) and 1337x Tagalog-dub search; Filipino releases ranked first, resolved by Nuvio debrid or the built-in P2P engine.",
-      "version": "1.1.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/tagalogtorrents.js",
-      "enabled": true,
-      "hasSettings": true,
-      "formats": [
-        "mkv",
-        "mp4"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=apibay.org&sz=128",
-      "contentLanguage": [
-        "tl",
-        "en"
-      ]
-    },
-    {
-      "id": "pinoymovieshub",
-      "name": "PinoyMoviesHub",
-      "description": "Filipino movies & series from PinoyMoviesHub with direct-play Byse/Mixdrop extraction (Byse headerless = webOS/Tizen TV-safe), search-based matching and Turnstile-aware skipping",
-      "version": "5.2.1",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/pinoyhub.js",
-      "enabled": true,
-      "formats": [
-        "mp4",
-        "m3u8",
-        "mkv",
-        "webm"
-      ],
-      "contentLanguage": [
-        "tl",
-        "fil",
-        "en"
-      ]
-    },
-    {
-      "id": "asianhub",
-      "name": "AsianHub",
-      "description": "Asian movies & dramas (Korean/Chinese/Japanese/Thai/Taiwanese and more, English subs) from MyAsianTV and Dramacool with direct-HLS extraction; pairs with the Asian Catalog addon.",
-      "version": "1.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/asianhub.js",
-      "enabled": true,
-      "formats": [
-        "m3u8"
-      ],
-      "contentLanguage": [
-        "ko",
-        "zh",
-        "ja",
-        "th",
-        "en"
-      ]
-    },
-    {
       "id": "animotvslash",
       "name": "ANIMOTVSLASH",
       "description": "Anime streams from animotvslash.org",
@@ -567,7 +543,7 @@
       "id": "animepahe",
       "name": "AnimePahe",
       "description": "AnimePahe Sub/Dub streams",
-      "version": "4.1.0",
+      "version": "4.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -653,6 +629,27 @@
       ]
     },
     {
+      "id": "okru",
+      "name": "OK.ru",
+      "description": "OK.ru video streams",
+      "version": "4.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/okru.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "ru",
+        "en"
+      ]
+    },
+    {
       "id": "castle",
       "name": "Castle",
       "description": "Castle streaming provider",
@@ -696,7 +693,7 @@
       "id": "dvdplay",
       "name": "DVDPlay",
       "description": "DVDPlay streaming provider",
-      "version": "4.1.0",
+      "version": "4.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -800,13 +797,33 @@
       "id": "netmirror",
       "name": "NetMirror",
       "description": "NetMirror provider",
-      "version": "4.1.0",
+      "version": "4.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
         "tv"
       ],
       "filename": "providers/netmirror.js",
+      "enabled": true,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "myflixer",
+      "name": "MyFlixer",
+      "description": "NVV-compatible provider",
+      "version": "4.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/myflixer-extractor.js",
       "enabled": true,
       "formats": [
         "m3u8",
