@@ -57,7 +57,7 @@ hints. `status` is `ok`, `degraded` (a source or TMDB failing) or `down` (HTTP 5
 
 ```json
 {
-  "version": "2.1.0",
+  "version": "2.1.1",
   "addonId": "community.asianhub.catalog",
   "status": "ok",
   "healthy": true,
@@ -76,7 +76,8 @@ Troubleshooting cheat-sheet (each case also appears in `hints`):
 | Symptom | Likely cause / fix |
 |---|---|
 | `/health` shows a source `ok:false` with 403/challenge | The host bot-gates your deployment's IP (common for shared datacenter IPs). Redeploy the worker in another region or set its `*_SITE` env var to a working mirror. |
-| All three sources `ok:false` | Your host's IP is blocked/region-locked — try a different worker region, or self-host (Option C) on a residential/VPS box. |
+| All three sources `ok:false`, `ms:0`, **same error text** | Worker-code/runtime bug, not IP blocking (see next row). `/health` says which. |
+| All three sources `ok:false, ms:0` with `Illegal invocation: function called with incorrect \`this\` reference` | v2.1.0-and-older bundle bug: `fetch` was stored unbound, and Cloudflare's runtime receiver-checks native functions (Node does not, which is why local tests passed). Fixed in **v2.1.1** — re-paste the new `worker-bundle.js` in the dashboard (or `npx wrangler deploy`). |
 | `tmdb` check `ok:false` (HTTP 401) | TMDB key rejected — set your own v3 key: `npx wrangler secret put TMDB_API_KEY`. |
 | `ok:true` but `items:0` on a source | Site reachable but template changed / challenge page served — update the parser or use a mirror. |
 | `/health` all green but Nuvio shows nothing | The manifest URL you installed is not this deployment (e.g. a GitHub or local path — Nuvio derives API endpoints from the manifest URL). Re-add `https://<your-worker>/manifest.json`. |
@@ -85,6 +86,11 @@ Troubleshooting cheat-sheet (each case also appears in `hints`):
 back silently empty — rows fall back to site-supplied metadata with `asian:*` ids so you can
 still browse until TMDB is reachable again. Bot-gated source responses (403/429/503 or a JS
 challenge wall) get one automatic clean-client retry before hitting serve-stale caches.
+
+**v2.1.1:** fixed the Cloudflare-Workers `Illegal invocation` crash (unbound `fetch` alias —
+all fetches died at `ms:0` on Workers while Node self-hosting/tests kept working) and taught
+`/health` to detect the "all probes fail with the same error" signature so it names a runtime
+bug instead of blaming the deployment IP.
 
 ## Sources
 

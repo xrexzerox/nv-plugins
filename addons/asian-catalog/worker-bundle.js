@@ -29,7 +29,7 @@ var require_core = __commonJS({
   "addons/asian-catalog/core.js"(exports) {
     (function(global) {
       "use strict";
-      var VERSION = "2.1.0";
+      var VERSION = "2.1.1";
       var ADDON_ID = "community.asianhub.catalog";
       var DEFAULT_SITE = "https://pinoymovieshub.win";
       var DEFAULT_MATV_SITE = "https://myasiantv.com.lv";
@@ -227,7 +227,15 @@ var require_core = __commonJS({
           pageLimit: Math.min(Math.max(isFinite(limit) && limit > 0 ? limit : PAGE_LIMIT_DEFAULT, 5), 50),
           maxSitePages: isFinite(maxPages) && maxPages > 0 ? maxPages : MAX_SITE_PAGES_DEFAULT,
           keepUnmatched: env.PINOYHUB_KEEP_UNMATCHED === "1",
-          fetchFn: env.__fetchFn || (typeof fetch === "function" ? fetch : null),
+          // workerd (Cloudflare Workers) receiver-checks its native API fns: an
+          // unbound alias (`const f = fetch`) invoked as cfg.fetchFn(url) runs
+          // with `this === cfg` and throws "Illegal invocation: function called
+          // with incorrect `this` reference" BEFORE any network I/O (ms:0 on
+          // every /health probe). Node's fetch ignores its receiver, which is
+          // why server.js and the offline test suite never caught this. Binding
+          // to the IIFE's global object satisfies workerd and changes nothing
+          // for Node/tests (injected env.__fetchFn is used verbatim as before).
+          fetchFn: env.__fetchFn || (typeof fetch === "function" ? fetch.bind(global) : null),
           nowFn: env.__nowFn || function() {
             return Date.now();
           }
@@ -1255,7 +1263,20 @@ var require_core = __commonJS({
           }
           var status = sitesOk === 0 ? "down" : sitesOk < 3 || !tmdb.ok || tmdb.items === 0 ? "degraded" : "ok";
           var hints = [];
-          if (sitesOk === 0) {
+          var runtimeBug = sitesOk === 0 && !!sites[0].error;
+          if (runtimeBug) {
+            for (var s = 1; s < sites.length; s++) {
+              if ((sites[s].error || "") !== sites[0].error) {
+                runtimeBug = false;
+                break;
+              }
+            }
+          }
+          if (runtimeBug && /illegal invocation/i.test(sites[0].error)) {
+            hints.push('Every probe crashes with "Illegal invocation: function called with incorrect `this` reference" - a worker-code bug (a native fn like fetch called unbound), NOT IP blocking. Redeploy with the fixed worker-bundle.js (asian-catalog v2.1.1+): paste it in the dashboard editor or run `npx wrangler deploy`.');
+          } else if (runtimeBug) {
+            hints.push("All probes fail with the identical error (" + sites[0].error + ") - that points at a bug in the deployed worker code rather than IP blocking. Redeploy the current worker-bundle.js from the repo, or point PINOYHUB_SITE / MYASIANTV_SITE / DRAMACOOL_SITE env vars at working mirrors.");
+          } else if (sitesOk === 0) {
             hints.push("All three source sites are unreachable from this deployment - the hosting IP is likely blocked or region-locked. Redeploy the worker in another region or point PINOYHUB_SITE / MYASIANTV_SITE / DRAMACOOL_SITE env vars at working mirrors.");
           } else {
             for (var j = 0; j < sites.length; j++) {
@@ -1267,7 +1288,10 @@ var require_core = __commonJS({
             }
           }
           if (!tmdb.ok) {
-            hints.push("TMDB unreachable or key rejected (" + tmdb.error + ") - catalogs fall back to site-only rows (asian:* ids) that may not resolve for playback. Set your own v3 key via the TMDB_API_KEY secret.");
+            if (runtimeBug && /illegal invocation/i.test(tmdb.error || "")) {
+            } else {
+              hints.push("TMDB unreachable or key rejected (" + tmdb.error + ") - catalogs fall back to site-only rows (asian:* ids) that may not resolve for playback. Set your own v3 key via the TMDB_API_KEY secret.");
+            }
           } else if (tmdb.items === 0) {
             hints.push("TMDB reachable but the probe search returned 0 results - check that TMDB_API_KEY is a valid v3 key.");
           }

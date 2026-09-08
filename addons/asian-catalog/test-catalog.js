@@ -597,6 +597,46 @@ async function offlineTests() {
   check('health flags degraded on TMDB outage', h2.body.status === 'degraded' && h2.body.healthy === false, h2.body.status);
   check('health tmdb check fails with error', h2.body.sources[3].ok === false && /HTTP 500/.test(h2.body.sources[3].error || ''), h2.body.sources[3]);
   check('health hints mention TMDB key', h2.body.hints.some((t) => /TMDB_API_KEY/.test(t)), h2.body.hints);
+
+  section('workerd fetch binding (v2.1.1 regression)');
+  // workerd receiver-checks native API fns: v2.1.0 aliased global fetch into
+  // cfg.fetchFn, so cfg.fetchFn(url) ran with `this === cfg` and crashed with
+  // "Illegal invocation" on Workers at ms:0 - invisible to Node tests because
+  // Node's fetch ignores its receiver and the harness injects __fetchFn.
+  // This test simulates workerd's receiver check on globalThis.fetch and
+  // exercises the production path (no __fetchFn injected).
+  const origFetchDesc = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
+  let receiverSeen = 'unset';
+  let servedCount = 0;
+  const receiverCheckedFetch = function (url, opts) {
+    receiverSeen = this;
+    if (this !== globalThis) {
+      throw new TypeError('Illegal invocation: function called with incorrect `this` reference. See https://developers.cloudflare.com/workers/observability/errors/#illegal-invocation-errors for details.');
+    }
+    servedCount++;
+    return makeMockFetch()(url, opts);
+  };
+  let selfTest = false;
+  try { receiverCheckedFetch.call({ notGlobal: true }, 'https://x.local/', {}); }
+  catch (e) { selfTest = /Illegal invocation/.test(e.message); }
+  check('harness self-test: receiver-checked fetch throws when detached', selfTest);
+  try {
+    Object.defineProperty(globalThis, 'fetch', { value: receiverCheckedFetch, writable: true, configurable: true });
+    Core.resetCaches();
+    const hb = await getJSON(undefined, '/health', { __fetchFn: undefined });
+    check('health works under workerd-style receiver-checked global fetch',
+      hb.status === 200 && hb.body.healthy === true && hb.body.sources.every((s) => s.ok),
+      hb.body && hb.body.sources);
+    check('global fetch was invoked with the global receiver', receiverSeen === globalThis, String(receiverSeen));
+    check('global fetch actually served the probes', servedCount >= 4, servedCount);
+    check('makeConfig fetchFn survives round-trip', typeof Core.makeConfig({}).fetchFn === 'function');
+    Core.resetCaches();
+    const hc = await getJSON(undefined, '/health', { __fetchFn: undefined });
+    check('health still ok on repeat (cache path)', hc.body.healthy === true, hc.body && hc.body.status);
+  } finally {
+    if (origFetchDesc) Object.defineProperty(globalThis, 'fetch', origFetchDesc);
+    Core.resetCaches();
+  }
 }
 
 // ============================================================

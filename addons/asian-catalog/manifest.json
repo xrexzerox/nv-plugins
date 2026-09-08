@@ -1,6 +1,6 @@
 {
   "id": "community.asianhub.catalog",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "name": "Asian Catalog",
   "description": "Browse Pinoy movies, Tagalog-dubbed series and Asian movies & dramas (Korean/Chinese/Japanese/Thai and more, English subs). Titles resolve to TMDB ids; pair with the PinoyMoviesHub and AsianHub plugins for playback.",
   "logo": "https://www.google.com/s2/favicons?domain=myasiantv.com.lv&sz=128",
