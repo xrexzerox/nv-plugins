@@ -9,4 +9,4 @@ compatibility_date = "2024-11-01"
 # PINOYHUB_KEEP_UNMATCHED = "0"
 #
 # Secrets (better via `npx wrangler secret put TMDB_API_KEY`):
-TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c"
+# TMDB_API_KEY = ""
