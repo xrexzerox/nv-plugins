@@ -4,7 +4,18 @@
  * Supports: Movies & TV Shows
  * Language: Filipino / Tagalog / English
  * Author: xrexzerox
- * Version: 5.1.0
+ * Version: 5.2.0
+ *
+ * v5.2.0 changelog:
+ *  - PERF: global extraction deadline - getStreams now returns whatever
+ *    streams resolved within 9s instead of waiting for every host (a single
+ *    stalled embed server used to delay the whole stream list by up to 25s;
+ *    this was the main reason Mixdrop titles felt "slow" to start).
+ *  - PERF: default fetch timeout 25s -> 15s; embed-page/API fetches get 10s.
+ *  - CHANGE: stream ordering - Byse (fast signed HLS) is listed first,
+ *    Mixdrop second. Mixdrop's free CDN throttles playback bandwidth
+ *    server-side; nothing client-side can speed it up, but with Byse on top
+ *    the fast source is now the default pick.
  *
  * v5.1.0 changelog:
  *  - NEW: Byse host extraction (bysesayeveum.com and friends). The embed is a
@@ -87,7 +98,7 @@ function fetchText(url, options) {
     redirect: options.redirect || "follow",
     headers: merge(HEADERS, options.headers || {}),
     body: options.body
-  }, options.timeoutMs || 25000).then(function(res) {
+  }, options.timeoutMs || 15000).then(function(res) {
     if (!res.ok) throw new Error("HTTP " + res.status);
     return res.text();
   });
@@ -100,7 +111,7 @@ function fetchJson(url, options) {
     redirect: options.redirect || "follow",
     headers: merge(HEADERS, options.headers || {}),
     body: options.body
-  }, options.timeoutMs || 25000).then(function(res) {
+  }, options.timeoutMs || 15000).then(function(res) {
     if (!res.ok) return null;
     return res.json();
   }).catch(function() { return null; });
@@ -118,7 +129,7 @@ function fetchTextFollow(url, options) {
     method: "GET",
     redirect: "follow",
     headers: merge(HEADERS, options.headers || {})
-  }, options.timeoutMs || 25000).then(function(res) {
+  }, options.timeoutMs || 15000).then(function(res) {
     if (!res.ok) throw new Error("HTTP " + res.status);
     return res.text().then(function(text) {
       return { text: text, url: (res && res.url) ? String(res.url) : url };
@@ -733,7 +744,8 @@ function extractMixdropDirect(embedUrl) {
     headers: {
       "Referer": BASE_URL + "/",
       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-    }
+    },
+    timeoutMs: 10000
   }).then(function(html) {
     var packedMatch = html.match(/eval\(function\(p,a,c,k,e,d\)[\s\S]{0,3000}?\}\)\)/);
     var unpacked = packedMatch ? unpackPacker(packedMatch[0]) : "";
@@ -785,7 +797,8 @@ function extractByseDirect(embedUrl) {
       "Accept": "application/json",
       "Referer": BASE_URL + "/",
       "Origin": BASE_URL
-    }
+    },
+    timeoutMs: 10000
   }).then(function(data) {
     if (!data || data.error || !data.playback) return null;
     if (data.premium_only) return null;
@@ -897,7 +910,8 @@ function extractDoodDirect(embedUrl) {
   var qualityHint = "";
 
   return fetchTextFollow(embedUrl, {
-    headers: { Referer: BASE_URL + "/" }
+    headers: { Referer: BASE_URL + "/" },
+    timeoutMs: 10000
   }).then(function(page) {
     var html = page.text;
     var host = hostOf(page.url) || hostOf(embedUrl);
@@ -933,6 +947,49 @@ function extractDoodDirect(embedUrl) {
     console.log("[PinoyMoviesHub] dood extract failed (" + embedUrl + "):", e.message);
     return null;
   });
+}
+
+/**
+ * Resolve as many extractor promises as possible within `ms`. Each promise
+ * must never reject (extractors already catch internally); results land in a
+ * sparse array. When the deadline fires first, the partial array is
+ * returned so the user sees working hosts immediately instead of waiting on
+ * a stalled server. Without timers (sandboxed runtimes), degrades to
+ * Promise.all - all results, no early return.
+ */
+function withExtractionDeadline(promises, ms) {
+  var records = new Array(promises.length);
+  var mapped = promises.map(function(p, i) {
+    return p.then(
+      function(r) { records[i] = r || null; return null; },
+      function() { records[i] = null; return null; }
+    );
+  });
+  if (!hasTimers() || !ms) return Promise.all(mapped).then(function() { return records; });
+  return new Promise(function(resolve) {
+    var settled = false;
+    var timer = null;
+    var finish = function(arr) {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(arr);
+    };
+    timer = setTimeout(function() { finish(records.slice()); }, ms);
+    Promise.all(mapped).then(function() { finish(records.slice()); });
+  });
+}
+
+/**
+ * Host priority for listing order: Byse serves fast per-device signed HLS,
+ * Mixdrop is reliable but its free CDN throttles bandwidth, everything else
+ * after. Stable sort - same-host order is preserved.
+ */
+function hostPriority(stream) {
+  var h = hostOf(stream && stream.url).toLowerCase();
+  if (/byse/.test(h)) return 0;
+  if (/mixdrop|mixdrp|mxdrop|miixdrop|mixdroop|mxcontent/.test(h)) return 2;
+  return 1;
 }
 
 // ===== STREAM BUILDER =====
@@ -1044,7 +1101,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
         }
         var chosen = realOptions.length ? realOptions : trailerOptions;
 
-        return Promise.all(chosen.slice(0, 8).map(function(player) {
+        return withExtractionDeadline(chosen.slice(0, 8).map(function(player) {
           return callDooPlayerAPI(player, page.url).then(function(embedUrl) {
             if (!embedUrl) return null;
             var host = hostOf(embedUrl);
@@ -1079,12 +1136,13 @@ function getStreams(tmdbId, mediaType, season, episode) {
               return null;
             });
           });
-        })).then(function(results) {
+        }), 9000).then(function(results) {
           var streams = [];
           var i;
           for (i = 0; i < results.length; i++) {
             if (results[i]) streams.push(results[i]);
           }
+          streams.sort(function(a, b) { return hostPriority(a) - hostPriority(b); });
           console.log("[PinoyMoviesHub] Returning", streams.length, "stream(s)");
           return streams;
         });

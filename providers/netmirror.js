@@ -1,9 +1,17 @@
 /**
- * NetMirror - stable Nuvio provider
+ * NetMirror - Nuvio provider (v2, rebuilt against the current NetMirror API)
  *
- * Uses the currently reported NetMirror browser mirrors and falls back when
- * a mirror is unavailable. It does not attempt to solve or bypass CAPTCHA,
- * login, DRM, or other access controls.
+ * The old /mobile/*.php endpoints are gone. NetMirror's Astro app now exposes
+ * a JSON API that resolves TMDB ids directly:
+ *
+ *   GET {base}/api/embed-tmdb/{tmdbId}?type={movie|tv}&se={s}&ep={e}
+ *   Headers: Referer: {base}/
+ *     -> { ok, noSource?, mode, mp4, resolution, streams:[{url,resolution,size}],
+ *          captions:[{lang,name,url}], fallbackHls, title, year, ... }
+ *
+ * Streams are direct mp4s on NetMirror's CDN (signed). fallbackHls is a
+ * same-origin HLS path. Pure ES5 promise chains, no timers needed beyond
+ * fetch - QuickJS + Nuvio TV worker safe.
  */
 
 var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
@@ -18,268 +26,165 @@ var COMMON_HEADERS = {
   "Accept-Language": "en-US,en;q=0.9",
   "Cache-Control": "no-cache",
   "Pragma": "no-cache",
-  "User-Agent": "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0 Mobile Safari/537.36",
-  "X-Requested-With": "XMLHttpRequest"
-};
-
-var PLATFORM_MAP = {
-  netflix: {
-    ott: "nf",
-    search: "/mobile/search.php",
-    post: "/mobile/post.php",
-    episodes: "/mobile/episodes.php",
-    playlist: "/mobile/playlist.php"
-  },
-  primevideo: {
-    ott: "pv",
-    search: "/mobile/pv/search.php",
-    post: "/mobile/pv/post.php",
-    episodes: "/mobile/pv/episodes.php",
-    playlist: "/mobile/pv/playlist.php"
-  },
-  hotstar: {
-    ott: "hs",
-    search: "/mobile/hs/search.php",
-    post: "/mobile/hs/post.php",
-    episodes: "/mobile/hs/episodes.php",
-    playlist: "/mobile/hs/playlist.php"
-  },
-  disney: {
-    ott: "hs",
-    search: "/mobile/hs/search.php",
-    post: "/mobile/hs/post.php",
-    episodes: "/mobile/hs/episodes.php",
-    playlist: "/mobile/hs/playlist.php"
-  }
+  "User-Agent": "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0 Mobile Safari/537.36"
 };
 
 function settings() {
   return typeof globalThis !== "undefined" && globalThis.SCRAPER_SETTINGS
     ? globalThis.SCRAPER_SETTINGS
-    : {};
+    : (typeof global !== "undefined" && global.SCRAPER_SETTINGS ? global.SCRAPER_SETTINGS : {});
 }
 
-function getBases() {
-  var configured = settings().baseUrl || settings().NETMIRROR_BASE;
-  var bases = [];
-  if (configured) bases.push(String(configured).replace(/\/$/, ""));
-  for (var i = 0; i < CANDIDATE_BASES.length; i++) {
-    if (bases.indexOf(CANDIDATE_BASES[i]) < 0) bases.push(CANDIDATE_BASES[i]);
-  }
-  return bases;
+function merge(a, b) {
+  var out = {}, k;
+  for (k in (a || {})) out[k] = a[k];
+  for (k in (b || {})) out[k] = b[k];
+  return out;
 }
 
-function unixTime() {
-  return Math.floor(Date.now() / 1000);
+function hasTimers() {
+  return typeof setTimeout === "function";
 }
 
-function fetchJson(url, headers) {
-  return fetch(url, {
+function fetchJson(url, headers, timeoutMs) {
+  var opts = {
     method: "GET",
     redirect: "follow",
-    headers: Object.assign({}, COMMON_HEADERS, headers || {}),
-    skipSizeCheck: true
-  }).then(function (response) {
-    if (!response.ok) throw new Error("HTTP " + response.status);
-    return response.json();
+    headers: merge(COMMON_HEADERS, headers || {})
+  };
+  if (!hasTimers()) return fetch(url, opts).then(function (res) {
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res.json();
   });
-}
-
-function fetchText(url, headers) {
-  return fetch(url, {
-    method: "GET",
-    redirect: "follow",
-    headers: Object.assign({}, COMMON_HEADERS, headers || {}),
-    skipSizeCheck: true
-  }).then(function (response) {
-    if (!response.ok) throw new Error("HTTP " + response.status);
-    return response.text();
+  return new Promise(function (resolve, reject) {
+    var timer = setTimeout(function () { reject(new Error("fetch timeout")); }, timeoutMs || 15000);
+    fetch(url, opts).then(function (res) {
+      clearTimeout(timer);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    }).then(function (json) { resolve(json); }, function (e) { clearTimeout(timer); reject(e); });
   });
 }
 
 function tmdbMeta(tmdbId, mediaType) {
-  var kind = mediaType === "tv" ? "tv" : "movie";
-  return fetchJson(
-    "https://api.themoviedb.org/3/" + kind + "/" + encodeURIComponent(String(tmdbId)) + "?api_key=" + TMDB_API_KEY
-  ).then(function (data) {
-    var title = mediaType === "tv" ? data.name : data.title;
-    if (!title) throw new Error("TMDB title not found");
+  var endpoint = mediaType === "tv" ? "tv" : "movie";
+  var url = "https://api.themoviedb.org/3/" + endpoint + "/" + tmdbId + "?api_key=" + TMDB_API_KEY;
+  return fetchJson(url, null, 10000).then(function (data) {
+    if (!data) return { title: "" };
     return {
-      title: title,
-      year: String(mediaType === "tv" ? (data.first_air_date || "") : (data.release_date || "")).slice(0, 4)
+      title: (mediaType === "tv" ? (data.name || data.original_name) : (data.title || data.original_title)) || "",
+      year: data.first_air_date ? String(data.first_air_date).split("-")[0] : (data.release_date ? String(data.release_date).split("-")[0] : "")
     };
-  });
+  }).catch(function () { return { title: "" }; });
 }
 
-function probeBase(base) {
-  return fetchText(base + "/", { "Accept": "text/html,application/xhtml+xml" })
-    .then(function () { return base; });
+function qualityFromResolution(resolution) {
+  var n = parseInt(resolution, 10);
+  if (!n) return "Auto";
+  if (n >= 2160) return "4K";
+  if (n >= 1440) return "1440p";
+  return n + "p";
 }
 
-function resolveBase() {
-  var bases = getBases();
-  var chain = Promise.reject(new Error("no mirror"));
-  for (var i = 0; i < bases.length; i++) {
-    (function (base) {
-      chain = chain.catch(function () { return probeBase(base); });
-    })(bases[i]);
-  }
-  return chain;
+function labelFor(meta, resolution) {
+  var label = meta && meta.title ? meta.title : "NetMirror";
+  if (meta && meta.year) label += " (" + meta.year + ")";
+  return label;
 }
 
-function searchPlatform(base, platformKey, title) {
-  var p = PLATFORM_MAP[platformKey];
-  var url = base + p.search + "?s=" + encodeURIComponent(title) + "&t=" + unixTime();
-  return fetchJson(url, { "Ott": p.ott })
-    .then(function (data) {
-      if (!data || !Array.isArray(data.searchResult) || !data.searchResult.length) return null;
-      return data.searchResult[0];
-    });
-}
+/**
+ * Query one base. Resolves [] when the base is unreachable or reports
+ * noSource (title not on NetMirror).
+ */
+function fetchFromBase(base, tmdbId, mediaType, season, episode, meta) {
+  var type = mediaType === "tv" ? "tv" : "movie";
+  var url = base + "/api/embed-tmdb/" + encodeURIComponent(tmdbId) +
+    "?type=" + type + "&se=" + (season || 1) + "&ep=" + (episode || 1);
 
-function loadPost(base, platformKey, id) {
-  var p = PLATFORM_MAP[platformKey];
-  return fetchJson(
-    base + p.post + "?id=" + encodeURIComponent(id) + "&t=" + unixTime(),
-    { "Ott": p.ott }
-  );
-}
+  return fetchJson(url, { Referer: base + "/" }, 15000).then(function (data) {
+    if (!data || !data.ok || data.noSource) return [];
+    var streams = [];
+    var title = labelFor(meta);
+    var referer = { Referer: base + "/" };
 
-function loadEpisodes(base, platformKey, contentId, postData, season, episode) {
-  var p = PLATFORM_MAP[platformKey];
-  var initial = Array.isArray(postData && postData.episodes) ? postData.episodes.filter(Boolean) : [];
-  var target = null;
-
-  for (var i = 0; i < initial.length; i++) {
-    var item = initial[i];
-    if (item && String(item.s).replace("S", "") == String(season) && String(item.ep).replace("E", "") == String(episode)) {
-      target = item;
-      break;
-    }
-  }
-
-  if (target) return Promise.resolve(target);
-
-  var seasons = Array.isArray(postData && postData.season) ? postData.season : [];
-  var chain = Promise.resolve(null);
-
-  seasons.forEach(function (seasonInfo) {
-    chain = chain.then(function (found) {
-      if (found || !seasonInfo || !seasonInfo.id) return found;
-      var page = 1;
-      function nextPage() {
-        return fetchJson(
-          base + p.episodes + "?s=" + encodeURIComponent(seasonInfo.id) + "&series=" + encodeURIComponent(contentId) + "&t=" + unixTime() + "&page=" + page,
-          { "Ott": p.ott }
-        ).then(function (data) {
-          var eps = Array.isArray(data && data.episodes) ? data.episodes.filter(Boolean) : [];
-          for (var j = 0; j < eps.length; j++) {
-            var ep = eps[j];
-            if (ep && String(ep.s).replace("S", "") == String(season) && String(ep.ep).replace("E", "") == String(episode)) return ep;
-          }
-          if (data && data.nextPageShow && page < 20) {
-            page++;
-            return nextPage();
-          }
-          return null;
-        });
-      }
-      return nextPage().catch(function () { return null; });
-    });
-  });
-
-  return chain;
-}
-
-function getPlaylist(base, platformKey, id, title) {
-  var p = PLATFORM_MAP[platformKey];
-  return fetchJson(
-    base + p.playlist + "?id=" + encodeURIComponent(id) + "&t=" + encodeURIComponent(title) + "&tm=" + unixTime(),
-    { "Ott": p.ott }
-  );
-}
-
-function toStreams(playlist, base, platformKey, title) {
-  if (!Array.isArray(playlist)) return [];
-  var streams = [];
-  var label = platformKey === "primevideo" ? "PrimeVideo" :
-              platformKey === "hotstar" ? "Hotstar" :
-              platformKey === "disney" ? "Disney" : "Netflix";
-
-  playlist.forEach(function (entry) {
-    if (!entry || !Array.isArray(entry.sources)) return;
-    entry.sources.forEach(function (source) {
-      if (!source || !source.file) return;
-      var file = String(source.file);
-      var url = /^https?:\/\//i.test(file) ? file : base + (file.charAt(0) === "/" ? file : "/" + file);
+    var seen = {};
+    function pushStream(u, q) {
+      if (!u || typeof u !== "string") return;
+      if (!/^https?:\/\//i.test(u)) return;
+      if (seen[u]) return;
+      seen[u] = 1;
       streams.push({
-        name: "NetMirror (" + label + ")",
-        title: title + (source.label ? " " + source.label : ""),
-        url: url,
-        quality: source.label || "Auto",
-        headers: {
-          Referer: base + "/home"
-        },
-        provider: "netmirror"
+        name: "NetMirror | " + q,
+        title: title + " | " + q + " | NetMirror CDN",
+        url: u,
+        quality: q,
+        headers: referer
       });
-    });
-  });
+    }
 
-  return streams;
-}
+    // Multi-resolution list first (highest last in API order; keep API order).
+    if (Array.isArray(data.streams)) {
+      data.streams.forEach(function (s) {
+        if (s && s.url) pushStream(s.url, qualityFromResolution(s.resolution));
+      });
+    }
 
-function fetchFromPlatform(base, platformKey, title, mediaType, season, episode) {
-  return searchPlatform(base, platformKey, title).then(function (result) {
-    if (!result || !result.id) return [];
-    return loadPost(base, platformKey, result.id).then(function (postData) {
-      var targetId = result.id;
-      if (mediaType === "tv") {
-        return loadEpisodes(base, platformKey, result.id, postData, season, episode)
-          .then(function (target) {
-            if (!target || !target.id) return [];
-            return getPlaylist(base, platformKey, target.id, title).then(function (playlist) {
-              return toStreams(playlist, base, platformKey, title);
-            });
-          });
+    // Single default mp4 (dedupes against streams[] automatically).
+    if (data.mp4) pushStream(data.mp4, qualityFromResolution(data.resolution));
+
+    // Same-origin HLS fallback.
+    if (data.fallbackHls && typeof data.fallbackHls === "string") {
+      var hls = /^https?:\/\//i.test(data.fallbackHls)
+        ? data.fallbackHls
+        : base + (data.fallbackHls.charAt(0) === "/" ? data.fallbackHls : "/" + data.fallbackHls);
+      pushStream(hls, "Auto");
+    }
+
+    // Captions -> subtitles (max 8, same cap as Streamline).
+    if (Array.isArray(data.captions)) {
+      var subs = [];
+      data.captions.forEach(function (c) {
+        if (c && c.url && /^https?:\/\//i.test(String(c.url)) && subs.length < 8) {
+          subs.push({ url: String(c.url), language: String(c.lang || c.language || "en"), name: String(c.name || c.lang || "Subtitles") });
+        }
+      });
+      if (subs.length) {
+        streams.forEach(function (s) { s.subtitles = subs; });
       }
-      return getPlaylist(base, platformKey, targetId, title).then(function (playlist) {
-        return toStreams(playlist, base, platformKey, title);
-      });
-    });
+    }
+
+    return streams;
+  }).catch(function () {
+    return []; // base unreachable -> try next
   });
 }
 
 function getStreams(tmdbId, mediaType, season, episode) {
-  console.log("[NetMirror] start " + mediaType + " " + tmdbId);
+  console.log("[NetMirror] start " + mediaType + " " + tmdbId + " S" + season + "E" + episode);
+  try { tmdbId = String(tmdbId); } catch (e) { tmdbId = ""; }
+  if (!tmdbId) return Promise.resolve([]);
 
-  return tmdbMeta(tmdbId, mediaType)
-    .then(function (meta) {
-      return resolveBase().then(function (base) {
-        console.log("[NetMirror] mirror " + base);
-        var platforms = ["netflix", "primevideo", "hotstar", "disney"];
-        var configured = settings().platform;
-        if (configured && PLATFORM_MAP[configured]) {
-          platforms = [configured].concat(platforms.filter(function (p) { return p !== configured; }));
-        }
+  var customBase = settings().baseUrl;
+  var bases = (customBase && /^https?:\/\//i.test(String(customBase)))
+    ? [String(customBase).replace(/\/+$/, "")].concat(CANDIDATE_BASES)
+    : CANDIDATE_BASES;
 
-        var chain = Promise.reject([]);
-        platforms.forEach(function (platformKey) {
-          chain = chain.then(function (existing) {
-            if (existing && existing.length) return existing;
-            return fetchFromPlatform(base, platformKey, meta.title, mediaType, season, episode)
-              .catch(function (error) {
-                console.log("[NetMirror] " + platformKey + " failed: " + (error && error.message ? error.message : error));
-                return [];
-              });
-          });
-        });
-        return chain;
+  return tmdbMeta(tmdbId, mediaType).then(function (meta) {
+    var chain = Promise.resolve([]);
+    bases.forEach(function (base) {
+      chain = chain.then(function (existing) {
+        if (existing && existing.length) return existing;
+        return fetchFromBase(base, tmdbId, mediaType, season, episode, meta);
       });
-    })
-    .catch(function (error) {
-      console.log("[NetMirror] failed: " + (error && error.message ? error.message : error));
-      return [];
     });
+    return chain.then(function (streams) {
+      console.log("[NetMirror] returning " + streams.length + " stream(s)");
+      return streams;
+    });
+  }).catch(function (error) {
+    console.log("[NetMirror] failed: " + (error && error.message ? error.message : error));
+    return [];
+  });
 }
 
 function onSettings() {
@@ -287,16 +192,10 @@ function onSettings() {
     {
       key: "baseUrl",
       title: "NetMirror base URL (optional)",
+      label: "NetMirror base URL (optional)",
       type: "text",
       default: "",
       description: "Leave blank to use automatic mirror fallback."
-    },
-    {
-      key: "platform",
-      title: "Preferred platform",
-      type: "select",
-      options: ["netflix", "primevideo", "hotstar", "disney"],
-      default: "netflix"
     }
   ]);
 }

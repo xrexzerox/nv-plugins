@@ -838,22 +838,31 @@ function getTMDBDetails(tmdbId, mediaType) {
 }
 
 // Validate if a video URL is working (not 404 or broken)
+// NOTE: uses a 1-byte Range GET instead of HEAD - several CDNs (r2.dev,
+// mxcontent, ...) reject HEAD outright or 403 datacenter probes while the
+// actual media GET plays fine on device. Only clear dead-link statuses
+// (404/410) and hard 5xx fail validation.
 function validateVideoUrl(url, timeout = 10000) {
     console.log(`[DVDPlay] Validating URL: ${url.substring(0, 100)}...`);
 
     return fetch(url, {
-        method: 'HEAD',
+        method: 'GET',
         headers: {
             'Range': 'bytes=0-1',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         },
-        signal: AbortSignal.timeout(timeout)
+        redirect: 'follow',
+        signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(timeout) : undefined
     }).then(response => {
-        if (response.ok || response.status === 206) {
-            console.log(`[DVDPlay] ✓ URL validation successful (${response.status})`);
+        const status = response.status;
+        try { if (response.body && typeof response.cancel === 'function') response.cancel(); } catch (e) {}
+        if (response.ok || status === 206 || status === 302 || status === 403) {
+            // 403 = CDN blocks this probe client (common for r2.dev from
+            // datacenter IPs); the signed/embedded media URL itself is fine.
+            console.log(`[DVDPlay] ✓ URL validation successful (${status})`);
             return true;
         } else {
-            console.log(`[DVDPlay] ✗ URL validation failed with status: ${response.status}`);
+            console.log(`[DVDPlay] ✗ URL validation failed with status: ${status}`);
             return false;
         }
     }).catch(error => {

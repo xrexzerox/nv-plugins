@@ -41,6 +41,21 @@ function getImdbId(tmdbId, mediaType) {
     .catch(function() { return null; });
 }
 
+function getTmdbTitle(tmdbId, mediaType) {
+  var url = "https://api.themoviedb.org/3/" + (mediaType === "tv" ? "tv" : "movie") + "/" + tmdbId + "?api_key=" + TMDB_API_KEY;
+  return fetch(url, { skipSizeCheck: true })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      return (mediaType === "tv" ? (data.name || data.original_name) : (data.title || data.original_title)) || null;
+    })
+    .catch(function() { return null; });
+}
+
+function normalizeTitleForMatch(t) {
+  return String(t || "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 function resolveMapping(imdbId, season, episode) {
   var url = "https://id-mapping-api-malid.hf.space/api/resolve?id=" + imdbId + "&s=" + season + "&e=" + episode;
   return fetch(url, { skipSizeCheck: true })
@@ -191,15 +206,26 @@ function getStreams(tmdbId, mediaType, season, episode) {
         })
         .then(function(mapping) {
           console.log("[AnimePahe] MAL mapping:", mapping);
-          if (!mapping || !mapping.mal_id) {
-            resolve([]);
-            return Promise.reject("No MAL mapping");
+          if (mapping && mapping.mal_id) {
+            targetMalId = mapping.mal_id;
+            mappedEp = mapping.mal_episode || episode;
+            return getMalTitle(targetMalId);
           }
-          targetMalId = mapping.mal_id;
-          mappedEp = mapping.mal_episode || episode;
-          return getMalTitle(targetMalId);
+          // Fallback: the MAL id-mapping service is unreachable. Search
+          // animepahe directly with the TMDB title and use the episode
+          // number as-is (correct for S1 and non-split seasons).
+          console.log("[AnimePahe] mapper unavailable, falling back to TMDB title search");
+          return getTmdbTitle(tmdbId, mediaType).then(function(t) {
+            if (!t) {
+              resolve([]);
+              return Promise.reject("No MAL mapping and no TMDB title");
+            }
+            animeTitle = t;
+            return null; // skip getMalTitle step
+          });
         })
         .then(function(title) {
+          if (title === null) return searchAnime(animeTitle); // fallback path
           animeTitle = title;
           console.log("[AnimePahe] MAL title:", animeTitle);
           if (!animeTitle) {
@@ -216,6 +242,17 @@ function getStreams(tmdbId, mediaType, season, episode) {
                 return Promise.resolve();
               }
               var item = searchResults.data[idx];
+              if (!targetMalId) {
+                // Fallback mode: match by title instead of the MAL link.
+                var a = normalizeTitleForMatch(item.title);
+                var b = normalizeTitleForMatch(animeTitle);
+                if (a === b || (a.length && b.length && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1))) {
+                  animeSession = item.session;
+                  console.log("[AnimePahe] Found session by title:", animeSession);
+                  return Promise.resolve();
+                }
+                return checkNext(idx + 1);
+              }
               return fetchText("/anime/" + item.session).then(function(pageHtml) {
                 if (pageHtml.indexOf("myanimelist.net/anime/" + targetMalId) !== -1) {
                   animeSession = item.session;
