@@ -29,7 +29,7 @@ var require_core = __commonJS({
   "addons/asian-catalog/core.js"(exports) {
     (function(global) {
       "use strict";
-      var VERSION = "2.0.0";
+      var VERSION = "2.1.0";
       var ADDON_ID = "community.asianhub.catalog";
       var DEFAULT_SITE = "https://pinoymovieshub.win";
       var DEFAULT_MATV_SITE = "https://myasiantv.com.lv";
@@ -41,6 +41,11 @@ var require_core = __commonJS({
       var BASE_HEADERS = {
         "User-Agent": UA,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9"
+      };
+      var ALT_HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Mobile Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9"
       };
       var PAGE_LIMIT_DEFAULT = 20;
@@ -83,12 +88,108 @@ var require_core = __commonJS({
         "Wattpad",
         "Web Series"
       ];
+      var TMDB_GENRES_MOVIE = {
+        28: "Action",
+        12: "Adventure",
+        16: "Animation",
+        35: "Comedy",
+        80: "Crime",
+        99: "Documentary",
+        18: "Drama",
+        10751: "Family",
+        14: "Fantasy",
+        36: "History",
+        27: "Horror",
+        10402: "Music",
+        9648: "Mystery",
+        10749: "Romance",
+        878: "Science Fiction",
+        10770: "TV Movie",
+        53: "Thriller",
+        10752: "War",
+        37: "Western"
+      };
+      var TMDB_GENRES_TV = {
+        10759: "Action & Adventure",
+        16: "Animation",
+        35: "Comedy",
+        80: "Crime",
+        99: "Documentary",
+        18: "Drama",
+        10751: "Family",
+        10762: "Kids",
+        9648: "Mystery",
+        10763: "News",
+        10764: "Reality",
+        10765: "Sci-Fi & Fantasy",
+        10766: "Soap",
+        10767: "Talk",
+        10768: "War & Politics",
+        37: "Western"
+      };
+      var COUNTRY_BY_CODE = {
+        KR: "South Korea",
+        KP: "North Korea",
+        CN: "China",
+        TW: "Taiwan",
+        HK: "Hong Kong",
+        JP: "Japan",
+        TH: "Thailand",
+        IN: "India",
+        PH: "Philippines",
+        ID: "Indonesia",
+        MY: "Malaysia",
+        SG: "Singapore",
+        VN: "Vietnam",
+        MN: "Mongolia",
+        NP: "Nepal"
+      };
+      var COUNTRY_BY_LANG = {
+        ko: "South Korea",
+        zh: "China",
+        ja: "Japan",
+        th: "Thailand",
+        tl: "Philippines",
+        fil: "Philippines",
+        hi: "India",
+        ta: "India",
+        te: "India",
+        ml: "India",
+        id: "Indonesia",
+        ms: "Malaysia"
+      };
+      function genresFromIds(type, ids) {
+        var map = type === "movie" ? TMDB_GENRES_MOVIE : TMDB_GENRES_TV;
+        var out = [];
+        for (var i = 0; i < (ids || []).length && out.length < 5; i++) {
+          var name = map[ids[i]];
+          if (name && out.indexOf(name) === -1)
+            out.push(name);
+        }
+        return out;
+      }
+      function countryFromCandidate(cand) {
+        var names = [];
+        for (var i = 0; i < (cand.origin || []).length; i++) {
+          var n = COUNTRY_BY_CODE[cand.origin[i]];
+          if (n && names.indexOf(n) === -1)
+            names.push(n);
+        }
+        if (!names.length && cand.lang && COUNTRY_BY_LANG[cand.lang]) {
+          names.push(COUNTRY_BY_LANG[cand.lang]);
+        }
+        return names;
+      }
       var pageCache = /* @__PURE__ */ new Map();
       var resolvedCache = /* @__PURE__ */ new Map();
       var buffers = /* @__PURE__ */ new Map();
       var bufferInflight = /* @__PURE__ */ new Map();
       var tmdbInflight = /* @__PURE__ */ new Map();
-      var CACHE_CAPS = { page: 250, resolved: 4e3, buffers: 80 };
+      var detailsCache = /* @__PURE__ */ new Map();
+      var detailsInflight = /* @__PURE__ */ new Map();
+      var DETAILS_TTL = 24 * 60 * 60 * 1e3;
+      var healthCache = { ts: 0, data: null };
+      var CACHE_CAPS = { page: 250, resolved: 4e3, buffers: 80, details: 4e3 };
       function cachePrune(map, cap) {
         if (map.size <= cap)
           return;
@@ -106,6 +207,10 @@ var require_core = __commonJS({
         buffers.clear();
         bufferInflight.clear();
         tmdbInflight.clear();
+        detailsCache.clear();
+        detailsInflight.clear();
+        healthCache.ts = 0;
+        healthCache.data = null;
       }
       function makeConfig(env) {
         env = env || {};
@@ -402,19 +507,50 @@ var require_core = __commonJS({
         }
         return items;
       }
-      function fetchText(cfg, url, timeoutMs) {
+      function looksChallenged(body) {
+        return /just a moment|cf-browser-verification|cf-chl|challenge-platform|attention required|ddos-guard|enable javascript and cookies/i.test(String(body || "").substring(0, 4e3));
+      }
+      function fetchOnce(cfg, url, timeoutMs, headers) {
         if (!cfg.fetchFn)
           return Promise.reject(new Error("no fetch available"));
-        var opts = { method: "GET", redirect: "follow", headers: BASE_HEADERS };
+        var opts = { method: "GET", redirect: "follow", headers: headers || BASE_HEADERS };
         if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
-          opts.signal = AbortSignal.timeout(timeoutMs || 2e4);
+          opts.signal = AbortSignal.timeout(timeoutMs);
         }
         return Promise.resolve().then(function() {
           return cfg.fetchFn(url, opts);
-        }).then(function(res) {
-          if (!res.ok)
+        });
+      }
+      function fetchText(cfg, url, timeoutMs) {
+        var t = timeoutMs || 2e4;
+        return fetchOnce(cfg, url, t, BASE_HEADERS).then(function(res) {
+          if (!res.ok) {
+            if (res.status === 403 || res.status === 429 || res.status === 503) {
+              return fetchOnce(cfg, url, t, ALT_HEADERS).then(function(r2) {
+                if (!r2.ok)
+                  throw new Error("HTTP " + res.status + "/" + r2.status + " for " + url);
+                return r2.text();
+              }).then(function(body) {
+                if (looksChallenged(body))
+                  throw new Error("HTTP " + res.status + " challenge for " + url);
+                return body;
+              });
+            }
             throw new Error("HTTP " + res.status + " for " + url);
-          return res.text();
+          }
+          return res.text().then(function(body) {
+            if (!looksChallenged(body))
+              return body;
+            return fetchOnce(cfg, url, t, ALT_HEADERS).then(function(r2) {
+              if (!r2.ok)
+                throw new Error("HTTP " + r2.status + " challenge for " + url);
+              return r2.text();
+            }).then(function(body2) {
+              if (looksChallenged(body2))
+                throw new Error("challenge page for " + url);
+              return body2;
+            });
+          });
         });
       }
       function fetchJson(cfg, url) {
@@ -488,11 +624,12 @@ var require_core = __commonJS({
               poster: r.poster_path || "",
               backdrop: r.backdrop_path || "",
               overview: r.overview || "",
-              rating: typeof r.vote_average === "number" && r.vote_average > 0 ? r.vote_average : 0
+              rating: typeof r.vote_average === "number" && r.vote_average > 0 ? r.vote_average : 0,
+              genreIds: Array.isArray(r.genre_ids) ? r.genre_ids : [],
+              lang: r.original_language || "",
+              origin: Array.isArray(r.origin_country) ? r.origin_country : []
             };
           });
-        }).catch(function() {
-          return [];
         });
       }
       function titleScore(siteNorm, tmdbNorm) {
@@ -615,6 +752,118 @@ var require_core = __commonJS({
           return out;
         });
       }
+      function tmdbDetails(cfg, kind, id) {
+        var key = kind + ":" + id;
+        var now = cfg.nowFn();
+        var hit = detailsCache.get(key);
+        if (hit && now - hit.ts < DETAILS_TTL)
+          return Promise.resolve(hit.value);
+        var pending = detailsInflight.get(key);
+        if (pending)
+          return pending;
+        var url = "https://api.themoviedb.org/3/" + kind + "/" + id + "?api_key=" + encodeURIComponent(cfg.tmdbKey) + "&append_to_response=credits";
+        pending = fetchJson(cfg, url).then(function(d) {
+          var info = { runtime: 0, genres: [], countries: [], cast: [], directors: [] };
+          if (d) {
+            var g = Array.isArray(d.genres) ? d.genres : [];
+            for (var i = 0; i < g.length; i++) {
+              if (g[i] && g[i].name)
+                info.genres.push(g[i].name);
+            }
+            if (kind === "movie") {
+              if (typeof d.runtime === "number" && d.runtime > 0)
+                info.runtime = d.runtime;
+              var pc = Array.isArray(d.production_countries) ? d.production_countries : [];
+              for (var j = 0; j < pc.length; j++) {
+                if (pc[j] && pc[j].name && info.countries.indexOf(pc[j].name) === -1)
+                  info.countries.push(pc[j].name);
+              }
+            } else {
+              var ert = Array.isArray(d.episode_run_time) ? d.episode_run_time : [];
+              for (var k = 0; k < ert.length; k++) {
+                if (typeof ert[k] === "number" && ert[k] > 0) {
+                  info.runtime = ert[k];
+                  break;
+                }
+              }
+              var oc = Array.isArray(d.origin_country) ? d.origin_country : [];
+              for (var c = 0; c < oc.length; c++) {
+                var cn = COUNTRY_BY_CODE[oc[c]];
+                if (cn && info.countries.indexOf(cn) === -1)
+                  info.countries.push(cn);
+              }
+            }
+            var cr = d.credits || {};
+            var ca = Array.isArray(cr.cast) ? cr.cast : [];
+            for (var m = 0; m < ca.length && info.cast.length < 6; m++) {
+              if (ca[m] && ca[m].name)
+                info.cast.push(ca[m].name);
+            }
+            var cw = Array.isArray(cr.crew) ? cr.crew : [];
+            for (var n = 0; n < cw.length && info.directors.length < 2; n++) {
+              if (cw[n] && cw[n].job === "Director" && cw[n].name && info.directors.indexOf(cw[n].name) === -1) {
+                info.directors.push(cw[n].name);
+              }
+            }
+          }
+          detailsCache.set(key, { ts: now, value: info });
+          cachePrune(detailsCache, CACHE_CAPS.details);
+          detailsInflight.delete(key);
+          return info;
+        }).catch(function(err) {
+          detailsInflight.delete(key);
+          throw err;
+        });
+        detailsInflight.set(key, pending);
+        return pending;
+      }
+      function enrichMetaWithDetails(cfg, meta, type, tmdbId) {
+        if (!meta || String(meta.id).indexOf("tmdb:") !== 0)
+          return Promise.resolve(meta);
+        var kind = type === "movie" ? "movie" : "tv";
+        return tmdbDetails(cfg, kind, tmdbId).then(function(d) {
+          if (d.runtime > 0 && !meta.runtime)
+            meta.runtime = d.runtime + " min";
+          if (d.genres.length && !meta.genres) {
+            meta.genres = d.genres.slice(0, 5);
+            meta.genre = meta.genres.join(", ");
+          }
+          if (d.countries.length && !meta.country)
+            meta.country = d.countries.slice(0, 2).join(", ");
+          if (d.cast.length && !meta.cast)
+            meta.cast = d.cast;
+          if (d.directors.length && type === "movie" && !meta.director)
+            meta.director = d.directors;
+          return meta;
+        }).catch(function() {
+          return meta;
+        });
+      }
+      function unmatchedMetaId(item) {
+        var norm = normalizeForCompare(cleanTitleForSearch(item.title));
+        var tail = (norm || item.slug || "").replace(/\s+/g, "-") || "untitled";
+        return "asian:" + (item.source || "pinoy") + ":" + tail;
+      }
+      function buildUnmatchedMeta(cfg, item) {
+        var type = item.type === "series" ? "series" : "movie";
+        var name = cleanDisplayName(item.title);
+        if (!name)
+          return null;
+        var meta = {
+          id: unmatchedMetaId(item),
+          type,
+          name,
+          posterShape: "poster"
+        };
+        var sitePoster = cleanPosterUrl(cfg, item.poster);
+        if (sitePoster)
+          meta.poster = sitePoster;
+        if (item.description)
+          meta.description = item.description;
+        if (item.year)
+          meta.releaseInfo = String(item.year);
+        return meta;
+      }
       function toMeta(cfg, item, tmdb) {
         var type = item.type === "series" ? "series" : "movie";
         var name = cleanDisplayName(item.title);
@@ -634,35 +883,40 @@ var require_core = __commonJS({
             meta.background = bg;
           if (tmdb.overview)
             meta.description = tmdb.overview;
+          else if (item.description)
+            meta.description = item.description;
           var rel = item.year || tmdb.year;
           if (rel)
             meta.releaseInfo = String(rel);
           if (tmdb.rating)
             meta.imdbRating = Math.round(tmdb.rating * 10) / 10;
+          var genres = genresFromIds(type, tmdb.genreIds);
+          if (genres.length) {
+            meta.genres = genres;
+            meta.genre = genres.join(", ");
+          }
+          var country = countryFromCandidate(tmdb);
+          if (country.length)
+            meta.country = country.join(", ");
           return meta;
         }
         if (!cfg.keepUnmatched)
           return null;
-        var fallbackMeta = {
-          id: "asian:" + (item.source || "pinoy") + ":" + (item.slug || ""),
-          type,
-          name,
-          posterShape: "poster"
-        };
-        if (sitePoster)
-          fallbackMeta.poster = sitePoster;
-        if (item.description)
-          fallbackMeta.description = item.description;
-        if (item.year)
-          fallbackMeta.releaseInfo = String(item.year);
-        return fallbackMeta;
+        return buildUnmatchedMeta(cfg, item);
       }
       function resolveBatch(cfg, items) {
         return mapLimited(items, TMDB_CONCURRENCY, function(item) {
           return resolveTmdb(cfg, item.type, item.title, item.year).then(function(tmdb) {
-            return toMeta(cfg, item, tmdb);
+            var meta = toMeta(cfg, item, tmdb);
+            if (!meta)
+              return null;
+            var idStr = String(meta.id);
+            if (idStr.indexOf("tmdb:") === 0) {
+              return enrichMetaWithDetails(cfg, meta, item.type, idStr.substring(5));
+            }
+            return meta;
           }).catch(function() {
-            return null;
+            return buildUnmatchedMeta(cfg, item);
           });
         });
       }
@@ -963,7 +1217,74 @@ var require_core = __commonJS({
         var rows = defs.map(function(c) {
           return "<tr><td><code>" + c.type + "</code></td><td>" + c.name + "</td><td><code>/catalog/" + c.type + "/" + c.id + ".json</code></td></tr>";
         }).join("");
-        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Asian Catalog</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,sans-serif;max-width:860px;margin:40px auto;padding:0 16px;color:#eee;background:#14141b}a{color:#7ab8ff}table{border-collapse:collapse;width:100%}td,th{border:1px solid #333;padding:8px;text-align:left;font-size:14px}code{color:#9ef}</style></head><body><h1>Asian Catalog <small>v' + VERSION + '</small></h1><p>Stremio-protocol catalog addon built for Nuvio. Sources: <a href="' + cfg.site + '">pinoymovieshub.win</a> (Pinoy), <a href="' + cfg.matvSite + '">myasiantv.com.lv</a> (Asian dramas) and <a href="' + cfg.dcSite + '">dramacool.uno</a> (Asian movies & dramas by country).</p><p>Add this manifest URL in Nuvio (Settings &rarr; Addons): <b>' + (cfg.__selfUrl || "https://your-deployment") + "/manifest.json</b></p><h2>Catalogs</h2><table><tr><th>Type</th><th>Name</th><th>Endpoint</th></tr>" + rows + "</table><h2>Extras</h2><p>Search: <code>/catalog/series/asian-dramas/search=crash landing.json</code> &middot; Country: <code>/catalog/movie/asian-movies/genre=Korean&amp;skip=20.json</code></p><p>Pair with the <b>PinoyMoviesHub</b> and <b>AsianHub</b> Nuvio plugins (providers/pinoyhub.js and providers/asianhub.js in xrexzerox/nv-plugins) for playable streams.</p></body></html>";
+        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Asian Catalog</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,sans-serif;max-width:860px;margin:40px auto;padding:0 16px;color:#eee;background:#14141b}a{color:#7ab8ff}table{border-collapse:collapse;width:100%}td,th{border:1px solid #333;padding:8px;text-align:left;font-size:14px}code{color:#9ef}</style></head><body><h1>Asian Catalog <small>v' + VERSION + '</small></h1><p>Stremio-protocol catalog addon built for Nuvio. Sources: <a href="' + cfg.site + '">pinoymovieshub.win</a> (Pinoy), <a href="' + cfg.matvSite + '">myasiantv.com.lv</a> (Asian dramas) and <a href="' + cfg.dcSite + '">dramacool.uno</a> (Asian movies & dramas by country).</p><p>Add this manifest URL in Nuvio (Settings &rarr; Addons): <b>' + (cfg.__selfUrl || "https://your-deployment") + '/manifest.json</b></p><p>Deployment diagnostics: <a href="/health"><code>/health</code></a> &mdash; live-checks pinoymovieshub / myasiantv / dramacool / TMDB from this runtime and explains what to fix when catalogs come back empty.</p><h2>Catalogs</h2><table><tr><th>Type</th><th>Name</th><th>Endpoint</th></tr>' + rows + "</table><h2>Extras</h2><p>Search: <code>/catalog/series/asian-dramas/search=crash landing.json</code> &middot; Country: <code>/catalog/movie/asian-movies/genre=Korean&amp;skip=20.json</code></p><p>Pair with the <b>PinoyMoviesHub</b> and <b>AsianHub</b> Nuvio plugins (providers/pinoyhub.js and providers/asianhub.js in xrexzerox/nv-plugins) for playable streams.</p></body></html>";
+      }
+      function checkSource(cfg, label, url, parser) {
+        var t0 = cfg.nowFn();
+        return fetchText(cfg, url, 12e3).then(function(raw) {
+          var items = parseWithParser(cfg, parser, raw);
+          return { label, ok: true, ms: cfg.nowFn() - t0, items: items.length, url, error: null };
+        }).catch(function(err) {
+          return { label, ok: false, ms: cfg.nowFn() - t0, items: 0, url, error: String(err && err.message || err) };
+        });
+      }
+      function checkTmdb(cfg) {
+        var t0 = cfg.nowFn();
+        return tmdbSearch(cfg, "tv", "Crash Landing on You", "2019").then(function(results) {
+          return { label: "tmdb", ok: true, ms: cfg.nowFn() - t0, items: results.length, url: "https://api.themoviedb.org", error: null };
+        }).catch(function(err) {
+          return { label: "tmdb", ok: false, ms: cfg.nowFn() - t0, items: 0, url: "https://api.themoviedb.org", error: String(err && err.message || err) };
+        });
+      }
+      function healthCheck(cfg) {
+        var now = cfg.nowFn();
+        if (healthCache.data && now - healthCache.ts < 6e4)
+          return Promise.resolve(healthCache.data);
+        return Promise.all([
+          checkSource(cfg, "pinoymovieshub", cfg.site + "/movies/", "pinoy"),
+          checkSource(cfg, "myasiantv", cfg.matvSite + "/most-popular-drama/", "matv"),
+          checkSource(cfg, "dramacool", cfg.dcSite + "/country/korean-drama", "dc"),
+          checkTmdb(cfg)
+        ]).then(function(results) {
+          var sites = results.slice(0, 3);
+          var tmdb = results[3];
+          var sitesOk = 0;
+          for (var i = 0; i < sites.length; i++) {
+            if (sites[i].ok && sites[i].items > 0)
+              sitesOk++;
+          }
+          var status = sitesOk === 0 ? "down" : sitesOk < 3 || !tmdb.ok || tmdb.items === 0 ? "degraded" : "ok";
+          var hints = [];
+          if (sitesOk === 0) {
+            hints.push("All three source sites are unreachable from this deployment - the hosting IP is likely blocked or region-locked. Redeploy the worker in another region or point PINOYHUB_SITE / MYASIANTV_SITE / DRAMACOOL_SITE env vars at working mirrors.");
+          } else {
+            for (var j = 0; j < sites.length; j++) {
+              if (!sites[j].ok) {
+                hints.push(sites[j].label + " unreachable (" + sites[j].error + ") - catalogs from this source error out; the others keep working. Set its *_SITE env var to a working mirror.");
+              } else if (sites[j].items === 0) {
+                hints.push(sites[j].label + " reachable but 0 items parsed - the site template changed or a challenge page was served; catalogs from this source may be empty.");
+              }
+            }
+          }
+          if (!tmdb.ok) {
+            hints.push("TMDB unreachable or key rejected (" + tmdb.error + ") - catalogs fall back to site-only rows (asian:* ids) that may not resolve for playback. Set your own v3 key via the TMDB_API_KEY secret.");
+          } else if (tmdb.items === 0) {
+            hints.push("TMDB reachable but the probe search returned 0 results - check that TMDB_API_KEY is a valid v3 key.");
+          }
+          if (!hints.length)
+            hints.push("All sources and TMDB reachable - if Nuvio still shows nothing, make sure the manifest URL you installed is THIS deployment (https://<worker>/manifest.json), not a GitHub/local path, and that the plugin manifest (repo manifest.json with PinoyMoviesHub + AsianHub) is installed for playback.");
+          var data = {
+            version: VERSION,
+            addonId: ADDON_ID,
+            status,
+            healthy: status === "ok",
+            sources: results,
+            hints
+          };
+          healthCache.ts = now;
+          healthCache.data = data;
+          return data;
+        });
       }
       function handle(urlString, env) {
         var cfg = makeConfig(env || {});
@@ -987,6 +1308,11 @@ var require_core = __commonJS({
           }
           if (path === "/manifest.json") {
             return Promise.resolve(json(manifest(cfg), 200, 300));
+          }
+          if (path === "/health" || path === "/health.json") {
+            return healthCheck(cfg).then(function(h) {
+              return json(h, h.status === "down" ? 503 : 200, 15);
+            });
           }
           var m = path.match(/^\/catalog\/(movie|series|tv)\/([a-z0-9-]+)(?:\/([^/]*))?\.json$/i);
           if (!m) {
@@ -1027,6 +1353,10 @@ var require_core = __commonJS({
         yearScore,
         pickBestTmdb,
         toMeta,
+        buildUnmatchedMeta,
+        unmatchedMetaId,
+        tmdbDetails,
+        healthCheck,
         slugifyGenre
       };
       global.AsianCatalogCore = exported;

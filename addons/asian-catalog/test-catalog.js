@@ -246,9 +246,36 @@ function makeMockFetch() {
         poster_path: '/' + q.replace(/\s+/g, '-') + '.jpg',
         backdrop_path: '/' + q.replace(/\s+/g, '-') + '-bg.jpg',
         overview: 'Mock overview for ' + entry.title + '.',
-        vote_average: 7.3
+        vote_average: 7.3,
+        genre_ids: kind === 'tv' ? [18, 10765] : [53, 18],
+        original_language: 'ko',
+        origin_country: kind === 'tv' ? ['KR'] : undefined
       }] : [];
       return Promise.resolve(new Response(JSON.stringify({ results }), { status: 200 }));
+    }
+    if (/api\.themoviedb\.org\/3\/(movie|tv)\/\d+\?/.test(url)) {
+      // details + credits enrichment (v2.1.0)
+      const kind = url.indexOf('/3/tv/') !== -1 ? 'tv' : 'movie';
+      const body = kind === 'tv' ? {
+        id: 99910,
+        genres: [{ id: 18, name: 'Drama' }, { id: 10765, name: 'Sci-Fi & Fantasy' }],
+        episode_run_time: [64],
+        origin_country: ['KR'],
+        credits: {
+          cast: [{ name: 'Hyun Bin' }, { name: 'Son Ye-jin' }, { name: null }],
+          crew: [{ name: 'Lee Jeong-hyo', job: 'Director' }, { name: 'Park Ji-eun', job: 'Writer' }]
+        }
+      } : {
+        id: 99913,
+        genres: [{ id: 53, name: 'Thriller' }, { id: 18, name: 'Drama' }],
+        runtime: 132,
+        production_countries: [{ iso_3166_1: 'KR', name: 'South Korea' }],
+        credits: {
+          cast: [{ name: 'Song Kang-ho' }, { name: 'Lee Sun-kyun' }],
+          crew: [{ name: 'Bong Joon-ho', job: 'Director' }, { name: 'Han Jin-won', job: 'Writer' }]
+        }
+      };
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
     }
     let m = url.match(new RegExp('^' + SITE + '/(?:' + 'movies|series' + ')(?:/page/(\\d+))?/?$'));
     if (m) {
@@ -520,6 +547,56 @@ async function offlineTests() {
   check('pinoyhub ids keep site metadata',
     pinoyIds.length === 0 || pinoyIds.every((m) => (m.description === undefined || typeof m.description === 'string') && !!m.releaseInfo),
     pinoyIds[0]);
+
+  section('metadata enrichment (details + credits)');
+  Core.resetCaches();
+  const en = await getJSON(makeMockFetch(), '/catalog/series/asian-dramas.json');
+  const en0 = en.body.metas[0];
+  check('tv meta gains genres array (details beats genre_ids)', Array.isArray(en0.genres) && en0.genres.indexOf('Drama') !== -1, en0.genres);
+  check('tv meta gains genre string alias', typeof en0.genre === 'string' && en0.genre.length > 0, en0.genre);
+  check('tv meta gains country from origin_country', en0.country === 'South Korea', en0.country);
+  check('tv meta gains episode runtime', en0.runtime === '64 min', en0.runtime);
+  check('tv meta gains cast (null names skipped)', Array.isArray(en0.cast) && en0.cast.indexOf('Hyun Bin') !== -1 && en0.cast.indexOf(null) === -1, en0.cast);
+  check('tv meta has no director field', en0.director === undefined);
+  Core.resetCaches();
+  const enM = await getJSON(makeMockFetch(), '/catalog/movie/asian-movies/genre=Korean.json');
+  const par = enM.body.metas.find((m) => m.id === 'tmdb:99913');
+  check('movie meta gains runtime', !!par && par.runtime === '132 min', par);
+  check('movie meta gains director from credits', !!par && Array.isArray(par.director) && par.director[0] === 'Bong Joon-ho', par && par.director);
+  check('movie meta gains production country', !!par && par.country === 'South Korea', par && par.country);
+  check('movie meta genres from details', !!par && Array.isArray(par.genres) && par.genres.indexOf('Thriller') !== -1, par && par.genres);
+
+  section('TMDB outage keeps catalog visible (no more silent empties)');
+  Core.resetCaches();
+  const outageBase = makeMockFetch();
+  const outageFetch = (url) => {
+    if (url.indexOf('themoviedb') !== -1) return Promise.resolve(new Response(JSON.stringify({ status_message: 'Internal error' }), { status: 500 }));
+    return outageBase(url);
+  };
+  outageFetch.calls = outageBase.calls;
+  const out = await getJSON(outageFetch, '/catalog/series/asian-dramas/search=crash%20landing.json');
+  check('outage search responds 200 (not 502)', out.status === 200, out.status);
+  check('outage search still returns rows', out.body.metas.length >= 1, out.body);
+  check('outage rows use asian: ids', out.body.metas.every((m) => m.id.indexOf('asian:matv:') === 0), out.body.metas.map((m) => m.id));
+  check('outage episode posts still collapse (norm-title id)', out.body.metas.length === 1 && out.body.metas[0].id === 'asian:matv:crash-landing-on-you', out.body.metas);
+  check('outage rows keep site name + year', out.body.metas.length === 1 && out.body.metas[0].name === 'Crash Landing on You (2019)' && out.body.metas[0].releaseInfo === '2019', out.body.metas[0]);
+  check('outage wp-json rows tolerate missing art (search JSON carries none)', out.body.metas.length === 1 && out.body.metas[0].poster === undefined, out.body.metas[0] && out.body.metas[0].poster);
+  const outP = await getJSON(outageFetch, '/catalog/movie/pinoy-movies/search=love%20ngo.json');
+  check('outage pinoy rows keep site poster art', outP.status === 200 && outP.body.metas.length >= 1 && outP.body.metas.every((m) => (m.poster || '').indexOf('test-site.local') !== -1), outP.body.metas && outP.body.metas.map((m) => m.poster));
+
+  section('/health diagnostics');
+  Core.resetCaches();
+  const h1 = await getJSON(makeMockFetch(), '/health');
+  check('health responds 200', h1.status === 200, h1.status);
+  check('health reports version + addonId', h1.body.version === Core.VERSION && h1.body.addonId === 'community.asianhub.catalog', h1.body);
+  check('health checks 4 dependencies', Array.isArray(h1.body.sources) && h1.body.sources.length === 4, h1.body.sources && h1.body.sources.map((s) => s.label));
+  check('health all-ok offline', h1.body.status === 'ok' && h1.body.healthy === true, h1.body.status);
+  check('health items counted', h1.body.sources.every((s) => s.ok && s.items > 0), h1.body.sources);
+  Core.resetCaches();
+  const h2 = await getJSON(outageFetch, '/health');
+  check('health flags degraded on TMDB outage', h2.body.status === 'degraded' && h2.body.healthy === false, h2.body.status);
+  check('health tmdb check fails with error', h2.body.sources[3].ok === false && /HTTP 500/.test(h2.body.sources[3].error || ''), h2.body.sources[3]);
+  check('health hints mention TMDB key', h2.body.hints.some((t) => /TMDB_API_KEY/.test(t)), h2.body.hints);
 }
 
 // ============================================================
@@ -588,6 +665,27 @@ async function liveTests() {
   const ladc = await Core.handle('https://self.local/catalog/series/asian-dramas-country/genre=Thai.json', {});
   const ladcBody = await ladc.json();
   check('asian-dramas-country Thai 200', ladc.status === 200, ladc.status);
+
+  section('LIVE metadata enrichment');
+  const len = await Core.handle('https://self.local/catalog/series/asian-dramas.json', {});
+  const lenBody = await len.json();
+  const lenMetas = (lenBody.metas || []).filter((m) => m.id.indexOf('tmdb:') === 0);
+  const withGenres = lenMetas.filter((m) => Array.isArray(m.genres) && m.genres.length > 0);
+  check('live metas carry genres (>= 70%)', lenMetas.length && withGenres.length / lenMetas.length >= 0.7, withGenres.length + '/' + lenMetas.length);
+  const withCountry = lenMetas.filter((m) => typeof m.country === 'string' && m.country.length > 0);
+  check('live metas carry country (>= 70%)', lenMetas.length && withCountry.length / lenMetas.length >= 0.7, withCountry.length + '/' + lenMetas.length);
+  check('live genre values look real (Drama/Comedy/Romance...)',
+    withGenres.every((m) => m.genres.every((g) => /^[A-Za-z& '-]+$/.test(g))), withGenres[0] && withGenres[0].genres);
+
+  section('LIVE /health');
+  const lh = await Core.handle('https://self.local/health', {});
+  const lhBody = await lh.json();
+  check('live health 200/503 + payload', (lh.status === 200 || lh.status === 503) && !!lhBody.status && Array.isArray(lhBody.sources) && lhBody.sources.length === 4, lh.status);
+  check('live health status ok or degraded', lhBody.status === 'ok' || lhBody.status === 'degraded', lhBody.status);
+  check('live health sources report items', lhBody.sources.filter((s) => s.ok).length >= 2, lhBody.sources.map((s) => s.label + ':' + s.ok + ':' + s.items).join(' | '));
+  if (lhBody.status !== 'ok') {
+    console.log('  (health hints: ' + JSON.stringify(lhBody.hints).substring(0, 240) + ')');
+  }
 }
 
 // ============================================================

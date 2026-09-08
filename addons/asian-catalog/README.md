@@ -41,11 +41,50 @@ Country chips: *Korean, Chinese, Japanese, Thai, Taiwanese, Hong Kong, Indian, O
 Pinoy genre chips include *Tagalog Dubbed*, *Teleserye*, *BL Series*, *Wattpad*, *Action*, etc.
 
 Every returned meta carries a `tmdb:{id}` id (resolved server-side via TMDB search with
-title/year normalization), TMDB backdrop, description, rating and the site's own poster art:
+title/year normalization) plus full metadata — TMDB backdrop, description, rating, and the
+site's own poster art, enriched per title with **genres**, **country**, **runtime** and top
+**cast** (directors for movies) from one cached, fail-soft TMDB details call:
 
 - NuvioMobile opens detail screens via its TMDB fallback — no extra meta addon needed.
 - Nuvio TV enriches with cast / recommendations / next episodes.
 - The PinoyMoviesHub / AsianHub plugins get a proper TMDB id on play (no slug guessing).
+
+### If catalogs come back empty — open `/health`
+
+`GET /health` (JSON) live-checks every dependency **from the runtime the addon actually runs
+on** and returns per-source HTTP status, latency and parsed-item counts plus concrete fix
+hints. `status` is `ok`, `degraded` (a source or TMDB failing) or `down` (HTTP 503):
+
+```json
+{
+  "version": "2.1.0",
+  "addonId": "community.asianhub.catalog",
+  "status": "ok",
+  "healthy": true,
+  "sources": [
+    { "label": "pinoymovieshub", "ok": true, "items": 30, "ms": 1059, "url": "https://pinoymovieshub.win/movies/", "error": null },
+    { "label": "myasiantv",      "ok": true, "items": 22, "ms": 1005, "url": "https://myasiantv.com.lv/most-popular-drama/", "error": null },
+    { "label": "dramacool",      "ok": true, "items": 36, "ms": 694,  "url": "https://dramacool.uno/country/korean-drama", "error": null },
+    { "label": "tmdb",           "ok": true, "items": 1,   "ms": 512,  "url": "https://api.themoviedb.org", "error": null }
+  ],
+  "hints": ["All sources and TMDB reachable - ..."]
+}
+```
+
+Troubleshooting cheat-sheet (each case also appears in `hints`):
+
+| Symptom | Likely cause / fix |
+|---|---|
+| `/health` shows a source `ok:false` with 403/challenge | The host bot-gates your deployment's IP (common for shared datacenter IPs). Redeploy the worker in another region or set its `*_SITE` env var to a working mirror. |
+| All three sources `ok:false` | Your host's IP is blocked/region-locked — try a different worker region, or self-host (Option C) on a residential/VPS box. |
+| `tmdb` check `ok:false` (HTTP 401) | TMDB key rejected — set your own v3 key: `npx wrangler secret put TMDB_API_KEY`. |
+| `ok:true` but `items:0` on a source | Site reachable but template changed / challenge page served — update the parser or use a mirror. |
+| `/health` all green but Nuvio shows nothing | The manifest URL you installed is not this deployment (e.g. a GitHub or local path — Nuvio derives API endpoints from the manifest URL). Re-add `https://<your-worker>/manifest.json`. |
+
+**Resilience (v2.1.0):** if TMDB ever hard-fails (network/key outage), catalogs no longer come
+back silently empty — rows fall back to site-supplied metadata with `asian:*` ids so you can
+still browse until TMDB is reachable again. Bot-gated source responses (403/429/503 or a JS
+challenge wall) get one automatic clean-client retry before hitting serve-stale caches.
 
 ## Sources
 
@@ -122,7 +161,7 @@ Put it behind any TLS proxy (Caddy/nginx) or use it on LAN; then add `http://<ho
 
 | File | Purpose |
 |---|---|
-| `core.js` | Engine: multi-site scraping, TMDB resolution, buffering, routing (classic script, no imports) |
+| `core.js` | Engine: multi-site scraping, TMDB resolution + details enrichment, buffering, routing (classic script, no imports) |
 | `worker.js` | Cloudflare Worker entry (module format) |
 | `worker-bundle.js` | Single-file bundle for dashboard paste (built with esbuild) |
 | `server.js` | Zero-dependency Node 18+ server |
