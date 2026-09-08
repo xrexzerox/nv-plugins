@@ -1,8 +1,6 @@
 name: Import Licensed Community Providers
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -10,7 +8,6 @@ permissions:
 
 jobs:
   import:
-    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'TRIGGER: licensed community import'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout target
@@ -26,25 +23,25 @@ jobs:
           git clone --depth 1 https://github.com/Gowaru/gowaru-nuvio-providers.git /tmp/gowaru
           git clone --depth 1 https://github.com/NuvioPlugin/All-in-One-Nuvio.git /tmp/d3adly
 
-      - name: Import unique providers
+      - name: Import only genuinely new IDs
         run: |
           python3 - <<'PY'
           import json, os, shutil, re
           from pathlib import Path
 
-          ROOT = Path('.')
-          PROVIDERS = ROOT / 'providers'
-          PROVIDERS.mkdir(exist_ok=True)
-          manifest_path = ROOT / 'manifest.json'
+          root = Path('.')
+          providers = root / 'providers'
+          providers.mkdir(exist_ok=True)
+          manifest_path = root / 'manifest.json'
 
           with manifest_path.open(encoding='utf-8') as f:
               target = json.load(f)
 
-          existing = {}
-          for s in target.get('scrapers', []):
-              sid = str(s.get('id','')).strip().lower()
-              if sid:
-                  existing[sid] = s
+          by_id = {}
+          for entry in target.get('scrapers', []):
+              sid = str(entry.get('id', '')).strip().lower()
+              if sid and sid not in by_id:
+                  by_id[sid] = entry
 
           sources = [
               ('yoruix', Path('/tmp/yoruix'), 'GPL-3.0'),
@@ -53,64 +50,59 @@ jobs:
               ('d3adly', Path('/tmp/d3adly'), 'GPL-3.0'),
           ]
 
-          imported = []
           for label, repo, license_name in sources:
               man = repo / 'manifest.json'
-              if not man.exists():
-                  print(label, ': no manifest')
-                  continue
-              with man.open(encoding='utf-8') as f:
-                  data = json.load(f)
-
               lic = repo / 'LICENSE'
-              if lic.exists():
-                  shutil.copyfile(lic, ROOT / f'LICENSE-{label}.txt')
+              if lic.is_file():
+                  shutil.copyfile(lic, root / f'LICENSE-{label}.txt')
+              if not man.is_file():
+                  print(f'{label}: no manifest, skipping')
+                  continue
 
-              for entry in data.get('scrapers', []):
-                  sid_raw = str(entry.get('id','')).strip()
+              with man.open(encoding='utf-8') as f:
+                  upstream = json.load(f)
+
+              for entry in upstream.get('scrapers', []):
+                  sid_raw = str(entry.get('id', '')).strip()
                   sid = sid_raw.lower()
-                  rel = str(entry.get('filename','')).strip()
-                  if not sid or not rel or sid in existing:
+                  rel = str(entry.get('filename', '')).strip()
+                  if not sid or not rel or sid in by_id:
                       continue
                   src = repo / rel
                   if not src.is_file() or src.suffix.lower() != '.js':
                       continue
 
-                  safe_sid = re.sub(r'[^a-zA-Z0-9._-]+', '-', sid_raw).strip('-') or 'provider'
-                  dest_dir = PROVIDERS / label
+                  safe = re.sub(r'[^A-Za-z0-9._-]+', '-', sid_raw).strip('-') or 'provider'
+                  dest_dir = providers / label
                   dest_dir.mkdir(parents=True, exist_ok=True)
-                  dest = dest_dir / (safe_sid + '.js')
+                  dest = dest_dir / f'{safe}.js'
                   shutil.copyfile(src, dest)
 
                   new_entry = dict(entry)
                   new_entry['id'] = sid_raw
-                  new_entry['filename'] = str(dest).replace(os.sep, '/')
-                  new_entry['author'] = entry.get('author') or label
+                  new_entry['filename'] = dest.as_posix()
                   new_entry['license'] = license_name
-                  existing[sid] = new_entry
-                  imported.append((label, sid_raw, str(dest)))
+                  by_id[sid] = new_entry
+                  print(f'ADD {sid_raw} -> {dest}')
 
           target['name'] = 'NV Plugins'
           target['version'] = '4.0.0'
-          target['description'] = 'Consolidated Nuvio providers from maintained, GPL-licensed community repositories with duplicate IDs removed.'
+          target['description'] = 'Nuvio provider collection with canonical IDs, validated paths, and licensed community imports.'
           target['author'] = 'xrexzerox'
-          target['scrapers'] = list(existing.values())
+          target['scrapers'] = list(by_id.values())
 
           with manifest_path.open('w', encoding='utf-8') as f:
               json.dump(target, f, indent=2, ensure_ascii=False)
               f.write('\n')
 
-          print('Imported new providers:', len(imported))
-          for item in imported:
-              print('  +', item)
-          print('Total unique providers:', len(target['scrapers']))
+          print('Total unique scraper IDs:', len(target['scrapers']))
           PY
 
-      - name: Publish consolidated collection
+      - name: Publish
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add manifest.json providers LICENSE-*.txt
-          git commit -m 'Add licensed community Nuvio providers' || true
+          git commit -m 'Import licensed community providers without duplicates' || true
           git pull --rebase origin main
           git push origin HEAD:main
