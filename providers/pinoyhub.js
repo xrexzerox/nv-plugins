@@ -4,7 +4,27 @@
  * Supports: Movies & TV Shows
  * Language: Filipino / Tagalog / English
  * Author: xrexzerox
- * Version: 5.0.0
+ * Version: 5.1.0
+ *
+ * v5.1.0 changelog:
+ *  - NEW: Byse host extraction (bysesayeveum.com and friends). The embed is a
+ *    React SPA whose source list lives in an AES-256-GCM encrypted blob at
+ *    /api/videos/{code}; the API itself ships the key split into key_parts
+ *    (part[version] + part[31-version] -> 32-byte key). Ships a compact
+ *    pure-JS AES-256/CTR core (no WebCrypto needed -> runs in QuickJS and in
+ *    Nuvio TV's worker sandbox); the GCM tag is skipped, we only need the
+ *    plaintext. Result: a direct signed HLS/mp4 URL minted per device.
+ *  - FIX: DoodStream family - final host after redirects is used (dood.yt
+ *    301s to playmogo.com), quoted/loose pass_md5 variants, packer-unpacked
+ *    players, /d/ download-page fallback, correct Referer chain, and
+ *    Cloudflare Turnstile gate detection (gated hosts are skipped cleanly
+ *    instead of returning a dead link).
+ *  - CHANGE: embed-page fallback streams removed entirely. Neither
+ *    NuvioMobile nor NuvioTV has a webview player, so embed URLs could never
+ *    play; players whose extraction fails are skipped instead.
+ *  - TV: audited against NuvioTVSmart's plugin worker shims (custom URL
+ *    class, fetch bridge, module.exports wrapper, no TextDecoder): pure ES5
+ *    promise chains, typed arrays and regex only.
  *
  * v5.0.0 changelog:
  *  - Returns PLAYABLE direct streams: Mixdrop unpacked to direct mp4,
@@ -86,6 +106,26 @@ function fetchJson(url, options) {
   }).catch(function() { return null; });
 }
 
+/**
+ * fetchText that also reports the FINAL URL after redirects (browser fetch
+ * and both Nuvio runtimes expose res.url post-redirect). Needed by the Dood
+ * extractor: dood.yt 301s to playmogo.com, so the pass_md5 host must come
+ * from the response, not the input.
+ */
+function fetchTextFollow(url, options) {
+  options = options || {};
+  return fetchWithTimeout(url, {
+    method: "GET",
+    redirect: "follow",
+    headers: merge(HEADERS, options.headers || {})
+  }, options.timeoutMs || 25000).then(function(res) {
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res.text().then(function(text) {
+      return { text: text, url: (res && res.url) ? String(res.url) : url };
+    });
+  });
+}
+
 function slugify(title) {
   return String(title || "").toLowerCase()
     .replace(/['\u2019]/g, "")
@@ -144,6 +184,175 @@ function randomToken(len) {
     out += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return out;
+}
+
+// ===== CRYPTO: PURE-JS BASE64URL + AES-256-CTR (used by the Byse extractor) =====
+
+function b64urlToBytes(str) {
+  var ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  var t = String(str || "").replace(/-/g, "+").replace(/_/g, "/");
+  var out = [];
+  var acc = 0, bits = 0, i, v;
+  for (i = 0; i < t.length; i++) {
+    var ch = t.charAt(i);
+    if (ch === "=") break;
+    v = ALPHA.indexOf(ch);
+    if (v < 0) continue;
+    acc = (acc << 6) | v;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push((acc >> bits) & 0xff);
+    }
+  }
+  return out;
+}
+
+function bytesToUtf8(bytes) {
+  var out = "", i = 0, c, cp;
+  while (i < bytes.length) {
+    c = bytes[i];
+    if (c < 0x80) { out += String.fromCharCode(c); i += 1; }
+    else if (c < 0xe0) {
+      out += String.fromCharCode(((c & 0x1f) << 6) | (bytes[i + 1] & 0x3f));
+      i += 2;
+    } else if (c < 0xf0) {
+      out += String.fromCharCode(((c & 0x0f) << 12) | ((bytes[i + 1] & 0x3f) << 6) | (bytes[i + 2] & 0x3f));
+      i += 3;
+    } else {
+      cp = ((c & 0x07) << 18) | ((bytes[i + 1] & 0x3f) << 12) | ((bytes[i + 2] & 0x3f) << 6) | (bytes[i + 3] & 0x3f);
+      cp -= 0x10000;
+      out += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3ff));
+      i += 4;
+    }
+  }
+  return out;
+}
+
+// AES S-box built at load time (avoids a 256-entry literal table).
+var AES_SBOX = (function () {
+  var box = new Array(256);
+  var p = 1, q = 1, t;
+  do {
+    p = p ^ ((p << 1) ^ (p & 0x80 ? 0x11b : 0));
+    p &= 0xff;
+    q = (q ^ (q << 1)) & 0xff;
+    q = (q ^ (q << 2)) & 0xff;
+    q = (q ^ (q << 4)) & 0xff;
+    if (q & 0x80) q ^= 0x09;
+    t = q ^ ((q << 1) | (q >>> 7)) ^ ((q << 2) | (q >>> 6)) ^ ((q << 3) | (q >>> 5)) ^ ((q << 4) | (q >>> 4));
+    box[p] = (t ^ 0x63) & 0xff;
+  } while (p !== 1);
+  box[0] = 0x63;
+  return box;
+})();
+
+function aes256ExpandKey(keyBytes) {
+  var rcon = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40];
+  var w = [];
+  var i, t;
+  for (i = 0; i < 8; i++) {
+    w.push([keyBytes[4 * i], keyBytes[4 * i + 1], keyBytes[4 * i + 2], keyBytes[4 * i + 3]]);
+  }
+  for (i = 8; i < 60; i++) {
+    t = w[i - 1].slice(0);
+    if (i % 8 === 0) {
+      t = [AES_SBOX[t[1]] ^ rcon[i / 8 - 1], AES_SBOX[t[2]], AES_SBOX[t[3]], AES_SBOX[t[0]]];
+    } else if (i % 8 === 4) {
+      t = [AES_SBOX[t[0]], AES_SBOX[t[1]], AES_SBOX[t[2]], AES_SBOX[t[3]]];
+    }
+    w.push([w[i - 8][0] ^ t[0], w[i - 8][1] ^ t[1], w[i - 8][2] ^ t[2], w[i - 8][3] ^ t[3]]);
+  }
+  return w;
+}
+
+function aesXtime(x) {
+  return ((x << 1) ^ (x & 0x80 ? 0x1b : 0)) & 0xff;
+}
+
+function aes256EncryptBlock(w, input) {
+  var s = new Array(16);
+  var out = new Array(16);
+  var i, c, r, round, a0, a1, a2, a3, t0, t1, t2, t3, src;
+  for (i = 0; i < 16; i++) s[i] = input[i] ^ w[Math.floor(i / 4)][i % 4];
+  for (round = 1; round < 14; round++) {
+    src = s.slice(0); // rounds read the full previous state (columns overlap)
+    for (c = 0; c < 4; c++) {
+      // SubBytes + ShiftRows combined: output column c reads row r from
+      // source column (c + r) % 4.
+      a0 = AES_SBOX[src[((c + 0) % 4) * 4 + 0]];
+      a1 = AES_SBOX[src[((c + 1) % 4) * 4 + 1]];
+      a2 = AES_SBOX[src[((c + 2) % 4) * 4 + 2]];
+      a3 = AES_SBOX[src[((c + 3) % 4) * 4 + 3]];
+      t0 = aesXtime(a0); t1 = aesXtime(a1); t2 = aesXtime(a2); t3 = aesXtime(a3);
+      s[c * 4 + 0] = (t0 ^ a1 ^ t1 ^ a2 ^ a3) & 0xff;
+      s[c * 4 + 1] = (a0 ^ t1 ^ a2 ^ t2 ^ a3) & 0xff;
+      s[c * 4 + 2] = (a0 ^ a1 ^ t2 ^ a3 ^ t3) & 0xff;
+      s[c * 4 + 3] = (a0 ^ t0 ^ a1 ^ a2 ^ t3) & 0xff;
+    }
+    for (i = 0; i < 16; i++) s[i] ^= w[4 * round + Math.floor(i / 4)][i % 4];
+  }
+  for (c = 0; c < 4; c++) {
+    for (r = 0; r < 4; r++) {
+      out[c * 4 + r] = AES_SBOX[s[((c + r) % 4) * 4 + r]] ^ w[56 + c][r];
+    }
+  }
+  return out;
+}
+
+/**
+ * GCM-mode plaintext recovery (CTR phase only). The trailing 16 bytes of the
+ * wire payload are the auth tag and are skipped (not decrypted, not
+ * verified): a wrong key/IV yields garbage that fails JSON.parse. Counter
+ * starts at inc32(J0) per the GCM spec, with J0 = IV(12) || 0x00000001.
+ */
+function aesGcmDecryptNoTag(keyBytes, ivBytes, dataBytes) {
+  var w = aes256ExpandKey(keyBytes);
+  var cb = [];
+  var i, j, ks, off = 0, n = dataBytes.length - 16; /* last 16 bytes = tag */
+  for (i = 0; i < 12; i++) cb.push(ivBytes[i] & 0xff);
+  cb.push(0, 0, 0, 2);
+  var out = [];
+  while (off < n) {
+    ks = aes256EncryptBlock(w, cb);
+    for (j = 0; j < 16 && off < n; j++, off++) {
+      out.push(dataBytes[off] ^ ks[j]);
+    }
+    for (j = 3; j >= 0; j--) {
+      cb[12 + j] = (cb[12 + j] + 1) & 0xff;
+      if (cb[12 + j]) break;
+    }
+  }
+  return out;
+}
+
+/**
+ * Byse ships the AES key split into key_parts; the playback version picks
+ * two 1-based indices [version, 31 - version] whose base64url payloads
+ * concatenate to the 32-byte key (verified against their frontend bundle).
+ */
+function byseKeyFromParts(playback) {
+  var parts = playback.key_parts;
+  if (!parts || !parts.length) return null;
+  var version = parseInt(playback.version, 10);
+  var picked = [];
+  var i, b;
+  if (version >= 1 && version <= 20) {
+    var i1 = version - 1;
+    var i2 = 30 - version;
+    if (parts[i1]) picked.push(parts[i1]);
+    if (parts[i2] && i2 !== i1) picked.push(parts[i2]);
+    if (!picked.length) return null;
+  } else {
+    picked = parts;
+  }
+  var bytes = [];
+  for (i = 0; i < picked.length; i++) {
+    if (typeof picked[i] !== "string" || !picked[i].length) continue;
+    b = b64urlToBytes(picked[i]);
+    bytes = bytes.concat(b);
+  }
+  return bytes;
 }
 
 // ===== TMDB =====
@@ -549,7 +758,71 @@ function extractMixdropDirect(embedUrl) {
   });
 }
 
-// ===== EXTRACTOR: DOODSTREAM FAMILY (best-effort pass_md5 flow) =====
+// ===== EXTRACTOR: BYSE (React SPA -> /api/videos/{code} -> AES-GCM payload) =====
+
+function isByse(host) {
+  return /byse/.test(String(host || "").toLowerCase());
+}
+
+/**
+ * Byse embeds (e.g. https://bysesayeveum.com/e/{code}) are a Vite/React SPA.
+ * The video sources are served by the same origin:
+ *   GET /api/videos/{code}
+ *     -> { playback: { algorithm: "AES-256-GCM", iv, payload, key_parts,
+ *                      version, expires_at }, premium_only, ... }
+ * The plaintext is { sources: [{ url, label, mime_type, height, ... }] } with
+ * signed direct HLS/mp4 URLs (3h validity). Because the whole flow runs at
+ * play time on the user's device, the signed URL is minted for that device.
+ */
+function extractByseDirect(embedUrl) {
+  var codeMatch = embedUrl.match(/\/e\/([a-z0-9]+)/i);
+  if (!codeMatch) return Promise.resolve(null);
+  var code = codeMatch[1];
+  var host = hostOf(embedUrl);
+  var apiUrl = "https://" + host + "/api/videos/" + code;
+  return fetchJson(apiUrl, {
+    headers: {
+      "Accept": "application/json",
+      "Referer": BASE_URL + "/",
+      "Origin": BASE_URL
+    }
+  }).then(function(data) {
+    if (!data || data.error || !data.playback) return null;
+    if (data.premium_only) return null;
+    var pb = data.playback;
+    if (!pb || !pb.payload || !pb.iv || pb.algorithm !== "AES-256-GCM") return null;
+    var keyBytes = byseKeyFromParts(pb);
+    if (!keyBytes || keyBytes.length !== 32) return null;
+    var plain = aesGcmDecryptNoTag(keyBytes, b64urlToBytes(pb.iv), b64urlToBytes(pb.payload));
+    if (!plain.length) return null;
+    var info;
+    try { info = JSON.parse(bytesToUtf8(plain)); } catch (e) { return null; }
+    var sources = (info && info.sources) || [];
+    var best = null, bestH = -1, i, s, h;
+    for (i = 0; i < sources.length; i++) {
+      s = sources[i];
+      if (!s || !s.url || String(s.url).indexOf("http") !== 0) continue;
+      h = parseInt(s.height, 10) || 0;
+      if (h >= bestH) { bestH = h; best = s; }
+    }
+    if (!best) return null;
+    var isHls = /m3u8/i.test(String(best.mime_type || "") + String(best.url));
+    var q = (best.label && best.label !== "x")
+      ? parseQuality(String(best.label))
+      : (parseInt(best.height, 10) ? parseQuality(String(best.height) + "p") : "Auto");
+    return {
+      url: String(best.url),
+      quality: q,
+      isHls: isHls,
+      headers: { Referer: "https://" + host + "/", "User-Agent": HEADERS["User-Agent"] }
+    };
+  }).catch(function(e) {
+    console.log("[PinoyMoviesHub] byse extract failed:", e.message);
+    return null;
+  });
+}
+
+// ===== EXTRACTOR: DOODSTREAM FAMILY (pass_md5 flow + gate detection) =====
 
 function isDoodFamily(host) {
   var h = String(host || "").toLowerCase();
@@ -570,55 +843,94 @@ function isMixdrop(host) {
   return /mixdrop|mixdrp|mxdrop|miixdrop|mixdroop/.test(h);
 }
 
-function extractDoodDirect(embedUrl) {
-  var embedHost = hostOf(embedUrl);
-  var embedId = "";
-  var m = embedUrl.match(/\/e\/([a-z0-9]+)/i);
-  if (m) embedId = m[1];
-  if (!embedHost || !embedId) return Promise.resolve(null);
+/**
+ * Dood clones (playmogo.com, dsvplay.com, dood.yt, ...) reference the
+ * pass_md5 path from their player script. Both quoted-path and loose
+ * variants exist, and some clones packer-pack the player JS.
+ */
+function doodFindMd5Path(html) {
+  var m = html.match(/['"]\/(pass_md5\/[a-z0-9]+(?:\/[a-z0-9]+)?)['"]/i);
+  if (m) return m[1];
+  var unpacked = unpackPacker(html);
+  if (unpacked) {
+    m = unpacked.match(/['"]\/(pass_md5\/[a-z0-9]+(?:\/[a-z0-9]+)?)['"]/i);
+    if (m) return m[1];
+  }
+  m = html.match(/\/pass_md5\/([a-z0-9]+)/i);
+  return m ? "pass_md5/" + m[1] : null;
+}
 
-  var embedPageUrl = "https://" + embedHost + "/e/" + embedId;
-  var downloadPageUrl = "https://" + embedHost + "/d/" + embedId;
+function doodIsGated(html) {
+  // Cloudflare Turnstile interstitial: solve -> /dood?op=validate -> reload.
+  // A pure HTTP client can never pass this, so the player is unextractable.
+  return /op=validate|turnstile\.render|challenges\.cloudflare\.com\/turnstile/i.test(html);
+}
+
+function doodIsDead(html) {
+  return /video you are looking for is not found|class="not_found"/i.test(html);
+}
+
+function doodFetchDirect(host, md5Path, refererUrl, qualityHint) {
+  var passUrl = "https://" + host + "/" + md5Path;
+  return fetchText(passUrl, {
+    headers: {
+      "Referer": refererUrl,
+      "X-Requested-With": "XMLHttpRequest"
+    }
+  }).then(function(body) {
+    var base = String(body).trim();
+    if (base.indexOf("http") !== 0) return null;
+    var token = md5Path.split("/")[1] || "";
+    var expiry = Date.now() + 2 * 60 * 60 * 1000;
+    return {
+      url: base + randomToken(10) + "?token=" + token + "&expiry=" + expiry,
+      quality: parseQuality(qualityHint),
+      headers: { Referer: "https://" + host + "/", "User-Agent": HEADERS["User-Agent"] }
+    };
+  }).catch(function() { return null; });
+}
+
+function extractDoodDirect(embedUrl) {
+  var embedIdMatch = embedUrl.match(/\/e\/([a-z0-9]+)/i);
+  if (!embedIdMatch) return Promise.resolve(null);
+  var embedId = embedIdMatch[1];
   var qualityHint = "";
 
-  return fetchText(embedPageUrl, {
+  return fetchTextFollow(embedUrl, {
     headers: { Referer: BASE_URL + "/" }
-  }).then(function(embedHtml) {
-    var titleMatch = embedHtml.match(/<title[^>]*>([^<]*)<\/title>/i);
-    qualityHint = titleMatch ? titleMatch[1] : "";
-    // Some dood clones embed the pass_md5 token directly in the embed page.
-    var direct = embedHtml.match(/\/pass_md5\/([a-z0-9]+)/i);
-    if (direct) return direct[1];
-    // Standard flow: /d/{id} with the dref_url cookie the embed sets client-side.
-    return fetchText(downloadPageUrl, {
-      headers: {
-        Referer: embedPageUrl,
-        Cookie: "dref_url=" + encodeURIComponent(embedPageUrl)
-      }
-    }).then(function(dHtml) {
-      var tMatch = dHtml.match(/<title[^>]*>([^<]*)<\/title>/i);
-      if (tMatch && !qualityHint) qualityHint = tMatch[1];
-      var d = dHtml.match(/\/pass_md5\/([a-z0-9]+)/i);
-      return d ? d[1] : null;
-    });
-  }).then(function(token) {
-    if (!token) return null;
-    var passUrl = "https://" + embedHost + "/pass_md5/" + token;
-    return fetchText(passUrl, {
-      headers: { Referer: downloadPageUrl }
-    }).then(function(body) {
-      var base = String(body).trim();
-      if (base.indexOf("http") !== 0) return null;
-      var expiry = Date.now() + 2 * 60 * 60 * 1000;
-      var direct = base + randomToken(8) + "?token=" + token + "&expiry=" + expiry;
-      return {
-        url: direct,
-        quality: parseQuality(qualityHint),
-        headers: { Referer: downloadPageUrl, "User-Agent": HEADERS["User-Agent"] }
-      };
+  }).then(function(page) {
+    var html = page.text;
+    var host = hostOf(page.url) || hostOf(embedUrl);
+    var embedFinalUrl = "https://" + host + "/e/" + embedId;
+    var titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+    if (titleMatch) qualityHint = titleMatch[1];
+
+    if (doodIsGated(html)) {
+      console.log("[PinoyMoviesHub] dood captcha-gated, skipping (" + host + ")");
+      return null;
+    }
+    if (doodIsDead(html)) {
+      console.log("[PinoyMoviesHub] dood video dead, skipping (" + host + ")");
+      return null;
+    }
+
+    var md5Path = doodFindMd5Path(html);
+    if (md5Path) return doodFetchDirect(host, md5Path, embedFinalUrl, qualityHint);
+
+    // Legacy fallback: /d/{id} download page (dref_url cookie set client-side).
+    return fetchTextFollow("https://" + host + "/d/" + embedId, {
+      headers: { Referer: embedFinalUrl, Cookie: "dref_url=" + encodeURIComponent(embedFinalUrl) }
+    }).then(function(dl) {
+      if (doodIsGated(dl.text)) return null;
+      var t2 = dl.text.match(/<title[^>]*>([^<]*)<\/title>/i);
+      if (t2 && !qualityHint) qualityHint = t2[1];
+      var dlHost = hostOf(dl.url) || host;
+      var md5Path2 = doodFindMd5Path(dl.text);
+      if (!md5Path2) return null;
+      return doodFetchDirect(dlHost, md5Path2, "https://" + dlHost + "/d/" + embedId, qualityHint);
     });
   }).catch(function(e) {
-    console.log("[PinoyMoviesHub] dood extract failed (" + embedHost + "):", e.message);
+    console.log("[PinoyMoviesHub] dood extract failed (" + embedUrl + "):", e.message);
     return null;
   });
 }
@@ -632,29 +944,26 @@ function shortLabel(player) {
 }
 
 function buildStream(displayTitle, player, resolved, meta) {
-  // resolved: { kind: "direct"|"embed", url, headers, quality? }
+  // resolved: { url, headers, quality? } - direct links only.
   var host = hostOf(resolved.url);
   var lang = inferLang((player && player.label) || "");
   var label = shortLabel(player);
-  var q = resolved.kind === "direct"
-    ? (resolved.quality && resolved.quality !== "Auto" ? resolved.quality : parseQuality(label))
-    : "Browser";
+  var q = resolved.quality && resolved.quality !== "Auto" ? resolved.quality : parseQuality(label);
 
   var line1 = meta.isSeries
     ? "S" + meta.season + "E" + meta.episode + (meta.episodeTitle ? " - " + meta.episodeTitle : "") + " | " + displayTitle
     : displayTitle;
-  var line2 = (resolved.kind === "direct" ? "Direct | " + q : "Embed page") + " | " + lang + (host ? " | " + host : "");
+  var line2 = "Direct | " + q + " | " + lang + (host ? " | " + host : "");
   var line3 = label;
 
   return {
-    name: PROVIDER_NAME + " | " + label + " | " + (resolved.kind === "direct" ? q : "Embed"),
+    name: PROVIDER_NAME + " | " + label + " | " + q,
     title: line1 + "\n" + line2 + "\n" + line3,
     url: resolved.url,
-    quality: resolved.kind === "direct" ? q : "Auto",
-    headers: resolved.headers || { Referer: BASE_URL },
+    quality: q,
+    headers: resolved.headers,
     behaviorHints: {
-      bingeGroup: "pinoymovieshub-" + (resolved.kind === "direct" ? "direct" : "embed"),
-      notWebReady: resolved.kind !== "direct"
+      bingeGroup: "pinoymovieshub-direct"
     }
   };
 }
@@ -743,27 +1052,31 @@ function getStreams(tmdbId, mediaType, season, episode) {
 
             if (isMixdrop(host)) {
               extractor = extractMixdropDirect(embedUrl);
+            } else if (isByse(host)) {
+              extractor = extractByseDirect(embedUrl);
             } else if (isDoodFamily(host)) {
               extractor = extractDoodDirect(embedUrl);
             } else {
               // Unknown host: content-sniff for a mixdrop-style player
-              // (auto-covers future mirror domains), else embed fallback.
+              // (auto-covers future mirror domains), then try the Byse API
+              // shape (covers rebranded domains), else give up.
               extractor = extractMixdropDirect(embedUrl).then(function(direct) {
-                return (direct && direct.url) ? direct : null;
+                return direct || extractByseDirect(embedUrl);
               });
             }
 
             return extractor.then(function(direct) {
               if (direct && direct.url && direct.headers) {
                 return buildStream(displayTitle, player, {
-                  kind: "direct",
                   url: direct.url,
                   headers: direct.headers,
                   quality: direct.quality
                 }, meta);
               }
-              // Extraction blocked (e.g. dood captcha) -> embed fallback
-              return buildStream(displayTitle, player, { kind: "embed", url: embedUrl }, meta);
+              // Extraction unavailable (captcha-gated dood, dead video,
+              // unknown SPA): skip the player. Nuvio has no webview on any
+              // platform, so an embed URL could never play anyway.
+              return null;
             });
           });
         })).then(function(results) {
