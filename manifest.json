@@ -1,6 +1,6 @@
 {
   "name": "NV Plugins",
-  "version": "3.3.2",
+  "version": "3.3.3",
   "description": "Canonical Nuvio provider collection with consolidated provider work, restored PinoyHub embed visibility, and the AsianHub multi-source provider (MyAsianTV + Dramacool).",
   "author": "xrexzerox",
   "scrapers": [
