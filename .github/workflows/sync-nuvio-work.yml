@@ -1,8 +1,6 @@
 name: Sync Canonical Nuvio Work
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -23,8 +21,6 @@ jobs:
           git clone --depth 1 https://github.com/xrexzerox/nuvio.git /tmp/nuvio
           git clone --depth 1 https://github.com/xrexzerox/nvv.git /tmp/nvv
           mkdir -p providers
-
-          # Copy canonical provider bundles only. Skip numbered/variant duplicates.
           find /tmp/nuvio/providers -maxdepth 1 -type f -name '*.js' -print | while read -r f; do
             base=$(basename "$f")
             case "$base" in
@@ -32,46 +28,36 @@ jobs:
             esac
             cp "$f" "providers/$base"
           done
-
-          # Keep the explicitly maintained providers from this work.
           cp /tmp/nuvio/providers/netmirror.js providers/netmirror.js
-
-          # PinoyHub: restore the older NVV embed-visible implementation.
-          # This is intentionally preferred over the newer externalUrl version.
           cp /tmp/nvv/providers/pinoyhub.js providers/pinoyhub.js
-
-          # Copy project metadata/docs that document the work.
           for f in manifest.json build.js package.json PROVIDER-AUDIT.md PROVIDER-CLEANUP.md NVV-DOCUMENTATION.md STREAMLINE-LICENSE; do
             if [ -f "/tmp/nuvio/$f" ]; then cp "/tmp/nuvio/$f" "$f"; fi
           done
 
-      - name: Remove manifest entries for missing/duplicate variant files
+      - name: Normalize manifest
         run: |
           python3 - <<'PY'
           import json, os
           path = 'manifest.json'
           with open(path, 'r', encoding='utf-8') as f:
               data = json.load(f)
-          out = []
-          seen = set()
+          out, seen = [], set()
           for s in data.get('scrapers', []):
-              sid = s.get('id')
+              sid = str(s.get('id','')).strip().lower()
               filename = s.get('filename', '')
               if sid == 'pinoymovieshub':
                   s['filename'] = 'providers/pinoyhub.js'
                   s['version'] = '4.0.0-embed'
                   filename = s['filename']
-              if not sid or sid in seen:
+              if not sid or sid in seen or not filename or not os.path.isfile(filename):
                   continue
-              if not filename or not os.path.isfile(filename):
-                  continue
-              base = os.path.basename(filename)
-              if any(x in base.lower() for x in ('1.js','2.js','new.js','old.js','backup.js','bak.js')):
+              base = os.path.basename(filename).lower()
+              if base.endswith(('1.js','2.js','new.js','old.js','backup.js','bak.js')):
                   continue
               seen.add(sid)
               out.append(s)
           data['name'] = 'NV Plugins'
-          data['version'] = '3.1.0'
+          data['version'] = '3.2.0'
           data['description'] = 'Canonical Nuvio provider collection with consolidated provider work and restored PinoyHub embed visibility.'
           data['author'] = 'xrexzerox'
           data['scrapers'] = out
@@ -85,7 +71,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add providers manifest.json build.js package.json PROVIDER-AUDIT.md PROVIDER-CLEANUP.md NVV-DOCUMENTATION.md STREAMLINE-LICENSE .github/workflows/sync-nuvio-work.yml || true
-          git commit -m 'Restore PinoyHub embed-visible provider' || true
+          git add providers manifest.json build.js package.json PROVIDER-AUDIT.md PROVIDER-CLEANUP.md NVV-DOCUMENTATION.md STREAMLINE-LICENSE .github/workflows/sync-nuvio-work.yml
+          git commit -m 'Sync canonical Nuvio work' || true
           git pull --rebase origin main
           git push origin HEAD:main
