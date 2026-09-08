@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "3.2.1",
-  "description": "Canonical Nuvio provider collection with consolidated provider work and restored PinoyHub embed visibility.",
+  "version": "3.3.0",
+  "description": "Canonical Nuvio provider collection with consolidated provider work, restored PinoyHub embed visibility, and the AsianHub multi-source provider (MyAsianTV + Dramacool).",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -516,6 +516,29 @@
       "contentLanguage": [
         "tl",
         "fil",
+        "en"
+      ]
+    },
+    {
+      "id": "asianhub",
+      "name": "AsianHub",
+      "description": "Asian movies & dramas (Korean/Chinese/Japanese/Thai/Taiwanese and more, English subs) from MyAsianTV and Dramacool with direct-HLS extraction; pairs with the Asian Catalog addon.",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/asianhub.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "ko",
+        "zh",
+        "ja",
+        "th",
         "en"
       ]
     },
