@@ -497,8 +497,8 @@
     {
       "id": "pinoymovieshub",
       "name": "PinoyMoviesHub",
-      "description": "Filipino movies and series from PinoyMoviesHub",
-      "version": "4.0.0-embed",
+      "description": "Filipino movies & series from PinoyMoviesHub with direct-play Dood/Mixdrop extraction and search-based matching",
+      "version": "5.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
