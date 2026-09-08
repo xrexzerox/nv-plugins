@@ -21,6 +21,7 @@ jobs:
         run: |
           set -e
           git clone --depth 1 https://github.com/xrexzerox/nuvio.git /tmp/nuvio
+          git clone --depth 1 https://github.com/xrexzerox/nvv.git /tmp/nvv
           mkdir -p providers
 
           # Copy canonical provider bundles only. Skip numbered/variant duplicates.
@@ -32,9 +33,12 @@ jobs:
             cp "$f" "providers/$base"
           done
 
-          # Ensure the explicitly fixed providers from our latest work are retained.
+          # Keep the explicitly maintained providers from this work.
           cp /tmp/nuvio/providers/netmirror.js providers/netmirror.js
-          cp /tmp/nuvio/providers/pinoyhub.js providers/pinoyhub.js
+
+          # PinoyHub: restore the older NVV embed-visible implementation.
+          # This is intentionally preferred over the newer externalUrl version.
+          cp /tmp/nvv/providers/pinoyhub.js providers/pinoyhub.js
 
           # Copy project metadata/docs that document the work.
           for f in manifest.json build.js package.json PROVIDER-AUDIT.md PROVIDER-CLEANUP.md NVV-DOCUMENTATION.md STREAMLINE-LICENSE; do
@@ -53,6 +57,10 @@ jobs:
           for s in data.get('scrapers', []):
               sid = s.get('id')
               filename = s.get('filename', '')
+              if sid == 'pinoymovieshub':
+                  s['filename'] = 'providers/pinoyhub.js'
+                  s['version'] = '4.0.0-embed'
+                  filename = s['filename']
               if not sid or sid in seen:
                   continue
               if not filename or not os.path.isfile(filename):
@@ -63,8 +71,8 @@ jobs:
               seen.add(sid)
               out.append(s)
           data['name'] = 'NV Plugins'
-          data['version'] = '3.0.0'
-          data['description'] = 'Canonical Nuvio provider collection with consolidated provider work and duplicate variants removed.'
+          data['version'] = '3.1.0'
+          data['description'] = 'Canonical Nuvio provider collection with consolidated provider work and restored PinoyHub embed visibility.'
           data['author'] = 'xrexzerox'
           data['scrapers'] = out
           with open(path, 'w', encoding='utf-8') as f:
@@ -77,7 +85,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add providers manifest.json build.js package.json PROVIDER-AUDIT.md PROVIDER-CLEANUP.md NVV-DOCUMENTATION.md STREAMLINE-LICENSE || true
-          git commit -m 'Consolidate all canonical Nuvio provider work' || true
+          git add providers manifest.json build.js package.json PROVIDER-AUDIT.md PROVIDER-CLEANUP.md NVV-DOCUMENTATION.md STREAMLINE-LICENSE .github/workflows/sync-nuvio-work.yml || true
+          git commit -m 'Restore PinoyHub embed-visible provider' || true
           git pull --rebase origin main
           git push origin HEAD:main
