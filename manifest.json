@@ -1,6 +1,6 @@
 {
   "name": "NV Plugins",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "Canonical Nuvio provider collection with consolidated provider work and restored PinoyHub embed visibility.",
   "author": "xrexzerox",
   "scrapers": [
@@ -470,6 +470,29 @@
       "contentLanguage": [
         "en",
         "hi"
+      ]
+    },
+    {
+      "id": "tagalogtorrents",
+      "name": "Tagalog Torrents",
+      "description": "Tagalog/Pinoy P2P torrents via Torrentio + TorrentsDB (IMDb-keyed) and ThePirateBay title search; Filipino releases ranked first, resolved by Nuvio debrid or the built-in P2P engine.",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/tagalogtorrents.js",
+      "enabled": true,
+      "hasSettings": true,
+      "formats": [
+        "mkv",
+        "mp4"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=apibay.org&sz=128",
+      "contentLanguage": [
+        "tl",
+        "en"
       ]
     },
     {
