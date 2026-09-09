@@ -1,8 +1,23 @@
+// cinemacity.js v4.1.0
+// v4.1.0: the site sits behind a Cloudflare managed challenge. The old fetch
+// ignored response codes, so a challenge page was parsed as if it were real
+// markup ("Found 0 script tags" / no anchors). Now: challenge/403 detection,
+// automatic retry with a mobile browser identity (mobile IPs are rarely
+// challenged), and clean fail-soft so other providers still load.
 var MAIN_URL = "https://cinemacity.cc";
 var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
   "Cookie": "dle_user_id=32729; dle_password=894171c6a8dab18ee594d5c652009a35;",
-  "Referer": "https://cinemacity.cc/"
+  "Referer": "https://cinemacity.cc/",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9"
+};
+var MOBILE_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+  "Cookie": "dle_user_id=32729; dle_password=894171c6a8dab18ee594d5c652009a35;",
+  "Referer": "https://cinemacity.cc/",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9"
 };
 var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 
@@ -31,13 +46,32 @@ function extractQuality(url) {
   return "HD";
 }
 
-function fetchText(url, options) {
-  options = options || {};
+function looksLikeChallenge(html) {
+  return /Just a moment|challenges\.cloudflare\.com|Attention Required|cf-chl/i.test(html || "");
+}
+
+function fetchOnce(url, headers) {
   return fetch(url, {
-    headers: options.headers || HEADERS,
+    headers: headers || HEADERS,
     skipSizeCheck: true
   }).then(function(response) {
-    return response.text();
+    return response.text().then(function(text) {
+      if (response.status === 403 || response.status === 503 || looksLikeChallenge(text)) {
+        throw new Error("CF_BLOCK " + response.status);
+      }
+      return text;
+    });
+  });
+}
+
+function fetchText(url, options) {
+  options = options || {};
+  return fetchOnce(url, options.headers).catch(function(err) {
+    console.log("[CinemaCity] blocked or failed (" + err.message + "), retrying with mobile identity...");
+    return fetchOnce(url, MOBILE_HEADERS);
+  }).catch(function(err2) {
+    console.log("[CinemaCity] retry failed too (" + err2.message + ")");
+    return ""; // empty keeps the old fail-soft flow (callers treat falsy as no-data)
   });
 }
 
@@ -63,6 +97,31 @@ function findScriptsInHtml(html) {
     scripts.push(match[1]);
   }
   return scripts;
+}
+
+// Walks a string/object/array literal from its opening bracket to the
+// MATCHING closing bracket (quote-aware). DLE season trees are nested
+// arrays — the old lazy regex /\[.*?\]/ truncated at the inner "]",
+// JSON.parse always died and TV silently returned zero streams (the
+// long-standing "not working" bug).
+function extractBalanced(str, startIdx, openCh, closeCh) {
+  var depth = 0, inStr = null, esc = false;
+  for (var i = startIdx; i < str.length; i++) {
+    var ch = str.charAt(i);
+    if (inStr) {
+      if (esc) { esc = false; }
+      else if (ch === "\\") { esc = true; }
+      else if (ch === inStr) { inStr = null; }
+    } else {
+      if (ch === '"' || ch === "'") { inStr = ch; }
+      else if (ch === openCh) { depth++; }
+      else if (ch === closeCh) {
+        depth--;
+        if (depth === 0) return str.substring(startIdx, i + 1);
+      }
+    }
+  }
+  return null;
 }
 
 function getStreams(tmdbId, mediaType, season, episode) {
@@ -153,28 +212,36 @@ function getStreams(tmdbId, mediaType, season, episode) {
             var decoded = atobPolyfill(match[2]);
             if (!decoded || decoded.length < 10) continue;
 
-            var fileMatch = decoded.match(/file\s*:\s*(["'])(.*?)\1/s) || decoded.match(/file\s*:\s*(\[.*?\])/s);
-            if (fileMatch) {
-              var rawFile = fileMatch[2] || fileMatch[1];
-              if (rawFile && rawFile.length > 5) {
-                if (rawFile.charAt(0) === "[" || rawFile.charAt(0) === "{") {
+            var rawFile = null;
+            var mObj = decoded.match(/file\s*:\s*([\[{])/);
+            if (mObj) {
+              var openCh = mObj[1];
+              var start = decoded.indexOf(openCh, mObj.index);
+              rawFile = extractBalanced(decoded, start, openCh, openCh === "[" ? "]" : "}");
+            }
+            if (!rawFile) {
+              var mStr = decoded.match(/file\s*:\s*(["'])((?:\\.|(?!\1)[\s\S])*)\1/s);
+              if (mStr) rawFile = mStr[2];
+            }
+
+            if (rawFile && rawFile.length > 5) {
+              if (rawFile.charAt(0) === "[" || rawFile.charAt(0) === "{") {
+                try {
+                  var unescaped = rawFile.replace(/\\(.)/g, "$1");
+                  fileData = JSON.parse(unescaped);
+                  console.log("[CinemaCity] Parsed file data as JSON (unescaped)");
+                } catch (e) {
                   try {
-                    var unescaped = rawFile.replace(/\\(.)/g, "$1");
-                    fileData = JSON.parse(unescaped);
-                    console.log("[CinemaCity] Parsed file data as JSON (unescaped)");
-                  } catch (e) {
-                    try {
-                      fileData = JSON.parse(rawFile);
-                      console.log("[CinemaCity] Parsed file data as JSON");
-                    } catch (e2) {
-                      fileData = rawFile;
-                    }
+                    fileData = JSON.parse(rawFile);
+                    console.log("[CinemaCity] Parsed file data as JSON");
+                  } catch (e2) {
+                    fileData = rawFile;
                   }
-                } else {
-                  fileData = rawFile;
                 }
-                if (fileData) break;
+              } else {
+                fileData = rawFile;
               }
+              if (fileData) break;
             }
           }
           if (fileData) break;
@@ -194,7 +261,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
             title: title,
             url: url,
             quality: quality || extractQuality(url),
-            headers: Object.assign({}, HEADERS, { Referer: "https://cinemacity.cc/" })
+            headers: Object.assign({}, MOBILE_HEADERS, { Referer: "https://cinemacity.cc/" })
           });
         };
 

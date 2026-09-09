@@ -1,3 +1,13 @@
+// animepahe.js v5.0.0
+// v5.0.0 fixes ("not working" on device):
+//  1. The third-party proxy worker (animepaheproxy.phisheranimepahe.workers.dev)
+//     is now dead — every request 403s through Cloudflare. ALL site requests
+//     were routed through it, so the provider returned nothing anywhere.
+//     Now: DIRECT fetch first (animepahe.pw is reachable from residential
+//     devices), proxy only as fallback.
+//  2. The MAL id-mapping API (id-mapping-api-malid.hf.space) returns
+//     "Meta not found" for many valid IMDb ids. Fallback: resolve the MAL id
+//     via a Jikan title search using the TMDB title.
 var MAIN_URL = "https://animepahe.pw";
 var PROXY_URL = "https://animepaheproxy.phisheranimepahe.workers.dev/?url=";
 var HEADERS = {
@@ -9,21 +19,33 @@ var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 
 function fetchText(url, options) {
   options = options || {};
-  var useProxy = options.useProxy !== false;
   var finalUrl = url.indexOf("http") === 0 ? url : MAIN_URL + url;
-  var targetUrl = useProxy ? PROXY_URL + encodeURIComponent(finalUrl) : finalUrl;
-
-  var fetchOpts = Object.assign({
+  var fetchOpts = {
     headers: options.headers || HEADERS,
     skipSizeCheck: true
-  }, options);
-  delete fetchOpts.useProxy;
-  delete fetchOpts.headers;
-  fetchOpts.headers = options.headers || HEADERS;
+  };
 
-  return fetch(targetUrl, fetchOpts).then(function(response) {
-    if (!response.ok) throw new Error("HTTP " + response.status + " on " + finalUrl);
-    return response.text();
+  var direct = function () {
+    return fetch(finalUrl, fetchOpts).then(function (response) {
+      if (!response.ok) throw new Error("HTTP " + response.status + " on " + finalUrl);
+      return response.text();
+    });
+  };
+  var viaProxy = function () {
+    var targetUrl = PROXY_URL + encodeURIComponent(finalUrl);
+    return fetch(targetUrl, fetchOpts).then(function (response) {
+      if (!response.ok) throw new Error("HTTP " + response.status + " (proxy) on " + finalUrl);
+      return response.text();
+    });
+  };
+
+  // useProxy === false means direct-only (kwik pages must be fetched from the
+  // device itself so the CDN sees a consistent client)
+  if (options.useProxy === false) return direct();
+
+  return direct().catch(function (err) {
+    console.log("[AnimePahe] direct failed (" + err.message + "), trying proxy fallback");
+    return viaProxy();
   });
 }
 
@@ -39,21 +61,6 @@ function getImdbId(tmdbId, mediaType) {
     .then(function(res) { return res.json(); })
     .then(function(data) { return data.imdb_id; })
     .catch(function() { return null; });
-}
-
-function getTmdbTitle(tmdbId, mediaType) {
-  var url = "https://api.themoviedb.org/3/" + (mediaType === "tv" ? "tv" : "movie") + "/" + tmdbId + "?api_key=" + TMDB_API_KEY;
-  return fetch(url, { skipSizeCheck: true })
-    .then(function(res) { return res.json(); })
-    .then(function(data) {
-      return (mediaType === "tv" ? (data.name || data.original_name) : (data.title || data.original_title)) || null;
-    })
-    .catch(function() { return null; });
-}
-
-function normalizeTitleForMatch(t) {
-  return String(t || "").toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function resolveMapping(imdbId, season, episode) {
@@ -74,6 +81,52 @@ function getMalTitle(malId) {
     })
     .then(function(data) {
       return data.data ? data.data.title : null;
+    })
+    .catch(function() { return null; });
+}
+
+function normalizeTitle(t) {
+  return String(t || "")
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function fetchTmdbTvTitle(tmdbId) {
+  var url = "https://api.themoviedb.org/3/tv/" + tmdbId + "?api_key=" + TMDB_API_KEY;
+  return fetch(url, { skipSizeCheck: true })
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(d) { return d ? (d.name || d.original_name) : null; })
+    .catch(function() { return null; });
+}
+
+// The id-mapping API misses many ids — resolve the MAL entry by searching
+// Jikan with the TMDB title instead. Episode numbers align when the TMDB
+// entry and MAL entry describe the same show (the common case).
+function getMalInfoFallback(title) {
+  var url = "https://api.jikan.moe/v4/anime?q=" + encodeURIComponent(title) + "&limit=5";
+  return fetch(url, { skipSizeCheck: true })
+    .then(function(res) { return res.ok ? res.json() : null; })
+    .then(function(data) {
+      var list = (data && data.data) || [];
+      if (!list.length) return null;
+      var nq = normalizeTitle(title);
+      var best = null;
+      for (var i = 0; i < list.length; i++) {
+        var cand = list[i];
+        var names = [cand.title, cand.title_english].filter(Boolean);
+        var matched = false;
+        for (var j = 0; j < names.length; j++) {
+          var nt = normalizeTitle(names[j]);
+          if (nt === nq || (nt.indexOf(nq) !== -1) || (nq.indexOf(nt) !== -1)) {
+            matched = true;
+            break;
+          }
+        }
+        if (matched) { best = cand; break; }
+      }
+      return best ? { mal_id: best.mal_id, title: best.title } : null;
     })
     .catch(function() { return null; });
 }
@@ -211,21 +264,23 @@ function getStreams(tmdbId, mediaType, season, episode) {
             mappedEp = mapping.mal_episode || episode;
             return getMalTitle(targetMalId);
           }
-          // Fallback: the MAL id-mapping service is unreachable. Search
-          // animepahe directly with the TMDB title and use the episode
-          // number as-is (correct for S1 and non-split seasons).
-          console.log("[AnimePahe] mapper unavailable, falling back to TMDB title search");
-          return getTmdbTitle(tmdbId, mediaType).then(function(t) {
-            if (!t) {
-              resolve([]);
-              return Promise.reject("No MAL mapping and no TMDB title");
-            }
-            animeTitle = t;
-            return null; // skip getMalTitle step
+          // Fallback: mapping API misses many IMDb ids — resolve via Jikan
+          // title search using the TMDB title.
+          console.log("[AnimePahe] Mapping failed, using Jikan title-search fallback");
+          return fetchTmdbTvTitle(tmdbId).then(function(tvTitle) {
+            if (!tvTitle) return null;
+            return getMalInfoFallback(tvTitle).then(function(info) {
+              if (info) {
+                targetMalId = info.mal_id;
+                mappedEp = episode; // same show -> episode numbers align
+                console.log("[AnimePahe] Jikan fallback MAL:", targetMalId, info.title);
+                return info.title;
+              }
+              return null;
+            });
           });
         })
         .then(function(title) {
-          if (title === null) return searchAnime(animeTitle); // fallback path
           animeTitle = title;
           console.log("[AnimePahe] MAL title:", animeTitle);
           if (!animeTitle) {
@@ -242,17 +297,6 @@ function getStreams(tmdbId, mediaType, season, episode) {
                 return Promise.resolve();
               }
               var item = searchResults.data[idx];
-              if (!targetMalId) {
-                // Fallback mode: match by title instead of the MAL link.
-                var a = normalizeTitleForMatch(item.title);
-                var b = normalizeTitleForMatch(animeTitle);
-                if (a === b || (a.length && b.length && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1))) {
-                  animeSession = item.session;
-                  console.log("[AnimePahe] Found session by title:", animeSession);
-                  return Promise.resolve();
-                }
-                return checkNext(idx + 1);
-              }
               return fetchText("/anime/" + item.session).then(function(pageHtml) {
                 if (pageHtml.indexOf("myanimelist.net/anime/" + targetMalId) !== -1) {
                   animeSession = item.session;

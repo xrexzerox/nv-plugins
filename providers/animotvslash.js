@@ -1,10 +1,10 @@
 // providers/animotvslash.js
-let cheerio;
-try {
-  cheerio = require('cheerio-without-node-native');
-} catch (e) {
-  cheerio = require('cheerio');
-}
+// v5.0.0: the site dropped tryembed.us.cc for most episode pages and now
+// embeds a self-hosted player: animotvslash.org/plyr-player/{base64}
+// where base64 is a JSON config whose .url is a DIRECT, HEADERLESS
+// cdn.videas.fr HLS master playlist (verified 200 with zero custom
+// headers, variants 360p/480p/720p/1080p). tryembed + admin-ajax paths
+// are kept as fallbacks for pages the site has not migrated yet.
 
 const TMDB_API_KEY = '6dc830f9624b43261325bed3bf7d0dfa';
 
@@ -174,6 +174,106 @@ function extractAnimeId(html, postId) {
   }
 
   return null;
+}
+
+// ------------------------------------------------------------------
+// SELF-HOSTED PLYR PLAYER (v5.0.0 primary path)
+// ------------------------------------------------------------------
+
+function b64Decode(str) {
+  try {
+    var s = String(str).replace(/-/g, '+').replace(/_/g, '/').replace(/[^A-Za-z0-9+/=]/g, '');
+    while (s.length % 4) s += '=';
+    var bin;
+    if (typeof atob === 'function') {
+      bin = atob(s);
+    } else {
+      var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+      var out = '';
+      var bc = 0, bs = 0, buffer, i = 0;
+      // eslint-disable-next-line no-cond-assign
+      while (buffer = s.charAt(i++)) {
+        buffer = chars.indexOf(buffer);
+        if (~buffer) {
+          bs = bc % 4 ? bs * 64 + buffer : buffer;
+          // eslint-disable-next-line no-unused-expressions
+          bc++ % 4 ? out += String.fromCharCode(255 & bs >> ((-2 * bc) & 6)) : 0;
+        }
+      }
+      bin = out;
+    }
+    try { return decodeURIComponent(escape(bin)); } catch (e2) { return bin; }
+  } catch (e) {
+    return '';
+  }
+}
+
+function decodePlayerConfigs(html) {
+  if (!html) return [];
+  // The site self-hosts player wrappers that embed a base64 JSON config:
+  //   animotvslash.org/plyr-player/{b64}  -> cdn.videas.fr HLS
+  //   animotvslash.org/jw-player/{b64}    -> rumble.com HLS
+  // Same JSON shape ({url, poster, download_url...}) for both.
+  var out = [], seen = {};
+  var re = /animotvslash\.org\/[a-z-]*player\/([A-Za-z0-9+/=_-]{20,})/g;
+  var m;
+  while ((m = re.exec(html)) !== null) {
+    if (seen[m[1]]) continue;
+    seen[m[1]] = 1;
+    var raw = b64Decode(m[1]);
+    if (!raw || raw.indexOf('{') === -1) continue;
+    try {
+      var cfg = JSON.parse(raw);
+      if (cfg && cfg.url && /^https?:\/\//i.test(cfg.url)) out.push(cfg);
+    } catch (e) {}
+  }
+  return out;
+}
+
+function absolutizeUrl(base, rel) {
+  if (/^https?:\/\//i.test(rel)) return rel;
+  if (rel.indexOf('//') === 0) return 'https:' + rel;
+  if (rel.charAt(0) === '/') {
+    var m = base.match(/^(https?:\/\/[^/]+)/);
+    return m ? m[1] + rel : rel;
+  }
+  return base.substring(0, base.lastIndexOf('/') + 1) + rel;
+}
+
+// The plyr master playlist is public (headerless) — parse its variants so
+// Nuvio gets concrete quality rows instead of a single blind Auto row.
+function parseHlsVariants(masterUrl) {
+  return fetch(masterUrl).then(function (res) {
+    if (!res.ok) return [];
+    return res.text().then(function (txt) {
+      if (txt.indexOf('#EXT-X-STREAM-INF') === -1) return [];
+      var out = [];
+      var lines = txt.split(/\r?\n/);
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (line.indexOf('#EXT-X-STREAM-INF') === 0) {
+          var nm = line.match(/NAME="([^"]+)"/i);
+          var label = nm ? nm[1] : (line.match(/RESOLUTION=\d+x(\d+)/i) || [])[1];
+          if (label && /^\d+$/.test(String(label))) label = label + 'p';
+          var j = i + 1;
+          while (j < lines.length && !lines[j].trim()) j++;
+          if (j < lines.length) {
+            var u = lines[j].trim();
+            if (u && u.charAt(0) !== '#') {
+              out.push({ name: label || 'Auto', url: absolutizeUrl(masterUrl, u) });
+              i = j;
+            }
+          }
+        }
+      }
+      return out;
+    });
+  }).catch(function () { return []; });
+}
+
+function variantRank(name) {
+  var m = String(name || '').match(/(\d{3,4})/);
+  return m ? parseInt(m[1], 10) : 0;
 }
 
 async function getEmbedUrl(postId, pageHtml, episodeNum) {
@@ -539,23 +639,61 @@ async function getStreams(tmdbId, season, episode) {
         }
         console.log(`[animotvslash] post_id: ${postId}`);
 
-        const embedUrl = await getEmbedUrl(postId, html, episodeNum);
-
         const streams = [];
+        const label = mediaType === 'tv' ? `S${seasonNum}E${episodeNum}` : 'Movie';
 
-        if (embedUrl) {
-            console.log(`[animotvslash] embed URL: ${embedUrl}`);
+        // PRIMARY (v5.0.0): self-hosted player configs -> direct headerless HLS
+        // (plyr-player/videas and jw-player/rumble verified 200 with zero headers)
+        const configs = decodePlayerConfigs(html);
+        for (let ci = 0; ci < configs.length; ci++) {
+            const cfg = configs[ci];
+            const serverTag = ci === 0 ? '' : ` ${ci + 1}`;
+            console.log(`[animotvslash] player config ${ci + 1}: ${cfg.url.substring(0, 90)}...`);
 
-            // Try native HLS extraction
-            const providerResults = await extractTryEmbed(embedUrl);
+            const variants = await parseHlsVariants(cfg.url);
+            if (variants.length > 0) {
+                // adaptive master first (player auto-picks), then concrete variants best-first
+                streams.push({
+                    name: `ANIMOTVSLASH${serverTag} - Auto`,
+                    title: label,
+                    url: cfg.url,
+                    quality: 'Auto',
+                    provider: 'animotvslash',
+                });
+                variants.sort(function (a, b) { return variantRank(b.name) - variantRank(a.name); });
+                for (let vi = 0; vi < variants.length; vi++) {
+                    streams.push({
+                        name: `ANIMOTVSLASH${serverTag} - ${variants[vi].name}`,
+                        title: label,
+                        url: variants[vi].url,
+                        quality: variants[vi].name,
+                        provider: 'animotvslash',
+                    });
+                }
+            } else {
+                streams.push({
+                    name: `ANIMOTVSLASH${serverTag} - Auto`,
+                    title: label,
+                    url: cfg.url,
+                    quality: 'Auto',
+                    provider: 'animotvslash',
+                });
+            }
+        }
 
-            if (providerResults.length > 0) {
+        if (streams.length === 0) {
+            // FALLBACK: legacy tryembed flow (older pages; its API is now
+            // signature-gated so this only fires if tryembed comes back)
+            const embedUrl = await getEmbedUrl(postId, html, episodeNum);
+            if (embedUrl) {
+                console.log(`[animotvslash] tryembed embed URL: ${embedUrl}`);
+                const providerResults = await extractTryEmbed(embedUrl);
                 for (let i = 0; i < providerResults.length; i++) {
                     const result = providerResults[i];
                     console.log(`[animotvslash] Stream ${i + 1}: ${result.url.substring(0, 100)}...`);
                     streams.push({
                         name: `ANIMOTVSLASH - ${result.name}`,
-                        title: mediaType === 'tv' ? `S${seasonNum}E${episodeNum}` : 'Movie',
+                        title: label,
                         url: result.url,
                         quality: 'Auto',
                         headers: EMBED_HEADERS,
@@ -563,27 +701,11 @@ async function getStreams(tmdbId, season, episode) {
                     });
                 }
             }
-
-            // ALWAYS add WebView fallback — this is the guaranteed working option
-            streams.push({
-                name: `ANIMOTVSLASH - WebView`,
-                title: mediaType === 'tv' ? `S${seasonNum}E${episodeNum}` : 'Movie',
-                url: embedUrl,
-                quality: 'Auto',
-                provider: 'animotvslash',
-                behaviorHints: { notWebReady: true }
-            });
-        } else {
-            console.log(`[animotvslash] No embed found, page WebView fallback`);
-            streams.push({
-                name: `ANIMOTVSLASH - Page`,
-                title: mediaType === 'tv' ? `S${seasonNum}E${episodeNum}` : 'Movie',
-                url: pageUrl,
-                quality: 'Auto',
-                provider: 'animotvslash',
-                behaviorHints: { notWebReady: true }
-            });
         }
+
+        // NOTE (v5.0.0): the old guaranteed "WebView"/"Page" embed rows were
+        // removed — embed URLs are unplayable in Nuvio native players and only
+        // cluttered the stream list (same cleanup as pinoyhub v5.1.0).
 
         console.log(`[animotvslash] Returning ${streams.length} stream(s)`);
         return streams;
