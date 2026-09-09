@@ -1,0 +1,108 @@
+name: Import Licensed Community Providers
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch licensed upstream collections
+        run: |
+          set -e
+          git clone --depth 1 https://github.com/yoruix/nuvio-providers.git /tmp/yoruix
+          git clone --depth 1 https://github.com/phisher98/phisher-nuvio-providers.git /tmp/phisher
+          git clone --depth 1 https://github.com/Gowaru/gowaru-nuvio-providers.git /tmp/gowaru
+          git clone --depth 1 https://github.com/NuvioPlugin/All-in-One-Nuvio.git /tmp/d3adly
+
+      - name: Import only genuinely new IDs
+        run: |
+          python3 - <<'PY'
+          import json, os, shutil, re
+          from pathlib import Path
+
+          root = Path('.')
+          providers = root / 'providers'
+          providers.mkdir(exist_ok=True)
+          manifest_path = root / 'manifest.json'
+
+          with manifest_path.open(encoding='utf-8') as f:
+              target = json.load(f)
+
+          by_id = {}
+          for entry in target.get('scrapers', []):
+              sid = str(entry.get('id', '')).strip().lower()
+              if sid and sid not in by_id:
+                  by_id[sid] = entry
+
+          sources = [
+              ('yoruix', Path('/tmp/yoruix'), 'GPL-3.0'),
+              ('phisher', Path('/tmp/phisher'), 'GPL-3.0'),
+              ('gowaru', Path('/tmp/gowaru'), 'GPL-3.0'),
+              ('d3adly', Path('/tmp/d3adly'), 'GPL-3.0'),
+          ]
+
+          for label, repo, license_name in sources:
+              man = repo / 'manifest.json'
+              lic = repo / 'LICENSE'
+              if lic.is_file():
+                  shutil.copyfile(lic, root / f'LICENSE-{label}.txt')
+              if not man.is_file():
+                  print(f'{label}: no manifest, skipping')
+                  continue
+
+              with man.open(encoding='utf-8') as f:
+                  upstream = json.load(f)
+
+              for entry in upstream.get('scrapers', []):
+                  sid_raw = str(entry.get('id', '')).strip()
+                  sid = sid_raw.lower()
+                  rel = str(entry.get('filename', '')).strip()
+                  if not sid or not rel or sid in by_id:
+                      continue
+                  src = repo / rel
+                  if not src.is_file() or src.suffix.lower() != '.js':
+                      continue
+
+                  safe = re.sub(r'[^A-Za-z0-9._-]+', '-', sid_raw).strip('-') or 'provider'
+                  dest_dir = providers / label
+                  dest_dir.mkdir(parents=True, exist_ok=True)
+                  dest = dest_dir / f'{safe}.js'
+                  shutil.copyfile(src, dest)
+
+                  new_entry = dict(entry)
+                  new_entry['id'] = sid_raw
+                  new_entry['filename'] = dest.as_posix()
+                  new_entry['license'] = license_name
+                  by_id[sid] = new_entry
+                  print(f'ADD {sid_raw} -> {dest}')
+
+          target['name'] = 'NV Plugins'
+          target['version'] = '4.0.0'
+          target['description'] = 'Nuvio provider collection with canonical IDs, validated paths, and licensed community imports.'
+          target['author'] = 'xrexzerox'
+          target['scrapers'] = list(by_id.values())
+
+          with manifest_path.open('w', encoding='utf-8') as f:
+              json.dump(target, f, indent=2, ensure_ascii=False)
+              f.write('\n')
+
+          print('Total unique scraper IDs:', len(target['scrapers']))
+          PY
+
+      - name: Publish
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add manifest.json providers LICENSE-*.txt
+          git commit -m 'Import licensed community providers without duplicates' || true
+          git pull --rebase origin main
+          git push origin HEAD:main

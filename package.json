@@ -1,0 +1,19 @@
+{
+  "name": "nv-plugins",
+  "version": "4.0.0",
+  "description": "Nuvio plugin collection with validated provider manifests and canonical provider bundles.",
+  "scripts": {
+    "build": "node build.js",
+    "build:provider": "node build.js",
+    "validate": "node scripts/validate-manifest.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0"
+  },
+  "keywords": ["nuvio", "plugins", "providers"],
+  "license": "GPL-3.0-only",
+  "dependencies": {
+    "cheerio-without-node-native": "^0.20.2",
+    "crypto-js": "^4.2.0"
+  }
+}

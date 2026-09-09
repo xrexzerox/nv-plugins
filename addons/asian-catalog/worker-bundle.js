@@ -1,4 +1,4 @@
-/* Asian Catalog worker bundle v3.0.0 — kissasian.cam + viewasian.lol sources (myasiantv/dramacool/animepahe removed), built 2026-09-09 */
+/* Asian Catalog worker bundle v3.1.0 — kissasian.cam + viewasian.lol + TMDB language-matrix/on-the-air rows + POST /relay (cinejoy), built 2026-09-09 */
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -25,12 +25,12 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// core.js
+// addons/asian-catalog/core.js
 var require_core = __commonJS({
-  "core.js"(exports) {
+  "addons/asian-catalog/core.js"(exports) {
     (function(global) {
       "use strict";
-      var VERSION = "3.0.0";
+      var VERSION = "3.1.0";
       var ADDON_ID = "community.asian.catalog";
       var ADDON_NAME = "Asian Catalog";
       var PINOY_SITE_DEFAULT = "https://pinoymovieshub.win";
@@ -950,8 +950,16 @@ var require_core = __commonJS({
             return out;
           });
         }
+        if (def.mode === "language" && genreSlug) {
+          var langCode = ASIAN_LANG_CODES[genreSlug];
+          if (!langCode)
+            return Promise.resolve([]);
+          langFilter = "with_original_language=" + langCode;
+        }
         url = base + "discover/" + kind + "?api_key=" + encodeURIComponent(cfg.tmdbKey) + "&" + langFilter + "&include_adult=false&page=" + page;
-        if (def.mode === "genre" && genreSlug) {
+        if (def.mode === "airing") {
+          url += "&on_the_air=true&vote_count.gte=2&sort_by=popularity.desc";
+        } else if (def.mode === "genre" && genreSlug) {
           var gid = TMDB_MOVIE_GENRES[genreSlug];
           if (!gid)
             return Promise.resolve([]);
@@ -1052,6 +1060,14 @@ var require_core = __commonJS({
           }
         );
       }
+      var ASIAN_LANG_CHIPS = ["Korean", "Japanese", "Chinese", "Thai", "Filipino / Tagalog"];
+      var ASIAN_LANG_CODES = {
+        "korean": "ko",
+        "japanese": "ja",
+        "chinese": "zh",
+        "thai": "th",
+        "filipino-tagalog": "tl"
+      };
       function catalogDefinitions() {
         var pinoyGenres = [
           "Action",
@@ -1188,10 +1204,65 @@ var require_core = __commonJS({
             mode: "genre",
             description: "Browse Asian movies by genre (official TMDB directory)",
             extra: [{ name: "genre", options: TMDB_GENRE_CHIPS.slice() }, { name: "skip" }]
+          },
+          // --- TMDB language matrix + on-the-air (v3.1.0) ---
+          {
+            type: "series",
+            id: "asian-series-language",
+            name: "Asian Series by Language",
+            source: "tmdb",
+            mode: "language",
+            description: "Browse Asian series by original language: Korean, Japanese, Chinese, Thai, Filipino (official TMDB directory)",
+            extra: [{ name: "genre", options: ASIAN_LANG_CHIPS.slice() }, { name: "skip" }]
+          },
+          {
+            type: "movie",
+            id: "asian-movies-language",
+            name: "Asian Movies by Language",
+            source: "tmdb",
+            mode: "language",
+            description: "Browse Asian movies by original language: Korean, Japanese, Chinese, Thai, Filipino (official TMDB directory)",
+            extra: [{ name: "genre", options: ASIAN_LANG_CHIPS.slice() }, { name: "skip" }]
+          },
+          {
+            type: "series",
+            id: "asian-series-airing",
+            name: "Asian Series On The Air",
+            source: "tmdb",
+            mode: "airing",
+            description: "Asian dramas with episodes airing right now (official TMDB on-the-air directory)",
+            extra: [{ name: "skip" }]
           }
         ];
       }
       function manifest(cfg) {
+        var srcFilter = cfg && cfg.__manifestSources || null;
+        var langFilter = cfg && cfg.__manifestLangs || null;
+        var catalogs = catalogDefinitions().filter(function(c) {
+          if (srcFilter && srcFilter.indexOf(c.source) === -1)
+            return false;
+          return true;
+        }).map(function(c) {
+          var extra = c.extra;
+          if (langFilter && c.mode === "language") {
+            var trimmed = ASIAN_LANG_CHIPS.filter(function(chip) {
+              var code = ASIAN_LANG_CODES[slugifyGenre(chip)];
+              return code && langFilter.indexOf(code) !== -1;
+            });
+            if (!trimmed.length)
+              return null;
+            extra = [{ name: "genre", options: trimmed }, { name: "skip" }];
+          }
+          return {
+            type: c.type,
+            id: c.id,
+            name: c.name,
+            pageSize: cfg.pageLimit,
+            extra
+          };
+        }).filter(function(c) {
+          return c;
+        });
         return {
           id: ADDON_ID,
           version: VERSION,
@@ -1201,17 +1272,119 @@ var require_core = __commonJS({
           resources: ["catalog"],
           types: ["movie", "series"],
           idPrefixes: ["tmdb:", "asian:"],
-          catalogs: catalogDefinitions().map(function(c) {
-            return {
-              type: c.type,
-              id: c.id,
-              name: c.name,
-              pageSize: cfg.pageLimit,
-              extra: c.extra
-            };
-          }),
+          catalogs,
           behaviorHints: { configurable: false }
         };
+      }
+      var RELAY_ALLOWED_HOSTS = {
+        "api.shegu.st": true,
+        // cinejoy binary /g exchange
+        "animotvslash.ru": true,
+        // animotvslash multi-server stream API
+        "animotvslash.p2pplay.pro": true,
+        // animotvslash legacy self-hosted player
+        "cinemacity.cc": true
+        // cinemacity DLE pages (CF-challenged clients)
+      };
+      var RELAY_BODY_LIMIT = 2 * 1024 * 1024;
+      function relayB64ToUint8(b64) {
+        try {
+          var norm = String(b64 || "").replace(/-/g, "+").replace(/_/g, "/").replace(/[^A-Za-z0-9+/=]/g, "");
+          while (norm.length % 4)
+            norm += "=";
+          var bin = atob(norm);
+          var u8 = new Uint8Array(bin.length);
+          for (var i = 0; i < bin.length; i++)
+            u8[i] = bin.charCodeAt(i) & 255;
+          return u8;
+        } catch (e) {
+          return null;
+        }
+      }
+      function relayUint8ToB64(u8) {
+        var s = "";
+        for (var i = 0; i < u8.length; i += 32768) {
+          s += String.fromCharCode.apply(null, u8.subarray(i, i + 32768));
+        }
+        return btoa(s);
+      }
+      function relayHandler(request, env) {
+        var cfg = makeConfig(env || {});
+        if (!request || request.method !== "POST") {
+          return Promise.resolve(json({ error: "POST required" }, 405, 0));
+        }
+        return request.text().then(function(raw) {
+          var req;
+          try {
+            req = JSON.parse(raw);
+          } catch (e) {
+            return json({ error: "invalid json body" }, 400, 0);
+          }
+          var target = String(req && req.url || "");
+          var u = null;
+          try {
+            u = new URL(target);
+          } catch (e) {
+          }
+          if (!u || u.protocol !== "https:" && u.protocol !== "http:") {
+            return json({ error: "bad url" }, 400, 0);
+          }
+          if (!RELAY_ALLOWED_HOSTS[u.hostname]) {
+            return json({ error: "host not allowed", host: u.hostname }, 403, 0);
+          }
+          var method = String(req && req.method || "GET").toUpperCase();
+          if (["GET", "HEAD", "POST"].indexOf(method) === -1) {
+            return json({ error: "method not allowed", method }, 400, 0);
+          }
+          var headers = {};
+          var hdrs = req && req.headers || {};
+          Object.keys(hdrs).forEach(function(k) {
+            if (!/^[a-z0-9-]+$/i.test(k))
+              return;
+            var lk = k.toLowerCase();
+            if (lk === "host" || lk === "cookie" || lk === "content-length")
+              return;
+            var v = String(hdrs[k]).slice(0, 500);
+            if (v)
+              headers[k] = v;
+          });
+          var body = null;
+          if (method === "POST" && req.bodyB64) {
+            body = relayB64ToUint8(req.bodyB64);
+            if (!body)
+              return json({ error: "bad bodyB64" }, 400, 0);
+          }
+          if (!cfg.fetchFn)
+            return json({ error: "no fetch available" }, 500, 0);
+          var ac = null;
+          try {
+            ac = new AbortController();
+            setTimeout(function() {
+              try {
+                ac.abort();
+              } catch (e) {
+              }
+            }, 2e4);
+          } catch (e) {
+            ac = null;
+          }
+          return cfg.fetchFn(target, {
+            method,
+            headers,
+            body: body || void 0,
+            signal: ac ? ac.signal : void 0
+          }).then(function(res) {
+            return res.arrayBuffer().then(function(ab) {
+              var u8 = new Uint8Array(ab);
+              if (u8.length > RELAY_BODY_LIMIT) {
+                return json({ error: "reply too large", bytes: u8.length }, 502, 0);
+              }
+              return json({ ok: true, status: res.status, bodyB64: relayUint8ToB64(u8) }, 200, 0);
+            });
+          }).catch(function(err) {
+            return json({ error: "relay fetch failed: " + String(err && err.message || err) }, 502, 0);
+          });
+        });
       }
       function timeProbe(fn) {
         var t0 = Date.now();
@@ -1362,7 +1535,7 @@ var require_core = __commonJS({
         var rows = defs.map(function(c) {
           return "<tr><td>" + c.name + "</td><td><code>" + c.type + "</code></td><td>" + (c.source === "pinoy" ? "pinoymovieshub.win" : c.source === "kissasian" ? "kissasian.cam" : c.source === "viewasian" ? "viewasian.lol" : "TMDB") + "</td><td><code>/catalog/" + c.type + "/" + c.id + ".json</code></td></tr>";
         }).join("");
-        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + ADDON_NAME + '</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 16px;color:#eee;background:#14141b}a{color:#7ab8ff}table{border-collapse:collapse;width:100%}td,th{border:1px solid #333;padding:8px;text-align:left;font-size:14px}code{color:#9ef}h2{margin-top:28px}</style></head><body><h1>' + ADDON_NAME + " <small>v" + VERSION + '</small></h1><p>Stremio-protocol catalog addon for Nuvio \u2014 organized directory:</p><ul><li><b>Pinoy Movies Hub</b> \u2014 <a href="' + cfg.pinoySite + '">' + cfg.pinoySite.replace(/^https:\/\//, "") + '</a> (movies, series, genres, search)</li><li><b>KissAsian</b> \u2014 <a href="' + cfg.kissasianSite + '">' + cfg.kissasianSite.replace(/^https:\/\//, "") + '</a> (Asian dramas: latest, genres, search)</li><li><b>ViewAsian</b> \u2014 <a href="' + cfg.viewasianSite + '">' + cfg.viewasianSite.replace(/^https:\/\//, "") + "</a> (Asian dramas: latest, genres, countries, search)</li><li><b>TMDB</b> \u2014 official Asian-language movie &amp; series directories (Korean, Chinese, Japanese, Thai, Filipino)</li></ul><p>Add this manifest URL in Nuvio (Settings &rarr; Addons): <b>" + (cfg.__selfUrl || "https://your-deployment") + '/manifest.json</b></p><p>Health probe: <a href="/health"><code>/health</code></a> (per-source status, latency, hints)</p><h2>Catalogs</h2><table><tr><th>Name</th><th>Type</th><th>Source</th><th>Endpoint</th></tr>' + rows + "</table><h2>Search examples</h2><p><code>/catalog/movie/pinoy-movies/search=hello love again.json</code><br><code>/catalog/series/asian-series/search=queen of tears.json</code><br><code>/catalog/series/asian-series-viewasian/search=crash landing on you.json</code><br><code>/catalog/movie/asian-movies/search=parasite.json</code> (TMDB, asian-language results only)</p><h2>Genre / country chips</h2><p><code>/catalog/series/asian-series-genre/genre=Romance.json</code><br><code>/catalog/series/asian-series-viewasian-genre/genre=Korean.json</code><br><code>/catalog/movie/asian-movies-genre/genre=Action&amp;skip=20.json</code><br><code>/catalog/series/pinoy-series-genre/genre=Tagalog Dubbed.json</code></p><p>Pair with the <b>PinoyMoviesHub</b> and <b>AsianHub</b> Nuvio plugins (xrexzerox/nv-plugins) for playable streams.</p></body></html>";
+        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + ADDON_NAME + '</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 16px;color:#eee;background:#14141b}a{color:#7ab8ff}table{border-collapse:collapse;width:100%}td,th{border:1px solid #333;padding:8px;text-align:left;font-size:14px}code{color:#9ef}h2{margin-top:28px}</style></head><body><h1>' + ADDON_NAME + " <small>v" + VERSION + '</small></h1><p>Stremio-protocol catalog addon for Nuvio \u2014 organized directory:</p><ul><li><b>Pinoy Movies Hub</b> \u2014 <a href="' + cfg.pinoySite + '">' + cfg.pinoySite.replace(/^https:\/\//, "") + '</a> (movies, series, genres, search)</li><li><b>KissAsian</b> \u2014 <a href="' + cfg.kissasianSite + '">' + cfg.kissasianSite.replace(/^https:\/\//, "") + '</a> (Asian dramas: latest, genres, search)</li><li><b>ViewAsian</b> \u2014 <a href="' + cfg.viewasianSite + '">' + cfg.viewasianSite.replace(/^https:\/\//, "") + "</a> (Asian dramas: latest, genres, countries, search)</li><li><b>TMDB directory</b> \u2014 Asian movies/series: popular, trending, genre, <b>by language</b> (Korean/Japanese/Chinese/Thai/Filipino) and <b>on-the-air</b> rows</li></ul><p>Add this manifest URL in Nuvio (Settings &rarr; Addons): <b>" + (cfg.__selfUrl || "https://your-deployment") + '/manifest.json</b></p><p>Personalize it (optional): <code>/manifest.json?sources=pinoy,kissasian,viewasian,tmdb</code> &middot; <code>?langs=ko,ja,th</code></p><p>Health probe: <a href="/health"><code>/health</code></a> (per-source status, latency, hints)</p><h2>Catalogs</h2><table><tr><th>Name</th><th>Type</th><th>Source</th><th>Endpoint</th></tr>' + rows + "</table><h2>Search examples</h2><p><code>/catalog/movie/pinoy-movies/search=hello love again.json</code><br><code>/catalog/series/asian-series/search=queen of tears.json</code><br><code>/catalog/series/asian-series-viewasian/search=crash landing on you.json</code><br><code>/catalog/movie/asian-movies/search=parasite.json</code> (TMDB, asian-language results only)</p><h2>Genre / country chips</h2><p><code>/catalog/series/asian-series-genre/genre=Romance.json</code><br><code>/catalog/series/asian-series-viewasian-genre/genre=Korean.json</code><br><code>/catalog/movie/asian-movies-genre/genre=Action&amp;skip=20.json</code><br><code>/catalog/series/pinoy-series-genre/genre=Tagalog Dubbed.json</code></p><p>Pair with the <b>PinoyMoviesHub</b> and <b>AsianHub</b> Nuvio plugins (xrexzerox/nv-plugins) for playable streams.</p></body></html>";
       }
       function handle(urlString, env) {
         var cfg = makeConfig(env || {});
@@ -1376,6 +1549,17 @@ var require_core = __commonJS({
         } catch (e) {
           return Promise.resolve(json({ error: "invalid url" }, 400, 0));
         }
+        function csvParam(name) {
+          var v = String(u.searchParams && u.searchParams.get(name) || "").trim();
+          if (!v)
+            return null;
+          var arr = v.split(",").map(function(s) {
+            return s.trim().toLowerCase();
+          }).filter(Boolean);
+          return arr.length ? arr : null;
+        }
+        cfg.__manifestSources = csvParam("sources");
+        cfg.__manifestLangs = csvParam("langs");
         var path = u.pathname.replace(/\/+$/, "") || "/";
         try {
           if (path === "/" || path === "/healthz") {
@@ -1418,6 +1602,7 @@ var require_core = __commonJS({
         makeConfig,
         manifest,
         handle,
+        relayHandler,
         resetCaches,
         catalogDefinitions,
         // test hooks
@@ -1444,30 +1629,34 @@ var require_core = __commonJS({
   }
 });
 
-// worker.js
+// addons/asian-catalog/worker.js
 var import_core = __toESM(require_core());
 var Core = globalThis.AsianCatalogCore;
 var worker_default = {
   async fetch(request, env) {
+    const cors = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "*",
+      "Access-Control-Max-Age": "86400"
+    };
     if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, OPTIONS",
-          "Access-Control-Allow-Headers": "*",
-          "Access-Control-Max-Age": "86400"
-        }
-      });
-    }
-    if (request.method !== "GET" && request.method !== "HEAD") {
-      return new Response(JSON.stringify({ error: "method not allowed" }), {
-        status: 405,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-      });
+      return new Response(null, { status: 204, headers: cors });
     }
     try {
       const url = new URL(request.url);
+      if (request.method === "POST" && url.pathname.replace(/\/+$/, "") === "/relay") {
+        const response2 = await Core.relayHandler(request, env || {});
+        const headers = new Headers(response2.headers);
+        Object.keys(cors).forEach((k) => headers.set(k, cors[k]));
+        return new Response(response2.body, { status: response2.status, headers });
+      }
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return new Response(JSON.stringify({ error: "method not allowed" }), {
+          status: 405,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+        });
+      }
       const response = await Core.handle(url.toString(), env);
       if (request.method === "HEAD") {
         return new Response(null, { status: response.status, headers: response.headers });

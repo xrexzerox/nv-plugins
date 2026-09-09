@@ -1,4 +1,9 @@
-// cinemacity.js v4.1.0
+// cinemacity.js v4.2.0
+// v4.2.0: optional worker-relay lane. The site sits behind a Cloudflare
+// managed challenge that challenges some IPs (notably datacenter egress) no
+// matter the identity; the asian-catalog worker relay (v3.1.0+) fetches with
+// worker-grade HTTP and base64-wraps the reply, so text-only device runtimes
+// and challenged clients get a second path. Direct lanes stay primary.
 // v4.1.0: the site sits behind a Cloudflare managed challenge. The old fetch
 // ignored response codes, so a challenge page was parsed as if it were real
 // markup ("Found 0 script tags" / no anchors). Now: challenge/403 detection,
@@ -50,6 +55,43 @@ function looksLikeChallenge(html) {
   return /Just a moment|challenges\.cloudflare\.com|Attention Required|cf-chl/i.test(html || "");
 }
 
+function relayBase() {
+  try {
+    var s = globalThis.SCRAPER_SETTINGS || {};
+    var raw = String(s.workerRelay || s.cinemacityRelay || "").trim().replace(/\/+$/, "");
+    return raw && /^https?:\/\//i.test(raw) ? raw : "";
+  } catch (e) {
+    return "";
+  }
+}
+
+function relayGetText(url, headers) {
+  var base = relayBase();
+  if (!base)
+    return Promise.resolve("");
+  return fetch(base + "/relay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ url: url, method: "GET", headers: headers || {} })
+  }).then(function (r) {
+    if (!r || !r.ok)
+      return "";
+    return r.json();
+  }).then(function (j) {
+    if (!j || !j.ok || !j.bodyB64)
+      return "";
+    try {
+      var norm = String(j.bodyB64).replace(/-/g, "+").replace(/_/g, "/").replace(/[^A-Za-z0-9+/=]/g, "");
+      while (norm.length % 4) norm += "=";
+      return typeof atob === "function" ? atob(norm) : "";
+    } catch (e) {
+      return "";
+    }
+  }).catch(function () {
+    return "";
+  });
+}
+
 function fetchOnce(url, headers) {
   return fetch(url, {
     headers: headers || HEADERS,
@@ -70,8 +112,13 @@ function fetchText(url, options) {
     console.log("[CinemaCity] blocked or failed (" + err.message + "), retrying with mobile identity...");
     return fetchOnce(url, MOBILE_HEADERS);
   }).catch(function(err2) {
-    console.log("[CinemaCity] retry failed too (" + err2.message + ")");
-    return ""; // empty keeps the old fail-soft flow (callers treat falsy as no-data)
+    console.log("[CinemaCity] retry failed too (" + err2.message + "), trying worker relay...");
+    return relayGetText(url, options.headers || MOBILE_HEADERS).then(function(relayed) {
+      if (relayed && !looksLikeChallenge(relayed))
+        return relayed;
+      console.log("[CinemaCity] relay empty or challenged too");
+      return ""; // empty keeps the old fail-soft flow (callers treat falsy as no-data)
+    });
   });
 }
 
@@ -347,4 +394,13 @@ function getStreams(tmdbId, mediaType, season, episode) {
   });
 }
 
-module.exports = { getStreams };
+module.exports = {
+  getStreams,
+  // test hooks (offline regression suite)
+  _test: {
+    looksLikeChallenge: looksLikeChallenge,
+    relayBase: relayBase,
+    atobPolyfill: atobPolyfill,
+    extractBalanced: extractBalanced
+  }
+};

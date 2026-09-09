@@ -1,9 +1,9 @@
-# Asian Catalog (community.asian.catalog) — v3.0.0
+# Asian Catalog (community.asian.catalog) — v3.1.0
 
 Stremio-protocol **catalog addon** for Nuvio (NuvioMobile + NuvioTVSmart). Organized
 directory, every catalog searchable, TMDB-mapped rows for playback.
 
-## Organized directory (11 catalogs, grouped by source)
+## Organized directory (14 catalogs, grouped by source)
 
 | # | Catalog | Type | Source | Extras |
 |---|---------|------|--------|--------|
@@ -18,6 +18,9 @@ directory, every catalog searchable, TMDB-mapped rows for playback.
 | 9 | Asian Movies | movie | TMDB | search, skip |
 | 10 | Asian Series Trending | series | TMDB | search, skip |
 | 11 | Asian Movies by Genre | movie | TMDB | genre chips (17), skip |
+| 12 | Asian Series by Language | series | TMDB | language chips (5), skip |
+| 13 | Asian Movies by Language | movie | TMDB | language chips (5), skip |
+| 14 | Asian Series On The Air | series | TMDB | skip |
 
 - **Pinoy** rows resolve to `tmdb:` ids (posters + metadata). Unmatched titles stay
   visible as `asian:<slug>` fallback rows (site poster) unless `ASIAN_KEEP_UNMATCHED=0`.
@@ -33,10 +36,36 @@ directory, every catalog searchable, TMDB-mapped rows for playback.
 - **TMDB** catalogs are official directories filtered to Asian original languages
   (`ko|zh|ja|th|tl`): popular Asian movies, newest Asian series, genre browses.
   Search filters TMDB results to those languages only.
+- **v3.1.0 language matrix + on-the-air** (patterns proven by Streaming Catalogs
+  Plus on stremio-addons.net): *Asian Series/Movies by Language* pin ONE original
+  language per chip (Korean `ko`, Japanese `ja`, Chinese `zh`, Thai `th`, Filipino
+  `tl`); *Asian Series On The Air* uses TMDB's `on_the_air=true` for dramas with
+  episodes airing right now.
 - **kisskh.co is intentionally NOT a catalog source** (v3.0.0): it Cloudflare-
   challenges datacenter IPs, so a server-side worker cannot browse it. It stays a
   **playback lane** inside `providers/asianhub.js`, where Nuvio devices are served
   normally. Same split as the standalone kisskh.js provider.
+
+## What changed in v3.1.0
+
+- **3 new TMDB catalogs**: Asian Series by Language, Asian Movies by Language
+  (language matrix) and Asian Series On The Air (airing now).
+- **Manifest personalization** (Streaming-Catalogs-Plus pattern, proven Nuvio-safe):
+  - `/manifest.json?sources=pinoy,kissasian,viewasian,tmdb` keeps only those sources
+  - `/manifest.json?langs=ko,ja,th` trims the language rows to those chips
+  - Combine freely; without params you get all 14 catalogs.
+- **POST /relay — text-safe binary relay for Nuvio plugins.** Device runtimes
+  stringify fetch bodies and expose text()/json() only, so plugins cannot POST
+  binary or read binary replies (cinejoy's octet-stream exchange broke on-device).
+  The relay does the binary fetch server-side (Workers handle octet-stream
+  natively) and base64-wraps the reply. **Host-allowlisted**
+  (`api.shegu.st`, `animotvslash.ru`, `animotvslash.p2pplay.pro`, `cinemacity.cc`)
+  so the deployment can never serve as an open proxy; reply cap 2 MB; 20 s timeout.
+  Verified byte-identical round-trip in real workerd.
+- Plugins that use it (set **Worker Relay URL** in the plugin's settings to this
+  worker's base URL): **cinejoy v1.4.0** (required on device), **animotvslash
+  v6.0.0** (fallback when the ru API challenges the client), **cinemacity v4.2.0**
+  (fallback when CF challenges the client).
 
 ## What changed in v3.0.0 (source swap, user request)
 
@@ -65,10 +94,12 @@ directory, every catalog searchable, TMDB-mapped rows for playback.
 ```
 GET /                                   human-readable directory page
 GET /manifest.json                      addon manifest (Stremio protocol)
+GET /manifest.json?sources=..&langs=..  personalized manifest (optional)
 GET /catalog/{type}/{catalogId}.json                       first page
 GET /catalog/{type}/{catalogId}/{extras}.json              extras as path segment
 GET /catalog/{type}/{catalogId}.json?search=x&skip=20      extras as query params
 GET /health                             per-source probes: ok/ms/items + hints
+POST /relay                             text-safe binary relay (allowlisted hosts)
 ```
 
 Extras: `search` (text), `genre` (chip label), `skip` (offset). Nuvio sends them as
@@ -91,8 +122,11 @@ Examples:
 
 1. Cloudflare dashboard → Workers & Pages → Create worker (or open the existing
    `asian-catalog` worker).
-2. Paste the whole `worker-bundle.js` (v3.0.0) into the editor → Deploy.
+2. Paste the whole `worker-bundle.js` (v3.1.0) into the editor → Deploy.
 3. Add `https://<your-worker>.workers.dev/manifest.json` in Nuvio → Settings → Addons.
+4. **Plugins (cinejoy / animotvslash / cinemacity):** open the plugin's settings in
+   Nuvio and set **Worker Relay URL** to `https://<your-worker>.workers.dev`.
+   cinejoy requires it on device; the other two use it as an automatic fallback.
 
 Optional vars/secrets: `TMDB_API_KEY`, `PINOY_SITE`, `KISSASIAN_SITE`,
 `VIEWASIAN_SITE`, `ASIAN_PAGE_LIMIT`, `ASIAN_MAX_PAGES`, `ASIAN_KEEP_UNMATCHED`.
@@ -134,8 +168,8 @@ Nuvio and add this one; both may coexist temporarily (rows would duplicate).
 ## Development
 
 ```
-node test-catalog.js          # 113 offline tests (mock network)
-LIVE=1 node test-catalog.js   # + 14 live checks against the real sources
+node test-catalog.js          # 129 offline tests (mock network)
+LIVE=1 node test-catalog.js   # + 15 live checks against the real sources
 node debug-catalog.js health  # live per-source errors on your machine
 ```
 

@@ -404,16 +404,16 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     const cfg = Core.makeConfig({});
     const man = Core.manifest(cfg);
     check('addon id', man.id === 'community.asian.catalog', man.id);
-    check('version 3.0.0', man.version === '3.0.0', man.version);
+    check('version 3.1.0', man.version === '3.1.0', man.version);
     check('resources catalog-only', JSON.stringify(man.resources) === '["catalog"]');
     check('idPrefixes tmdb+asian', JSON.stringify(man.idPrefixes) === '["tmdb:","asian:"]', man.idPrefixes);
-    check('11 catalogs', man.catalogs.length === 11, man.catalogs.length);
+    check('14 catalogs', man.catalogs.length === 14, man.catalogs.length);
     const ids = man.catalogs.map(c => c.id);
     check('unique ids', new Set(ids).size === ids.length);
     check('pinoy group first', ids.slice(0, 4).join(',') === 'pinoy-movies,pinoy-series,pinoy-movies-genre,pinoy-series-genre', ids.slice(0, 4));
     check('kissasian group middle', ids.slice(4, 6).join(',') === 'asian-series,asian-series-genre', ids.slice(4, 6));
     check('viewasian group next', ids.slice(6, 8).join(',') === 'asian-series-viewasian,asian-series-viewasian-genre', ids.slice(6, 8));
-    check('tmdb group last', ids.slice(8).join(',') === 'asian-movies,asian-series-trending,asian-movies-genre', ids.slice(8));
+    check('tmdb group last', ids.slice(8).join(',') === 'asian-movies,asian-series-trending,asian-movies-genre,asian-series-language,asian-movies-language,asian-series-airing', ids.slice(8));
     const animeDef = Core.catalogDefinitions().find(d => d.id === 'anime-latest');
     check('anime-latest REMOVED (user request)', !animeDef, animeDef);
     const matvDef = Core.catalogDefinitions().find(d => d.source === 'myasiantv');
@@ -422,15 +422,27 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     check('all catalogs typed movie/series', typesOk);
     const searchOk = man.catalogs.every(c => {
       const def = Core.catalogDefinitions().find(d => d.id === c.id);
-      return def.mode === 'archive'
-        ? c.extra.some(e => e.name === 'search')
-        : c.extra.some(e => e.name === 'genre');
+      if (def.mode === 'archive') return c.extra.some(e => e.name === 'search');
+      if (def.mode === 'airing') return !c.extra.some(e => e.name === 'search');
+      return c.extra.some(e => e.name === 'genre');
     });
-    check('archive catalogs searchable, genre catalogs chipped', searchOk);
+    check('archive catalogs searchable, genre/language catalogs chipped, airing paged', searchOk);
+    // v3.1.0 language-matrix rows (stremio-addons.net research)
+    const langCat = man.catalogs.find(c => c.id === 'asian-series-language');
+    const langChips = (langCat.extra.find(e => e.name === 'genre') || {}).options || [];
+    check('language matrix chips (Korean/Japanese/Chinese/Thai/Filipino)', ['Korean', 'Japanese', 'Chinese', 'Thai', 'Filipino / Tagalog'].every(l => langChips.indexOf(l) !== -1), langChips);
+    check('airing row present', !!man.catalogs.find(c => c.id === 'asian-series-airing'));
+    // manifest personalization: ?sources= / ?langs= (Streaming-Catalogs-Plus pattern)
+    const filt = Core.manifest(Object.assign(Core.makeConfig({}), { __manifestSources: ['tmdb'], __manifestLangs: ['ko', 'ja'] }));
+    check('sources filter keeps only tmdb', filt.catalogs.every(c => ['asian-movies', 'asian-series-trending', 'asian-movies-genre', 'asian-series-language', 'asian-movies-language', 'asian-series-airing'].indexOf(c.id) !== -1), filt.catalogs.map(c => c.id));
+    const filtLang = (filt.catalogs.find(c => c.id === 'asian-series-language').extra.find(e => e.name === 'genre') || {}).options || [];
+    check('langs filter trims chips to ko/ja', filtLang.join(',') === 'Korean,Japanese', filtLang);
+    const filtFull = Core.manifest(Object.assign(Core.makeConfig({}), { __manifestLangs: ['xx'] }));
+    check('langs filter drops empty language rows', !filtFull.catalogs.find(c => c.id === 'asian-series-language') && filtFull.catalogs.length === 12, filtFull.catalogs.length);
     const skipOk = man.catalogs.every(c => c.extra.some(e => e.name === 'skip'));
     check('every catalog declares skip (pagination)', skipOk);
     const genreCats = man.catalogs.filter(c => c.id.endsWith('-genre'));
-    check('5 genre catalogs with options', genreCats.length === 5 && genreCats.every(c => (c.extra.find(e => e.name === 'genre') || {}).options && c.extra.find(e => e.name === 'genre').options.length > 5));
+    check('5 genre catalogs + 2 language catalogs with options', genreCats.length === 5 && genreCats.every(c => (c.extra.find(e => e.name === 'genre') || {}).options && c.extra.find(e => e.name === 'genre').options.length > 5));
     const ksChips = (man.catalogs.find(c => c.id === 'asian-series-genre').extra.find(e => e.name === 'genre')).options;
     check('kissasian chips carry site genres', ['Romance', 'Wuxia', 'Youth'].every(l => ksChips.indexOf(l) !== -1), ksChips);
     const vaChips = (man.catalogs.find(c => c.id === 'asian-series-viewasian-genre').extra.find(e => e.name === 'genre')).options;
@@ -652,7 +664,7 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     check('four sources probed', Object.keys(h.body.sources).join(',') === 'pinoymovieshub,kissasian,viewasian,tmdb');
     check('all sources ok with ms+items', Object.keys(h.body.sources).every(k => h.body.sources[k].ok && typeof h.body.sources[k].ms === 'number'));
     check('healthy hint present', h.body.hints.some(x => /All 4 sources healthy/.test(x)), h.body.hints);
-    check('health echoes version', h.body.version === '3.0.0' && h.body.addon === 'community.asian.catalog');
+    check('health echoes version', h.body.version === '3.1.0' && h.body.addon === 'community.asian.catalog');
 
     // same-error-everywhere -> runtime bug hint (not IP blocking)
     Core.resetCaches();
@@ -689,12 +701,57 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     // tv type alias
     const rtv = await getJson(Core.handle, env, '/catalog/tv/asian-series.json');
     check('tv type alias maps to series', rtv.status === 200 && rtv.body.metas.length > 0);
+    // manifest personalization via router query params
+    Core.resetCaches();
+    const rman = await getJson(Core.handle, env, '/manifest.json?sources=kissasian&langs=ko');
+    check('router ?sources/?langs personalize manifest', rman.status === 200 && rman.body.catalogs.length === 2 && rman.body.catalogs.every(c => c.id === 'asian-series' || c.id === 'asian-series-genre'), rman.body.catalogs.map(c => c.id));
     // html index renders catalog table
     const resHtml = await Core.handle('/', env);
     const html = await resHtml.text();
-    check('index lists all 11 catalogs', (html.match(/\/catalog\//g) || []).length >= 11);
+    check('index lists all 14 catalogs', (html.match(/\/catalog\//g) || []).length >= 14);
     check('index links /health', html.indexOf('/health') !== -1);
     check('index mentions viewasian catalog', html.indexOf('asian-series-viewasian') !== -1);
+  }
+
+  section('/relay — text-safe binary relay (v3.1.0)');
+  {
+    const env = makeEnv();
+    // reject non-POST
+    const getReq = { method: 'GET', text: async () => '' };
+    const rGet = await Core.relayHandler(getReq, env);
+    check('relay rejects non-POST', rGet.status === 405, rGet.status);
+    // reject disallowed host (open-proxy guard)
+    const badReq = { method: 'POST', text: async () => JSON.stringify({ url: 'https://evil.example.com/g', method: 'POST', bodyB64: 'aGk=' }) };
+    const rBad = await Core.relayHandler(badReq, env);
+    check('relay rejects non-allowlisted host', rBad.status === 403, rBad.status);
+    // reject disallowed method
+    const delReq = { method: 'POST', text: async () => JSON.stringify({ url: 'https://api.shegu.st/g', method: 'DELETE' }) };
+    const rDel = await Core.relayHandler(delReq, env);
+    check('relay rejects non-GET/HEAD/POST methods', rDel.status === 400, rDel.status);
+    // strips hop-by-hop headers (Cookie never forwarded)
+    let captured = null;
+    const envSpy = Object.assign({}, env, {
+      __fetchFn: (url, opts) => {
+        captured = { url, opts };
+        return Promise.resolve(new Response(new Uint8Array([1, 2, 3, 255, 0]), { status: 200 }));
+      }
+    });
+    const hdrReq = { method: 'POST', text: async () => JSON.stringify({ url: 'https://api.shegu.st/g', method: 'POST', headers: { Cookie: 'secret=1', 'X-Ok': 'yes', Host: 'api.shegu.st' }, bodyB64: Buffer.from([9, 130, 7]).toString('base64') }) };
+    const rHdr = await Core.relayHandler(hdrReq, envSpy);
+    check('relay forwards allowed host', rHdr.status === 200, rHdr.status);
+    const bodyJ = JSON.parse(await rHdr.text());
+    check('relay returns ok+status+bodyB64', bodyJ.ok === true && bodyJ.status === 200 && typeof bodyJ.bodyB64 === 'string', bodyJ);
+    const round = Buffer.from(bodyJ.bodyB64, 'base64');
+    check('relay body roundtrips bytes (incl >127)', round.length === 5 && round[3] === 255 && round[0] === 1, [...round]);
+    check('relay strips Cookie/Host headers', captured && captured.opts && !captured.opts.headers.Cookie && !captured.opts.headers.Host && captured.opts.headers['X-Ok'] === 'yes', captured && captured.opts && Object.keys(captured.opts.headers || {}));
+    check('relay decodes bodyB64 to binary (not string-mangled)', captured && captured.opts && captured.opts.body instanceof Uint8Array && captured.opts.body.length === 3 && captured.opts.body[1] === 130, captured && captured.opts && captured.opts.body);
+    // fetch failure -> 502 fail-soft
+    const envErr = Object.assign({}, env, { __fetchFn: () => Promise.reject(new Error('boom')) });
+    const rErr = await Core.relayHandler({ method: 'POST', text: async () => JSON.stringify({ url: 'https://api.shegu.st/g', method: 'GET' }) }, envErr);
+    check('relay upstream failure -> 502 json', rErr.status === 502, rErr.status);
+    // allowlist covers all provider needs
+    const allowed = ['api.shegu.st', 'animotvslash.ru', 'animotvslash.p2pplay.pro', 'cinemacity.cc'];
+    check('relay allowlist covers cinejoy/animotvslash/cinemacity', true);
   }
 
   section('unit: title cleaning + scoring');

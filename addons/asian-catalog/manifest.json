@@ -1,6 +1,6 @@
 {
   "id": "community.asian.catalog",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "name": "Asian Catalog",
   "description": "Organized Asian catalogs: Pinoy movies & series (pinoymovieshub), Asian dramas (kissasian.cam + viewasian.lol) and Asian movies/series directories by language (TMDB). Titles resolve to TMDB ids for playback.",
   "logo": "https://pinoymovieshub.win/wp-content/uploads/2025/04/cropped-favicon-11-192x192.png",
@@ -297,6 +297,59 @@
             "War"
           ]
         },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "asian-series-language",
+      "name": "Asian Series by Language",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "genre",
+          "options": [
+            "Korean",
+            "Japanese",
+            "Chinese",
+            "Thai",
+            "Filipino / Tagalog"
+          ]
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "asian-movies-language",
+      "name": "Asian Movies by Language",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "genre",
+          "options": [
+            "Korean",
+            "Japanese",
+            "Chinese",
+            "Thai",
+            "Filipino / Tagalog"
+          ]
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "asian-series-airing",
+      "name": "Asian Series On The Air",
+      "pageSize": 20,
+      "extra": [
         {
           "name": "skip"
         }
