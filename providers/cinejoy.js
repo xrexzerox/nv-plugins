@@ -699,18 +699,43 @@ function scrape(ctx) {
           if (!result || !result.data)
             continue;
           const bodyBytes = b64urlDecodeToBytes(result.data);
-          let binBody = "";
-          for (let i = 0; i < bodyBytes.length; i++)
-            binBody += String.fromCharCode(bodyBytes[i] & 255);
+          // NOTE: the request/response bodies are BINARY. A JS string body gets
+          // UTF-8 encoded by fetch (corrupting bytes >127), which is why the old
+          // code 404'd / failed to decrypt. Send a Uint8Array, read arrayBuffer.
+          let gBody = bodyBytes;
+          if (!(typeof Uint8Array !== "undefined" && bodyBytes instanceof Uint8Array)) {
+            gBody = new Uint8Array(bodyBytes.length);
+            for (let i = 0; i < bodyBytes.length; i++) gBody[i] = bodyBytes[i] & 255;
+          }
           const gRes = yield fetch(CINEJOY_API + "/g", {
             method: "POST",
-            headers: Object.assign({}, headers, { "Content-Type": "application/octet-stream" }),
-            body: binBody
+            headers: Object.assign({}, headers, { "Content-Type": "application/octet-stream", Origin: CINEJOY_BASE }),
+            body: gBody
+          }).catch(function (e) {
+            // runtimes without Uint8Array body support: fall back to binary string
+            let binBody = "";
+            for (let i = 0; i < bodyBytes.length; i++)
+              binBody += String.fromCharCode(bodyBytes[i] & 255);
+            return fetch(CINEJOY_API + "/g", {
+              method: "POST",
+              headers: Object.assign({}, headers, { "Content-Type": "application/octet-stream", Origin: CINEJOY_BASE }),
+              body: binBody
+            });
           });
-          const gText = yield gRes.text();
-          const gBuf = [];
-          for (let i = 0; i < gText.length; i++)
-            gBuf.push(gText.charCodeAt(i) & 255);
+          if (!gRes || !gRes.ok)
+            continue;
+          let gBuf;
+          if (gRes.arrayBuffer) {
+            const ab = yield gRes.arrayBuffer();
+            gBuf = [];
+            const u8 = new Uint8Array(ab);
+            for (let i = 0; i < u8.length; i++) gBuf.push(u8[i] & 255);
+          } else {
+            const gText = yield gRes.text();
+            gBuf = [];
+            for (let i = 0; i < gText.length; i++)
+              gBuf.push(gText.charCodeAt(i) & 255);
+          }
           const payload = b64urlEncodeNoPad(gBuf);
           const decJson = yield postJson(
             MULTI_DECRYPT_API + "/dec-cinejoy",

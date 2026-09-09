@@ -95,23 +95,29 @@ const SERVERS = {
 
 // HTTP request helper using fetch (React Native compatible)
 function requestRaw(method, urlString, options) {
-  return fetch(urlString, {
+  // Hard per-request deadline: api.videasy.net endpoints can hang 20s+ when
+  // a route is gone; without this the whole provider stalls ~60s.
+  const deadline = (options && options.timeoutMs) || 8000;
+  return Promise.race([
+    fetch(urlString, {
     method: method,
     headers: (options && options.headers) || {},
     body: (options && options.body) || undefined
   }).then(response => {
     return response.text().then(body => {
       if (response.ok) {
-        return { 
-          status: response.status, 
-          headers: response.headers, 
-          body: body 
+        return {
+          status: response.status,
+          headers: response.headers,
+          body: body
         };
       } else {
         throw new Error(`HTTP ${response.status}: ${body}`);
       }
     });
-  });
+  }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`timeout ${deadline}ms: ${urlString}`)), deadline))
+  ]);
 }
 
 // Get text from URL

@@ -657,7 +657,7 @@ function scrape(ctx) {
     const target = !isTv ? HEXA_API + "/api/tmdb/movie/" + ctx.tmdbId + "/images" : HEXA_API + "/api/tmdb/tv/" + ctx.tmdbId + "/season/" + ctx.season + "/episode/" + ctx.episode + "/images";
     const key = randomKeyHex();
     const tokenJson = JSON.parse(
-      yield fetchText(MULTI_DECRYPT_API + "/enc-hexa", {}, 15e3)
+      yield fetchText(MULTI_DECRYPT_API + "/enc-hexa", {}, 6e3)
     );
     const token = tokenJson && tokenJson.result && tokenJson.result.token || tokenJson.token || "";
     if (!token)
