@@ -7,12 +7,13 @@
  *   PORT=3000 node server.js          # custom port
  *
  * Optional env:
- *   TMDB_API_KEY          custom TMDB v3 key (a default ecosystem key is embedded)
- *   PINOYHUB_SITE         alternate site base (default https://pinoymovieshub.win)
- *   PINOYHUB_PAGE_LIMIT   resolved items per response (default 20, max 50)
- *   PINOYHUB_KEEP_UNMATCHED  "=1" keeps titles that fail TMDB matching
- *                         (ids become pinoyhub:<slug>; detail/stream support
- *                         is limited for those)
+ *   TMDB_API_KEY            custom TMDB v3 key (a default ecosystem key is embedded)
+ *   PINOY_SITE              alternate pinoymovieshub base (default https://pinoymovieshub.win)
+ *   DRAMACOOL_SITE          alternate dramacool base (default https://dramacool.org.es)
+ *   ASIAN_PAGE_LIMIT        resolved items per response (default 20, max 50)
+ *   ASIAN_MAX_PAGES         max source pages consumed per catalog buffer
+ *   ASIAN_KEEP_UNMATCHED    "=0" drops titles that fail TMDB matching instead
+ *                           of showing them as asian:<slug> fallback rows
  *
  * Then add  http://<host>:<port>/manifest.json  in Nuvio (Settings -> Addons).
  */
@@ -29,7 +30,6 @@ const env = Object.assign({}, process.env);
 env.__selfUrl = process.env.SELF_URL || `http://localhost:${PORT}`;
 
 const server = http.createServer((req, res) => {
-  let body = '';
   let aborted = false;
 
   const finish = async () => {
@@ -67,4 +67,5 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`[asian-catalog] listening on http://0.0.0.0:${PORT}`);
   console.log(`[asian-catalog] manifest: ${env.__selfUrl}/manifest.json`);
+  console.log(`[asian-catalog] health:   ${env.__selfUrl}/health`);
 });

@@ -1,9 +1,9 @@
 {
-  "id": "community.asianhub.catalog",
-  "version": "2.1.1",
+  "id": "community.asian.catalog",
+  "version": "2.2.0",
   "name": "Asian Catalog",
-  "description": "Browse Pinoy movies, Tagalog-dubbed series and Asian movies & dramas (Korean/Chinese/Japanese/Thai and more, English subs). Titles resolve to TMDB ids; pair with the PinoyMoviesHub and AsianHub plugins for playback.",
-  "logo": "https://www.google.com/s2/favicons?domain=myasiantv.com.lv&sz=128",
+  "description": "Organized Asian catalogs: Pinoy movies & series (pinoymovieshub), Asian dramas (dramacool.org.es) and Asian movies/series directories by language (TMDB). Titles resolve to TMDB ids for playback.",
+  "logo": "https://pinoymovieshub.win/wp-content/uploads/2025/04/cropped-favicon-11-192x192.png",
   "resources": [
     "catalog"
   ],
@@ -12,13 +12,28 @@
     "series"
   ],
   "idPrefixes": [
-    "tmdb:"
+    "tmdb:",
+    "asian:"
   ],
   "catalogs": [
     {
       "type": "movie",
       "id": "pinoy-movies",
       "name": "Pinoy Movies",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "pinoy-series",
+      "name": "Pinoy Series",
       "pageSize": 20,
       "extra": [
         {
@@ -77,20 +92,6 @@
     },
     {
       "type": "series",
-      "id": "pinoy-series",
-      "name": "Pinoy Series",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "search"
-        },
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "series",
       "id": "pinoy-series-genre",
       "name": "Pinoy Series by Genre",
       "pageSize": 20,
@@ -137,8 +138,73 @@
     },
     {
       "type": "series",
-      "id": "asian-dramas",
-      "name": "Asian Dramas",
+      "id": "asian-series",
+      "name": "Asian Series (Dramacool)",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "asian-series-genre",
+      "name": "Asian Series by Genre (Dramacool)",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "genre",
+          "options": [
+            "Action",
+            "Comedy",
+            "Drama",
+            "Fantasy",
+            "Food",
+            "Historical",
+            "Life",
+            "Medical",
+            "Melodrama",
+            "Military",
+            "Mystery",
+            "Political",
+            "Romance",
+            "Sci-Fi",
+            "Supernatural",
+            "Thriller",
+            "Youth",
+            "Korean",
+            "Chinese",
+            "Japanese",
+            "Thai"
+          ]
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "asian-movies",
+      "name": "Asian Movies",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "asian-series-trending",
+      "name": "Asian Series Trending",
       "pageSize": 20,
       "extra": [
         {
@@ -151,45 +217,30 @@
     },
     {
       "type": "movie",
-      "id": "asian-movies",
-      "name": "Asian Movies by Country",
+      "id": "asian-movies-genre",
+      "name": "Asian Movies by Genre",
       "pageSize": 20,
       "extra": [
         {
           "name": "genre",
           "options": [
-            "Korean",
-            "Chinese",
-            "Japanese",
-            "Thai",
-            "Taiwanese",
-            "Hong Kong",
-            "Indian",
-            "Other Asia"
-          ]
-        },
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "series",
-      "id": "asian-dramas-country",
-      "name": "Asian Dramas by Country",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "genre",
-          "options": [
-            "Korean",
-            "Chinese",
-            "Japanese",
-            "Thai",
-            "Taiwanese",
-            "Hong Kong",
-            "Indian",
-            "Other Asia"
+            "Action",
+            "Adventure",
+            "Animation",
+            "Comedy",
+            "Crime",
+            "Documentary",
+            "Drama",
+            "Family",
+            "Fantasy",
+            "History",
+            "Horror",
+            "Music",
+            "Mystery",
+            "Romance",
+            "Sci-Fi",
+            "Thriller",
+            "War"
           ]
         },
         {

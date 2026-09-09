@@ -5,8 +5,8 @@
  * Deploy option B (dashboard):  paste worker-bundle.js (single-file build of
  *                               this entry + core.js) into a new Worker.
  *
- * Optional env/secret: TMDB_API_KEY, PINOYHUB_SITE, PINOYHUB_PAGE_LIMIT,
- *                      PINOYHUB_KEEP_UNMATCHED, PINOYHUB_MAX_PAGES
+ * Optional env/secret: TMDB_API_KEY, PINOY_SITE, DRAMACOOL_SITE,
+ *                      ASIAN_PAGE_LIMIT, ASIAN_MAX_PAGES, ASIAN_KEEP_UNMATCHED
  */
 
 import './core.js';

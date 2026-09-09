@@ -3,7 +3,7 @@
  * Asian Catalog — addon test harness
  *
  *   node test-catalog.js            # offline tests (mock network)
- *   LIVE=1 node test-catalog.js     # + live tests against the real site/TMDB
+ *   LIVE=1 node test-catalog.js     # + live tests against the real sources
  *
  * Run from this folder. Requires Node >= 18.
  */
@@ -31,720 +31,623 @@ function check(name, cond, extra) {
 function section(name) { console.log('\n== ' + name + ' =='); }
 
 // ============================================================
-// MOCK NETWORK
+// FIXTURE BUILDERS
 // ============================================================
 
-const SITE = 'https://test-site.local';
-const MATV_SITE = 'https://matv.local';
-const DC_SITE = 'https://dc.local';
+const PINOY = 'https://pinoymovieshub.test';
+const DC = 'https://dramacool.test';
+const PAGE_LIMIT = 5; // small pages make pagination assertions sharp
 
-const MOCK_TMDB = {
-  'queen mantis': { id: 99901, title: 'Queen Mantis', year: '2025' },
-  'narco saints': { id: 99902, title: 'Narco-Saints', year: '2022' },
-  'love ngo': { id: 99903, title: 'Love, Ngo', year: '2026' },
-  '72 hours': { id: 99904, title: '72 Hours', year: '2025' },
-  'co x love': { id: 99905, title: 'Co x Love (Co-Love)', year: '2025' },
-  'love siargao': { id: 99906, title: 'Love, Siargao', year: '2026' },
-  'the chambermaids daughter': { id: 99907, title: 'The Chambermaid\u2019s Daughter', year: '2026' },
-  'cobra kai': { id: 99908, title: 'Cobra Kai', year: '2018' },
-  'crash landing on you': { id: 99910, title: 'Crash Landing on You', year: '2019' },
-  'vincenzo': { id: 99911, title: 'Vincenzo', year: '2021' },
-  'guardian the lonely and great god': { id: 99912, title: 'Guardian: The Lonely and Great God', year: '2016' },
-  'parasite': { id: 99913, title: 'Parasite', year: '2019' },
-  'train to busan': { id: 99914, title: 'Train to Busan', year: '2016' },
-  'squid game': { id: 99915, title: 'Squid Game', year: '2021' }
-};
+// --- pinoy (Dooplay HTML) fixtures ---
 
-function archiveItem(postId, slug, title, year, kind, poster) {
+function pinoyArchiveItem(postId, slug, title, year, kind, poster) {
   const pathRoot = kind === 'movie' ? 'movies' : 'series';
-  const p = poster || `${SITE}/wp-content/themes/dooplay/assets/img/no/dt_backdrop.png`;
-  return `<article class="item" id="post-${postId}"><div class="image"><a href="${SITE}/${pathRoot}/${slug}"> ` +
-    `<img src="${p}" alt="${title}" /> </a><a href="${SITE}/${pathRoot}/${slug}">` +
+  const p = poster || `${PINOY}/wp-content/themes/dooplay/assets/img/no/dt_backdrop.png`;
+  return `<article class="item" id="post-${postId}"><div class="image"><a href="${PINOY}/${pathRoot}/${slug}"> ` +
+    `<img src="${p}" alt="${title}" /> </a><a href="${PINOY}/${pathRoot}/${slug}">` +
     `<div class="data"><h3 class="title">${title}</h3><span>${year}</span></div></a>` +
     `<span class="item_type">${kind === 'movie' ? 'Movie' : 'TV'}</span></div></article>`;
 }
 
-function featuredItem(postId, slug, title, kind, poster) {
+function pinoyFeaturedItem(postId, slug, title, kind, poster) {
   const pathRoot = kind === 'movie' ? 'movies' : 'series';
   return `<article id="post-featured-${postId}" class="item ${kind}s"><div class="poster">` +
     `<img src="${poster}" alt="${title}"><div class="rating">0</div><div class="featu">Featured</div>` +
-    `<a href="${SITE}/${pathRoot}/${slug}">More</a></div></article>`;
+    `<a href="${PINOY}/${pathRoot}/${slug}">More</a></div></article>`;
 }
 
-function searchItem(slug, title, year, kind, desc) {
+function pinoySearchItem(slug, title, year, kind, desc) {
   const pathRoot = kind === 'movie' ? 'movies' : 'series';
   return `<article><div class="image"><div class="thumbnail animation-2">` +
-    `<a href="${SITE}/${pathRoot}/${slug}?_rt=MXwx&amp;_rt_nonce=de91a29ccf">` +
-    `<img src="${SITE}/wp-content/uploads/2025/03/IMG-150x150.webp" alt="${title}" />` +
+    `<a href="${PINOY}/${pathRoot}/${slug}?_rt=MXwx&amp;_rt_nonce=de91a29ccf">` +
+    `<img src="${PINOY}/wp-content/uploads/2025/03/IMG-150x150.webp" alt="${title}" />` +
     `<span class="${kind === 'movie' ? 'movies' : 'tv'}">${kind === 'movie' ? 'Movie' : 'TV'}</span></a></div></div>` +
-    `<div class="details"><div class="title"><a href="${SITE}/${pathRoot}/${slug}?_rt=MXwx&amp;_rt_nonce=de91a29ccf">${title}</a></div>` +
+    `<div class="details"><div class="title"><a href="${PINOY}/${pathRoot}/${slug}?_rt=MXwx&amp;_rt_nonce=de91a29ccf">${title}</a></div>` +
     `<div class="meta"><span class="year">${year}</span></div>` +
     `<div class="contenido"><p>${desc || 'A story.'}</p></div></div></article>`;
 }
 
-// Archive pages: page 1 = 10 items (4 unmatchable), page 2 = 10 filler
-// (all match), page 3 = 6 filler + 2 unmatchable, page 4+ = empty.
-// Total resolved stream = 22 items.
-function buildArchivePages(kind) {
-  const root = kind === 'movie' ? 'movies' : 'series';
-  const fillerWord = kind === 'movie' ? 'Movie' : 'Series';
-  const mk = (n, title, year) => archiveItem(1000 + n, `t-${n}`, title, year, kind);
-  const filler = (n, word) => mk(n, `Filler ${fillerWord} ${word}`, '2021');
-  const page1 = [
-    mk(1, 'Queen Mantis (Tagalog Dubbed)', '2025'),
-    mk(2, 'Narco Saints (Tagalog Dubbed)', '2022'),
-    mk(3, 'Totally Fake Local Show', '2024'),        // unmatchable
-    mk(4, 'Another Unlisted One', '2023'),           // unmatchable
-    mk(5, 'Love, Ngo', '2026'),
-    mk(6, '72 Hours (Tagalog Dubbed)', '2025'),
-    mk(7, 'Co x Love (Co-Love)', '2025'),            // mock DB has no entry for the parenthesized query
-    mk(8, 'Love, Siargao', '2026'),
-    mk(9, 'The Chambermaid\u2019s Daughter (Full Series)', '2026'),  // unmatchable in mock
-    mk(10, 'Cobra Kai (Tagalog Dubbed)', '2018')
+// Pinoy movie archive: page 1 = 6 titles (2 unmatchable), page 2 = 4 (all
+// match), page 3+ empty. The same titles appear in the series archive under
+// series/ links (kind derived from URL).
+function pinoyMoviesHtml(page) {
+  const real = [
+    ['noon-mantis', 'Queen Mantis (Tagalog Dubbed)', '2025'],
+    ['narco-saints', 'Narco Saints', '2022'],
+    ['zz-untitled-project', 'Untitled Project', '2026'],
+    ['seventy-two-hours', '72 Hours', '2025'],
+    ['kilig-movie-2026', 'Kilig Movie', '2026'],
+    ['love-ngo', 'Love Ngo', '2026'],
+    ['co-x-love', 'Co x Love', '2025'],
+    ['love-siargao', 'Love Siargao', '2026']
   ];
-  const page2 = [
-    filler(11, 'Eleven'), filler(12, 'Twelve'), filler(13, 'Thirteen'), filler(14, 'Fourteen'),
-    filler(15, 'Fifteen'), filler(16, 'Sixteen'), filler(17, 'Seventeen'), filler(18, 'Eighteen'),
-    filler(19, 'Nineteen'), filler(20, 'Twenty')
-  ];
-  const page3 = [
-    filler(21, 'Twenty One'), filler(22, 'Twenty Two'), filler(23, 'Twenty Three'),
-    filler(24, 'Twenty Four'), filler(25, 'Twenty Five'), filler(26, 'Twenty Six'),
-    mk(27, 'Totally Fake Local Show', '2024'),
-    mk(28, 'Another Unlisted One', '2023')
-  ];
-  return [page1, page2, page3].map((items, idx) => {
-    const feat = featuredItem(1001, 't-1', 'Queen Mantis', kind, `${SITE}/wp-content/uploads/2025/01/QUEEN-MANTIS-185x278.jpg`);
-    return `<html><body><div class="archive"><div class="pagination"><span>Page ${idx + 1} of 3</span></div>${feat}${items.join('')}</div></body></html>`;
-  });
-}
-
-const MOCK_PAGES = {
-  movie: buildArchivePages('movie'),
-  series: buildArchivePages('series')
-};
-
-const MOCK_SEARCH_PAGES = {
-  series: [
-    [
-      searchItem('queen-mantis-tagalog-dubbed', 'Queen Mantis (Tagalog Dubbed)', '2025', 'series', 'Mantis story.'),
-      searchItem('narco-saints-tagalog-dubbed', 'Narco-Saints (Tagalog Dubbed)', '2022', 'series', 'Korean drama.'),
-      searchItem('cobra-kai-tagalog-dubbed', 'Cobra Kai (Tagalog Dubbed)', '2018', 'series', 'Karate kid.')
-    ],
-    [] // search page 2: empty -> exhausted
-  ],
-  movie: [
-    [
-      searchItem('love-ngo', 'Love, Ngo', '2026', 'movie', 'Romance.'),
-      searchItem('co-love', 'Co x Love (Co-Love)', '2025', 'movie', 'Content creators.')
-    ],
-    []
-  ]
-};
-
-const MOCK_GENRE_PAGES = {
-  'tagalog-dubbed': [
-    [
-      searchItem('queen-mantis-tagalog-dubbed', 'Queen Mantis (Tagalog Dubbed)', '2025', 'series', 'Mantis story.'),
-      searchItem('cobra-kai-tagalog-dubbed', 'Cobra Kai (Tagalog Dubbed)', '2018', 'series', 'Karate kid.'),
-      searchItem('narco-saints-tagalog-dubbed', 'Narco-Saints (Tagalog Dubbed)', '2022', 'series', 'Korean drama.')
-    ],
-    []
-  ]
-};
-
-// MyAsianTV listing item (exact site shape)
-function matvItem(slug, title, year) {
-  return `<li> <a href="${MATV_SITE}/series/${slug}/" title="${title} (${year})"> ` +
-    `<div class="cover" style="background-image: url('${MATV_SITE}/wp-content/uploads/2026/09/${slug}.jpg');"> ` +
-    `<span class="rank-num">1</span> </div> <p class="title">${title} (${year})</p> ` +
-    `<p class="reaslead"><span>Released: </span></p> </a> </li>`;
-}
-
-const MOCK_MATV_LIST = [
-  // page 1 = most-popular-drama
-  [
-    matvItem('crash-landing-on-you-2019', 'Crash Landing on You', '2019'),
-    matvItem('vincenzo-2021', 'Vincenzo', '2021'),
-    matvItem('guardian-the-lonely-and-great-god-2016', 'Guardian: The Lonely and Great God', '2016')
-  ],
-  // page 2 = recently-added-movie
-  [ matvItem('filler-m1-2021', 'Filler M1', '2021'), matvItem('filler-m2-2021', 'Filler M2', '2021') ],
-  // page 3 = recently-added-kshow
-  [ matvItem('filler-k1-2022', 'Filler K1', '2022') ],
-  // page 4 = drama-start-with-a
-  [ matvItem('filler-a1-2020', 'Filler A1', '2020') ],
-  [] // page 5+: exhausted
-];
-
-const MOCK_MATV_SEARCH = {
-  'crash': [
-    { title: 'Crash Landing on You (2019) Episode 1', url: MATV_SITE + '/crash-landing-on-you-2019-episode-1/' },
-    { title: 'Crash Landing on You (2019) Episode 2', url: MATV_SITE + '/crash-landing-on-you-2019-episode-2/' },
-    { title: 'Crash Landing on You (2019) Episode 3', url: MATV_SITE + '/crash-landing-on-you-2019-episode-3/' }
-  ],
-  'vincenzo': [
-    { title: 'Vincenzo (2021) Episode 1', url: MATV_SITE + '/vincenzo-2021-episode-1/' },
-    { title: 'Sample Page', url: MATV_SITE + '/sample-page/' }
-  ]
-};
-
-// Dramacool country page: main grid (class="img") + sidebar widgets (h3 only)
-function dcGridItem(kind, slug, title) {
-  return `<li> <a href="${DC_SITE}/${kind}/${slug}" class="img" title="${title}"> ` +
-    `<img src="${DC_SITE}/public/storage/drama/${slug}.jpg" class="lazy" alt="${title}" ` +
-    `data-original="${DC_SITE}/public/storage/drama/${slug}.jpg" style="display: block;"> ` +
-    `<span class="type SUB">SUB</span> <h3 class="title">${title}</h3> </a> </li>`;
-}
-function dcSidebarItem(kind, slug, title) {
-  return `<li><h3><a href="${DC_SITE}/${kind}/${slug}">${title}</a></h3></li>`;
-}
-
-const MOCK_DC_PAGES = {
-  'korean-movie': `<html><body>` +
-    dcGridItem('movie-detail', 'parasite', 'Parasite') +
-    dcGridItem('movie-detail', 'train-to-busan', 'Train to Busan') +
-    dcSidebarItem('drama-info', 'deep-secret', 'Deep Secret') +
-    `</body></html>`,
-  'korean-drama': `<html><body>` +
-    dcGridItem('drama-info', 'squid-game', 'Squid Game') +
-    dcGridItem('drama-info', 'vincenzo', 'Vincenzo') +
-    dcSidebarItem('movie-detail', 'parasite', 'Parasite') +
-    `</body></html>`,
-  'japanese-movie': `<html><body></body></html>`
-};
-
-function serveHtml(pageNo, body) {
-  if (Array.isArray(body)) {
-    return pageNo < body.length ? (Array.isArray(body[pageNo]) ? body[pageNo].join('') : body[pageNo]) : '<html><body>No more</body></html>';
+  if (page === 1) {
+    let html = '<div class="featured">' +
+      pinoyFeaturedItem('501', 'featured-one', 'Featured One', 'movie', `${PINOY}/wp-content/uploads/feat-501.jpg`) + '</div>';
+    real.forEach((r, i) => {
+      const poster = i % 2 === 0
+        ? `${PINOY}/wp-content/uploads/${r[0]}-150x150.webp`
+        : `${PINOY}/wp-content/themes/dooplay/assets/img/no/dt_backdrop.png`;
+      html += pinoyArchiveItem(100 + i, r[0], r[1], r[2], 'movie', poster);
+    });
+    return html;
   }
-  return pageNo === 0 ? body : '<html><body>No more</body></html>';
+  if (page === 2) {
+    let html = '';
+    ['cobra-kai', 'hello-love-again', 'a-hard-day', 'requiem'].forEach((s, i) => {
+      html += pinoyArchiveItem(200 + i, s, s.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), '2018', 'movie');
+    });
+    return html;
+  }
+  return '<div class="no-items">Nothing found</div>';
 }
 
-function makeMockFetch() {
-  const calls = [];
-  const fillerIds = {};
-  const normalize = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  const fn = (url) => {
-    calls.push(url);
-    if (url.indexOf('api.themoviedb.org/3/search/') !== -1) {
-      const u = new URL(url);
-      const rawQ = u.searchParams.get('query') || '';
-      const q = normalize(rawQ);
-      const kind = url.indexOf('/search/tv') !== -1 ? 'tv' : 'movie';
-      const yearParam = u.searchParams.get(kind === 'tv' ? 'first_air_date_year' : 'year') || '';
-      let entry = MOCK_TMDB[q];
-      if (!entry && /^filler /.test(q)) {
-        // generic matcher so filler pages resolve to distinct tmdb ids
-        if (!fillerIds[q]) fillerIds[q] = 7000 + Object.keys(fillerIds).length + 1;
-        entry = { id: fillerIds[q], title: rawQ, year: yearParam || '2021' };
-      }
-      const results = entry ? [{
-        id: entry.id,
-        [kind === 'tv' ? 'name' : 'title']: entry.title,
-        [kind === 'tv' ? 'first_air_date' : 'release_date']: (entry.year || '2021') + '-01-01',
-        poster_path: '/' + q.replace(/\s+/g, '-') + '.jpg',
-        backdrop_path: '/' + q.replace(/\s+/g, '-') + '-bg.jpg',
-        overview: 'Mock overview for ' + entry.title + '.',
-        vote_average: 7.3,
-        genre_ids: kind === 'tv' ? [18, 10765] : [53, 18],
-        original_language: 'ko',
-        origin_country: kind === 'tv' ? ['KR'] : undefined
-      }] : [];
-      return Promise.resolve(new Response(JSON.stringify({ results }), { status: 200 }));
-    }
-    if (/api\.themoviedb\.org\/3\/(movie|tv)\/\d+\?/.test(url)) {
-      // details + credits enrichment (v2.1.0)
-      const kind = url.indexOf('/3/tv/') !== -1 ? 'tv' : 'movie';
-      const body = kind === 'tv' ? {
-        id: 99910,
-        genres: [{ id: 18, name: 'Drama' }, { id: 10765, name: 'Sci-Fi & Fantasy' }],
-        episode_run_time: [64],
-        origin_country: ['KR'],
-        credits: {
-          cast: [{ name: 'Hyun Bin' }, { name: 'Son Ye-jin' }, { name: null }],
-          crew: [{ name: 'Lee Jeong-hyo', job: 'Director' }, { name: 'Park Ji-eun', job: 'Writer' }]
-        }
-      } : {
-        id: 99913,
-        genres: [{ id: 53, name: 'Thriller' }, { id: 18, name: 'Drama' }],
-        runtime: 132,
-        production_countries: [{ iso_3166_1: 'KR', name: 'South Korea' }],
-        credits: {
-          cast: [{ name: 'Song Kang-ho' }, { name: 'Lee Sun-kyun' }],
-          crew: [{ name: 'Bong Joon-ho', job: 'Director' }, { name: 'Han Jin-won', job: 'Writer' }]
-        }
-      };
-      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
-    }
-    let m = url.match(new RegExp('^' + SITE + '/(?:' + 'movies|series' + ')(?:/page/(\\d+))?/?$'));
-    if (m) {
-      const kind = url.indexOf('/movies') !== -1 ? 'movie' : 'series';
-      return Promise.resolve(new Response(serveHtml(parseInt(m[1] || '1', 10) - 1, MOCK_PAGES[kind]), { status: 200 }));
-    }
-    m = url.match(new RegExp('^' + SITE + '/genre/([a-z0-9-]+)(?:/page/(\\d+))?/?$'));
-    if (m) {
-      const pages = MOCK_GENRE_PAGES[m[1]] || [[]];
-      return Promise.resolve(new Response(serveHtml(parseInt(m[2] || '1', 10) - 1, pages), { status: 200 }));
-    }
-    m = url.match(new RegExp('^' + SITE + '/page/(\\d+)/?\\?s=(.*)$'));
-    if (m) {
-      // decode the query crudely
-      const q = decodeURIComponent(m[2].replace(/\+/g, ' ')).toLowerCase();
-      const kind = q.indexOf('kai') !== -1 || q.indexOf('mantis') !== -1 || q.indexOf('narco') !== -1 ? 'series' : 'movie';
-      const pages = MOCK_SEARCH_PAGES[kind];
-      return Promise.resolve(new Response(serveHtml(parseInt(m[1], 10) - 1, pages), { status: 200 }));
-    }
-    m = url.match(new RegExp('^' + SITE + '/\\?s=(.*)$'));
-    if (m) {
-      const q = decodeURIComponent(m[1].replace(/\+/g, ' ')).toLowerCase();
-      const kind = q.indexOf('kai') !== -1 || q.indexOf('mantis') !== -1 || q.indexOf('narco') !== -1 ? 'series' : 'movie';
-      const pages = MOCK_SEARCH_PAGES[kind];
-      return Promise.resolve(new Response(serveHtml(0, pages), { status: 200 }));
-    }
-    // MyAsianTV listing pages
-    m = url.match(new RegExp('^' + MATV_SITE + '/(most-popular-drama|recently-added-movie|recently-added-kshow)/$'));
-    if (m) {
-      const idx = ['most-popular-drama', 'recently-added-movie', 'recently-added-kshow'].indexOf(m[1]);
-      return Promise.resolve(new Response(MOCK_MATV_LIST[idx].join(''), { status: 200 }));
-    }
-    m = url.match(new RegExp('^' + MATV_SITE + '/drama-list/drama-start-with-([a-z])/$'));
-    if (m) {
-      // letter pages: only 'a' has content in the mock
-      return Promise.resolve(new Response(m[1] === 'a' ? MOCK_MATV_LIST[3].join('') : '<html><body>No more</body></html>', { status: 200 }));
-    }
-    m = url.match(new RegExp('^' + MATV_SITE + '/wp-json/wp/v2/search\\?search=([^&]+)'));
-    if (m) {
-      const q = decodeURIComponent(m[1].replace(/\+/g, ' ')).toLowerCase();
-      const key = Object.keys(MOCK_MATV_SEARCH).find((k) => q.indexOf(k) !== -1);
-      const data = key ? MOCK_MATV_SEARCH[key] : [];
-      return Promise.resolve(new Response(JSON.stringify(data), { status: 200 }));
-    }
-    // Dramacool country pages
-    m = url.match(new RegExp('^' + DC_SITE + '/country/([a-z-]+)'));
-    if (m) {
-      const body = MOCK_DC_PAGES[m[1]];
-      if (body === undefined) return Promise.reject(new Error('mock 404: ' + url));
-      return Promise.resolve(new Response(body, { status: 200 }));
-    }
-    return Promise.reject(new Error('mock 404: ' + url));
+function pinoySeriesHtml(page) {
+  if (page !== 1) return '<div class="no-items">Nothing found</div>';
+  let html = '';
+  [
+    ['linang', 'Linang', '2026'],
+    ['queen-mantis-series', 'Queen Mantis (Tagalog Dubbed)', '2025'],
+    ['the-joys-and-sorrows', 'The Joys and Sorrows', '2025']
+  ].forEach((r, i) => {
+    html += pinoyArchiveItem(300 + i, r[0], r[1], r[2], 'series', `${PINOY}/wp-content/uploads/${r[0]}-150x150.webp`);
+  });
+  return html;
+}
+
+function pinoySearchHtml(page, q) {
+  if (page !== 1) return '<div class="no-items">Nothing found</div>';
+  const ql = q.toLowerCase();
+  let html = '';
+  if (ql.indexOf('love') !== -1) {
+    html += pinoySearchItem('love-siargao', 'Love Siargao', '2026', 'movie', 'An island romance.');
+    html += pinoySearchItem('love-ngo', 'Love Ngo', '2026', 'movie', 'Comedy romance.');
+  }
+  if (ql.indexOf('mantis') !== -1) {
+    html += pinoySearchItem('noon-mantis', 'Queen Mantis (Tagalog Dubbed)', '2025', 'movie');
+    html += pinoySearchItem('queen-mantis-series', 'Queen Mantis (Tagalog Dubbed)', '2025', 'series');
+  }
+  return html || '<div class="no-items">Nothing found</div>';
+}
+
+// --- dramacool (WP REST) fixtures ---
+
+let dcAnimeId = 400;
+function dcAnime(slug, title, year, lang, genre) {
+  dcAnimeId += 1;
+  return {
+    id: dcAnimeId,
+    date: `${year}-06-24T22:51:00`,
+    date_gmt: `${year}-06-24T17:51:00`,
+    guid: { rendered: `${DC}/series/${slug}/` },
+    modified: `${year}-06-24T22:52:20`,
+    slug: slug,
+    status: 'publish',
+    type: 'anime',
+    link: `${DC}/series/${slug}/`,
+    title: { rendered: title },
+    content: { rendered: `<p>${title} content.</p>` },
+    excerpt: { rendered: `<p>${title} is an asian drama.</p>` },
+    featured_media: 90 + dcAnimeId,
+    _embedded: {
+      'wp:featuredmedia': [{
+        id: 90 + dcAnimeId,
+        source_url: `${DC}/wp-content/uploads/${slug}.jpg`,
+        media_details: { sizes: { medium: { source_url: `${DC}/wp-content/uploads/${slug}-300x169.jpg` } } }
+      }]
+    },
+    class_list: [`anime_language-${lang}`, `anime_genre-${genre}`]
   };
-  fn.calls = calls;
-  return fn;
 }
 
-async function getJSON(mockFetch, pathAndQuery, env) {
-  const response = await Core.handle(pathAndQuery, Object.assign({ __fetchFn: mockFetch, PINOYHUB_SITE: SITE, MYASIANTV_SITE: MATV_SITE, DRAMACOOL_SITE: DC_SITE }, env || {}));
-  const text = await response.text();
-  let body = null;
-  try { body = JSON.parse(text); } catch (e) { /* html response */ }
-  return { status: response.status, body, text, headers: response.headers };
+const DC_DB = {
+  1: [
+    dcAnime('the-love-lab-2026', 'The Love Lab (2026)', '2026', 'korean', 'romance'),
+    dcAnime('queen-of-tears', 'Queen of Tears', '2024', 'korean', 'drama'),
+    dcAnime('hidden-love', 'Hidden Love', '2023', 'chinese', 'romance'),
+    dcAnime('dr-asura-2025', 'Dr. Asura (2025)', '2025', 'japanese', 'mystery')
+  ],
+  2: [
+    dcAnime('club-friday', 'Club Friday', '2025', 'thai', 'drama'),
+    dcAnime('weak-hero', 'Weak Hero', '2022', 'korean', 'action')
+  ]
+};
+
+// --- TMDB fixtures ---
+
+const TMDB_RESULTS = {
+  'search:movie:queen mantis': [{ id: 99901, title: 'Queen Mantis', original_language: 'ko', release_date: '2025-01-01', poster_path: '/qm.jpg', backdrop_path: '/qmb.jpg', overview: 'A mantis queen.', vote_average: 7.4 }],
+  'search:movie:love siargao': [{ id: 99906, title: 'Love Siargao', original_language: 'tl', release_date: '2026-02-14', poster_path: '/ls.jpg', overview: 'Island romance.', vote_average: 6.1 }],
+  'search:movie:love ngo': [{ id: 99903, title: 'Love Ngo', original_language: 'tl', release_date: '2026-01-01', poster_path: '/ln.jpg', overview: 'Comedy.', vote_average: 5.5 }],
+  'search:movie:72 hours': [{ id: 99904, title: '72 Hours', original_language: 'tl', release_date: '2025-03-01', poster_path: '/72.jpg', overview: 'Thriller.', vote_average: 6.8 }],
+  'search:movie:co x love': [{ id: 99905, title: 'Co x Love', original_language: 'tl', release_date: '2025-04-01', poster_path: '/cx.jpg', overview: 'Romcom.', vote_average: 5.9 }],
+  'search:movie:narco saints': [{ id: 99902, title: 'Narco-Saints', original_language: 'ko', release_date: '2022-09-09', poster_path: '/ns.jpg', overview: 'Crime.', vote_average: 7.1 }],
+  'search:movie:cobra kai': [{ id: 99908, title: 'Cobra Kai', original_language: 'en', release_date: '2018-05-02', poster_path: '/ck.jpg', overview: 'Karate.', vote_average: 8.1 }],
+  'search:movie:hello love again': [{ id: 99909, title: 'Hello, Love, Again', original_language: 'tl', release_date: '2024-11-13', poster_path: '/hla.jpg', overview: 'Romance.', vote_average: 7.0 }],
+  'search:movie:a hard day': [{ id: 99910, title: 'A Hard Day', original_language: 'ko', release_date: '2014-05-29', poster_path: '/ahd.jpg', overview: 'Thriller.', vote_average: 7.3 }],
+  'search:movie:requiem': [{ id: 99911, title: 'Requiem', original_language: 'en', release_date: '2021-08-08', poster_path: '/rq.jpg', overview: 'Mystery.', vote_average: 6.5 }],
+  'search:movie:linang': [{ id: 99912, title: 'Linang', original_language: 'tl', release_date: '2026-03-01', poster_path: '/ln2.jpg', overview: 'Drama.', vote_average: 6.2 }],
+  'search:movie:the joys and sorrows': [{ id: 99913, title: 'The Joys and Sorrows', original_language: 'tl', release_date: '2025-09-01', poster_path: '/tjs.jpg', overview: 'Family.', vote_average: 6.9 }],
+  'search:tv:the love lab': [{ id: 88001, name: 'The Love Lab', original_language: 'ko', first_air_date: '2026-06-24', poster_path: '/tll.jpg', overview: 'Dating show.', vote_average: 6.7 }],
+  'search:tv:queen mantis': [{ id: 99914, name: 'Queen Mantis', original_language: 'ko', first_air_date: '2025-10-01', poster_path: '/qms.jpg', overview: 'Thriller series.', vote_average: 7.2 }],
+  'search:tv:linang': [{ id: 88007, name: 'Linang', original_language: 'tl', first_air_date: '2026-03-01', poster_path: '/ln2.jpg', overview: 'Drama.', vote_average: 6.2 }],
+  'search:tv:queen of tears': [{ id: 88002, name: 'Queen of Tears', original_language: 'ko', first_air_date: '2024-03-09', poster_path: '/qot.jpg', overview: 'Melodrama.', vote_average: 8.4 }],
+  'search:tv:hidden love': [{ id: 88003, name: 'Hidden Love', original_language: 'zh', first_air_date: '2023-06-20', poster_path: '/hl.jpg', overview: 'Romance.', vote_average: 8.5 }],
+  'search:tv:dr asura': [{ id: 88004, name: 'Dr. Asura', original_language: 'ja', first_air_date: '2025-04-01', poster_path: '/da.jpg', overview: 'Medical.', vote_average: 6.4 }],
+  'search:tv:club friday': [{ id: 88005, name: 'Club Friday', original_language: 'th', first_air_date: '2025-01-01', poster_path: '/cf.jpg', overview: 'Anthology.', vote_average: 6.0 }],
+  'search:tv:weak hero': [{ id: 88006, name: 'Weak Hero', original_language: 'ko', first_air_date: '2022-11-18', poster_path: '/wh.jpg', overview: 'Action.', vote_average: 8.3 }],
+  'search:movie:parasite': [
+    { id: 496243, title: 'Parasite', original_language: 'ko', release_date: '2019-05-30', poster_path: '/pa.jpg', overview: 'Class satire.', vote_average: 8.5 },
+    { id: 500001, title: 'Parasite in Love', original_language: 'en', release_date: '2021-01-01', poster_path: '/pil.jpg', overview: 'Not asian.', vote_average: 5.0 }
+  ]
+};
+
+function tmdbDiscoverMovies(sort, page) {
+  // stable 6-item page 1; empty afterwards
+  if (String(page) !== '1') return [];
+  return [
+    { id: 700001, title: 'Demon Slayer Infinity Castle', original_language: 'ja', release_date: '2026-07-18', poster_path: '/ds.jpg', overview: 'Anime film.', vote_average: 8.6 },
+    { id: 700002, title: 'The Furious', original_language: 'zh', release_date: '2026-09-01', poster_path: '/tf.jpg', overview: 'Action.', vote_average: 7.2 },
+    { id: 700003, title: 'Colony', original_language: 'ko', release_date: '2026-08-01', poster_path: '/co.jpg', overview: 'Sci-fi.', vote_average: 6.9 },
+    { id: 700004, title: 'Shape of My Heart', original_language: 'ja', release_date: '2026-08-29', poster_path: '/sh.jpg', overview: 'Drama.', vote_average: 6.0 },
+    { id: 700005, title: 'Door', original_language: 'ja', release_date: '2026-08-20', poster_path: '/do.jpg', overview: 'Horror.', vote_average: 5.8 },
+    { id: 700006, title: 'Hibla 2', original_language: 'tl', release_date: '2026-02-01', poster_path: '/hi.jpg', overview: 'Drama.', vote_average: 5.5 }
+  ];
 }
+
+function tmdbDiscoverTv(sort, page) {
+  if (String(page) !== '1') return [];
+  return [
+    { id: 800001, name: 'Spiritual Realm Walker', original_language: 'ko', first_air_date: '2026-09-03', poster_path: '/srw.jpg', overview: 'Fantasy.', vote_average: 7.5 },
+    { id: 800002, name: 'You Maniac', original_language: 'ko', first_air_date: '2026-08-29', poster_path: '/ym.jpg', overview: 'Thriller.', vote_average: 7.0 },
+    { id: 800003, name: 'Four Hands, Two Sonatas', original_language: 'ja', first_air_date: '2026-08-29', poster_path: '/fh.jpg', overview: 'Music.', vote_average: 6.6 },
+    { id: 800004, name: 'Mousetrap', original_language: 'zh', first_air_date: '2026-08-28', poster_path: '/mt.jpg', overview: 'Mystery.', vote_average: 6.1 },
+    { id: 800005, name: 'Club Friday The Series', original_language: 'th', first_air_date: '2026-08-01', poster_path: '/cfs.jpg', overview: 'Anthology.', vote_average: 5.9 },
+    { id: 800006, name: 'Beach Boys', original_language: 'tl', first_air_date: '2026-07-15', poster_path: '/bb.jpg', overview: 'Comedy.', vote_average: 5.2 }
+  ];
+}
+
+// ============================================================
+// MOCK ROUTER
+// ============================================================
+
+function makeRouter() {
+  const calls = [];
+  async function router(url, opts) {
+    calls.push(String(url));
+    const u = String(url);
+    const respond = (body, status) => ({
+      ok: (status || 200) >= 200 && (status || 200) < 300,
+      status: status || 200,
+      text: async () => typeof body === 'string' ? body : JSON.stringify(body),
+      json: async () => typeof body === 'string' ? JSON.parse(body) : body
+    });
+
+    // pinoy archive/search/genre pages (search has ?s= and must be checked first)
+    if (u.indexOf(PINOY) === 0) {
+      let page = 1;
+      const mp = u.match(/\/page\/(\d+)/);
+      if (mp) page = parseInt(mp[1], 10);
+      const mq = u.match(/[?&]s=([^&]*)/);
+      if (mq) return respond(pinoySearchHtml(page, decodeURIComponent(mq[1])));
+      const pathOnly = u.split('?')[0];
+      if (/\/genre\/([^/]+)/.test(pathOnly)) {
+        const genre = pathOnly.match(/\/genre\/([^/]+)/)[1];
+        if (genre === 'tagalog-dubbed' && page === 1) {
+          return respond(pinoyArchiveItem(400, 'tagalog-dub-one', 'Tagalog Dub One', '2025', 'series') +
+            pinoyArchiveItem(401, 'tagalog-dub-two', 'Tagalog Dub Two', '2024', 'series'));
+        }
+        return respond(page === 1 ? '' : '<div class="no-items">Nothing</div>');
+      }
+      if (/\/movies(\/page\/\d+)?\/?$/.test(pathOnly)) return respond(pinoyMoviesHtml(page));
+      if (/\/series(\/page\/\d+)?\/?$/.test(pathOnly)) return respond(pinoySeriesHtml(page));
+      return respond('<html><body>404</body></html>', 404);
+    }
+
+    // dramacool REST
+    if (u.indexOf(DC + '/wp-json/wp/v2/anime?') === 0) {
+      const page = parseInt((u.match(/[?&]page=(\d+)/) || [])[1] || '1', 10);
+      const search = (u.match(/[?&]search=([^&]*)/) || [])[1];
+      const langTerm = (u.match(/[?&]anime_language=(\d+)/) || [])[1];
+      const genreTerm = (u.match(/[?&]anime_genre=(\d+)/) || [])[1];
+      let rows = DC_DB[page] || [];
+      if (search) {
+        const q = decodeURIComponent(search).toLowerCase();
+        const all = [].concat(DC_DB['1'], DC_DB['2']);
+        rows = all.filter(a => a.title.rendered.toLowerCase().indexOf(q) !== -1 || a.slug.indexOf(q.replace(/\s+/g, '-')) !== -1);
+      } else if (langTerm === '77' || langTerm === '29') { // live-mocked id + snapshot fallback id
+        rows = [].concat(DC_DB['1'], DC_DB['2']).filter(a => a.class_list[0] === 'anime_language-korean');
+      } else if (genreTerm === '88' || genreTerm === '10') { // live-mocked + fallback romance
+        rows = [].concat(DC_DB['1'], DC_DB['2']).filter(a => a.class_list[1] === 'anime_genre-romance');
+      }
+      return respond(rows);
+    }
+    if (u === DC + '/wp-json/wp/v2/anime_genre?per_page=60') {
+      return respond([{ id: 88, slug: 'romance', name: 'Romance' }, { id: 89, slug: 'drama', name: 'Drama' }]);
+    }
+    if (u === DC + '/wp-json/wp/v2/anime_language?per_page=60') {
+      return respond([{ id: 77, slug: 'korean', name: 'Korean' }, { id: 78, slug: 'chinese', name: 'Chinese' }]);
+    }
+
+    // TMDB
+    if (u.indexOf('https://api.themoviedb.org/3/') === 0) {
+      if (u.indexOf('/search/') !== -1) {
+        const kind = u.indexOf('/search/tv') !== -1 ? 'tv' : 'movie';
+        const raw = decodeURIComponent((u.match(/[?&]query=([^&]*)/) || [])[1] || '');
+        const q = raw.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+        return respond({ results: TMDB_RESULTS[`search:${kind}:${q}`] || [] });
+      }
+      if (u.indexOf('/discover/movie') !== -1) {
+        const page = (u.match(/[?&]page=(\d+)/) || [])[1];
+        return respond({ results: tmdbDiscoverMovies('pop', page) });
+      }
+      if (u.indexOf('/discover/tv') !== -1) {
+        const page = (u.match(/[?&]page=(\d+)/) || [])[1];
+        return respond({ results: tmdbDiscoverTv('date', page) });
+      }
+    }
+
+    return respond({ error: 'unexpected url ' + u }, 404);
+  }
+  router.calls = calls;
+  return router;
+}
+
+function makeEnv(overrides) {
+  const env = Object.assign({
+    PINOY_SITE: PINOY,
+    DRAMACOOL_SITE: DC,
+    ASIAN_PAGE_LIMIT: String(PAGE_LIMIT)
+  }, overrides || {});
+  const router = makeRouter();
+  env.__fetchFn = router;
+  env.__router = router;
+  return env;
+}
+
+async function getJson(handle, env, url) {
+  const res = await handle(url, env);
+  const text = await res.text();
+  let body = null;
+  try { body = JSON.parse(text); } catch (e) { /* html */ }
+  return { status: res.status, body, text };
+}
+
+// year-stripped name compare helper (display names keep the site's "(2026)")
+function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
 
 // ============================================================
 // OFFLINE TESTS
 // ============================================================
 
-async function offlineTests() {
-  section('manifest');
-  const staticManifest = JSON.parse(fs.readFileSync(path.join(__dirname, 'manifest.json'), 'utf8'));
-  const engineManifest = Core.manifest(Core.makeConfig({}));
-  check('engine manifest matches committed manifest.json',
-    JSON.stringify(engineManifest) === JSON.stringify(staticManifest));
-  check('manifest has id/name/version', !!(engineManifest.id && engineManifest.name && engineManifest.version));
-  check('manifest resources include catalog', engineManifest.resources.indexOf('catalog') !== -1);
-  check('manifest types movie+series', engineManifest.types.indexOf('movie') !== -1 && engineManifest.types.indexOf('series') !== -1);
-  check('manifest idPrefixes tmdb:', engineManifest.idPrefixes.indexOf('tmdb:') !== -1);
-  check('manifest has 7 catalogs', engineManifest.catalogs.length === 7, engineManifest.catalogs.length);
-  const dcCats = engineManifest.catalogs.filter((c) => c.id.indexOf('asian-') === 0 && c.extra.some((e) => e.name === 'genre'));
-  check('asian country catalogs expose 8 country options',
-    dcCats.length === 2 && dcCats.every((c) => c.extra.find((e) => e.name === 'genre').options.length === 8),
-    dcCats.map((c) => c.id));
-  const asianDramas = engineManifest.catalogs.find((c) => c.id === 'asian-dramas');
-  check('asian-dramas exposes search + skip', !!asianDramas && asianDramas.extra.some((e) => e.name === 'search') && asianDramas.extra.some((e) => e.name === 'skip'));
-  const pinoyGenreCats = engineManifest.catalogs.filter((c) => c.id.indexOf('pinoy-') === 0 && c.id.indexOf('genre') !== -1);
-  check('pinoy genre catalogs expose >= 20 options', pinoyGenreCats.length === 2 && pinoyGenreCats.every((c) => c.extra.find((e) => e.name === 'genre').options.length >= 20));
-  check('search catalogs expose search + skip (full-form extra)',
-    engineManifest.catalogs.filter((c) => c.extra.every((e) => e.name !== 'genre'))
-      .every((c) => c.extra.some((e) => e.name === 'search') && c.extra.some((e) => e.name === 'skip')));
-  check('catalogs declare pageSize for TV skip-step', engineManifest.catalogs.every((c) => c.pageSize === 20));
-
-  section('title cleaning');
-  const ct = Core.cleanTitleForSearch;
-  check('strips (Tagalog Dubbed)', ct('Queen Mantis (Tagalog Dubbed)') === 'Queen Mantis', ct('Queen Mantis (Tagalog Dubbed)'));
-  check('strips ep prefix', ct('ep14 \u2013 Love, Siargao') === 'Love, Siargao', ct('ep14 \u2013 Love, Siargao'));
-  check('strips Full Series', ct('The Chambermaid\u2019s Daughter (Full Series)') === 'The Chambermaid\u2019s Daughter', ct('The Chambermaid\u2019s Daughter (Full Series)'));
-  check('keeps meaningful parens', ct('Co x Love (Co-Love)') === 'Co x Love (Co-Love)', ct('Co x Love (Co-Love)'));
-  check('strips bare dubbed phrase', ct('Narco Saints Tagalog Dubbed') === 'Narco Saints', ct('Narco Saints Tagalog Dubbed'));
-  check('keeps numbers', ct('72 Hours (Tagalog Dubbed)') === '72 Hours', ct('72 Hours (Tagalog Dubbed)'));
-  check('strips in-title year', ct('Some Movie 2024 HD') === 'Some Movie', ct('Some Movie 2024 HD'));
-  const dn = Core.cleanDisplayName;
-  check('display strips ep prefix', dn('ep14 \u2013 Love, Siargao') === 'Love, Siargao');
-  check('display keeps site naming', dn('Queen Mantis (Tagalog Dubbed)') === 'Queen Mantis (Tagalog Dubbed)');
-
-  section('matching');
-  check('normalize hyphens', Core.normalizeForCompare('Narco-Saints') === Core.normalizeForCompare('Narco Saints'));
-  check('exact title scores 3', Core.titleScore('cobra kai', 'cobra kai') === 3);
-  check('year exact scores 2', Core.yearScore('2025', '2025') === 2);
-  const best = Core.pickBestTmdb(
-    [{ id: 1, title: 'Cobra Kai', original: 'Cobra Kai', year: '2018' },
-     { id: 2, title: 'Cobra', original: 'Cobra', year: '2025' }],
-    'Cobra Kai', '2018');
-  check('pickBest picks right candidate', !!best && best.id === 1, best);
-  const none = Core.pickBestTmdb(
-    [{ id: 3, title: 'Unrelated Thing', original: 'Unrelated Thing', year: '2019' }],
-    'Totally Fake Local Show', '2024');
-  check('pickBest rejects unrelated', none === null);
-
-  section('page parsing');
-  const cfg = Core.makeConfig({ PINOYHUB_SITE: SITE });
-  const parsed = Core.parseListPage(cfg, MOCK_PAGES.series[0]);
-  check('archive page yields 10 items', parsed.length === 10, parsed.length);
-  check('featured carousel excluded', parsed.every((i) => i.slug !== ''));
-  const first = parsed[0];
-  check('item fields extracted', first.slug === 't-1' && first.type === 'series' && first.year === '2025', first);
-  check('entities decoded in title', parsed[8].title.indexOf('\u2019') !== -1, parsed[8].title);
-  check('placeholder poster enriched from featured',
-    parsed[0].poster.indexOf('QUEEN-MANTIS.jpg') !== -1, parsed[0].poster);
-  const searchParsed = Core.parseListPage(cfg, MOCK_SEARCH_PAGES.series[0].join(''));
-  check('search page yields 3 items', searchParsed.length === 3, searchParsed.length);
-  check('search item title via div.title', searchParsed[0].title === 'Queen Mantis (Tagalog Dubbed)', searchParsed[0]);
-  check('search item description captured', searchParsed[0].description === 'Mantis story.', searchParsed[0].description);
-  check('search strips _rt query from url', searchParsed[0].url.indexOf('?') === -1, searchParsed[0].url);
-
-  section('routing: catalog with TMDB drops + stable skip');
-  Core.resetCaches();
-  const mock1 = makeMockFetch();
-  const r1 = await getJSON(mock1, '/catalog/series/pinoy-series.json');
-  check('catalog responds 200', r1.status === 200);
-  check('response has metas array', Array.isArray(r1.body && r1.body.metas));
-  check('buffer fills to page limit (20) despite drops', r1.body.metas.length === 20, r1.body.metas.length);
-  check('all ids tmdb:', r1.body.metas.every((m) => m.id.indexOf('tmdb:') === 0), r1.body.metas.slice(0, 3).map((m) => m.id));
-  check('meta name non-empty', r1.body.metas.every((m) => !!m.name));
-  check('meta type series', r1.body.metas.every((m) => m.type === 'series'));
-  check('tmdb backdrop as background', r1.body.metas.every((m) => (m.background || '').indexOf('image.tmdb.org') !== -1 || (m.background || '').indexOf('test-site.local') !== -1));
-  check('description from TMDB', r1.body.metas.every((m) => (m.description || '').indexOf('Mock overview') === 0));
-  check('rating present', r1.body.metas.every((m) => m.imdbRating === 7.3));
-  check('page 1 content stable', r1.body.metas[0].name === 'Queen Mantis (Tagalog Dubbed)', r1.body.metas[0].name);
-  const archiveCallsAfterFirst = mock1.calls.filter((u) => u.indexOf(SITE + '/series') === 0).length;
-  check('consumed exactly 3 site pages to fill 20 items', archiveCallsAfterFirst === 3, mock1.calls.filter((u) => u.indexOf(SITE) === 0));
-
-  const r1again = await getJSON(mock1, '/catalog/series/pinoy-series.json');
-  check('repeat request served from buffer (no refetch)',
-    mock1.calls.filter((u) => u.indexOf(SITE + '/series') === 0).length === archiveCallsAfterFirst);
-
-  const rMid = await getJSON(mock1, '/catalog/series/pinoy-series/skip=20.json');
-  check('skip=20 returns the remaining 2 resolved items', rMid.status === 200 && rMid.body.metas.length === 2, rMid.body);
-  check('skip=20 items differ from page 1', rMid.body.metas.length && rMid.body.metas[0].id !== r1.body.metas[0].id);
-  const rEnd = await getJSON(mock1, '/catalog/series/pinoy-series/skip=22.json');
-  check('skip beyond resolved stream returns empty metas', rEnd.status === 200 && rEnd.body.metas.length === 0, rEnd.body);
-
-  section('routing: search');
-  Core.resetCaches();
-  const s1 = await getJSON(makeMockFetch(), '/catalog/series/pinoy-series/search=queen%20mantis.json');
-  check('search responds 200', s1.status === 200);
-  check('search returns series matches', s1.body.metas.length === 3, s1.body);
-  check('search results are tmdb ids', s1.body.metas.every((m) => m.id.indexOf('tmdb:') === 0));
-  const s2 = await getJSON(makeMockFetch(), '/catalog/movie/pinoy-movies.json?search=love%20ngo');
-  check('query-string extras also accepted', s2.status === 200 && s2.body.metas.length >= 1, s2.body);
-
-  section('routing: genre');
-  Core.resetCaches();
-  const g1 = await getJSON(makeMockFetch(), '/catalog/series/pinoy-series-genre/genre=Tagalog%20Dubbed.json');
-  check('genre responds 200', g1.status === 200);
-  check('genre buffer filled', g1.body.metas.length === 3, g1.body);
-  const g2 = await getJSON(makeMockFetch(), '/catalog/movie/pinoy-movies-genre/genre=Tagalog Dubbed&skip=3.json');
-  check('genre + skip combo routes (exhausted -> empty)', g2.status === 200 && g2.body.metas.length === 0, g2.body);
-
-  section('page parsing: MyAsianTV');
-  Core.resetCaches();
-  const matvCfg = Core.makeConfig({ MYASIANTV_SITE: MATV_SITE });
-  const matvParsed = Core.parseMatvListPage(matvCfg, MOCK_MATV_LIST[0].join(''));
-  check('matv page yields 3 items', matvParsed.length === 3, matvParsed.length);
-  check('matv item fields', matvParsed[0].slug === 'crash-landing-on-you-2019' && matvParsed[0].type === 'series' && matvParsed[0].year === '2019', matvParsed[0]);
-  check('matv poster captured', matvParsed[0].poster.indexOf('crash-landing-on-you-2019.jpg') !== -1, matvParsed[0].poster);
-  const matvJson = Core.parseMatvJson(matvCfg, MOCK_MATV_SEARCH.crash);
-  check('matv json yields 3 episode items', matvJson.length === 3, matvJson.length);
-  check('matv json item slug from url', matvJson[0].slug === 'crash-landing-on-you-2019-episode-1', matvJson[0]);
-
-  section('page parsing: Dramacool');
-  const dcCfg = Core.makeConfig({ DRAMACOOL_SITE: DC_SITE });
-  const dcMovies = Core.parseDcListPage(dcCfg, MOCK_DC_PAGES['korean-movie']);
-  check('dc movie page yields 2 grid items', dcMovies.length === 2, dcMovies.length);
-  check('dc sidebar widgets excluded', dcMovies.every((i) => i.slug !== 'deep-secret'), dcMovies.map((i) => i.slug));
-  check('dc movie item type/slug', dcMovies[0].type === 'movie' && dcMovies[0].slug === 'parasite', dcMovies[0]);
-  check('dc poster captured', dcMovies[0].poster.indexOf('parasite.jpg') !== -1, dcMovies[0].poster);
-  const dcDramas = Core.parseDcListPage(dcCfg, MOCK_DC_PAGES['korean-drama']);
-  check('dc drama page yields 2 series items', dcDramas.length === 2 && dcDramas.every((i) => i.type === 'series'), dcDramas.map((i) => i.slug));
-
-  section('routing: asian-dramas listing (buffered across 4 pages)');
-  Core.resetCaches();
-  const ad = await getJSON(makeMockFetch(), '/catalog/series/asian-dramas.json');
-  check('asian-dramas responds 200', ad.status === 200);
-  check('asian-dramas fills all 7 resolved items', ad.body.metas.length === 7, ad.body.metas.length);
-  check('asian-dramas ids are tmdb:', ad.body.metas.every((m) => m.id.indexOf('tmdb:') === 0));
-  check('asian-dramas first meta is Crash Landing on You', ad.body.metas[0].name === 'Crash Landing on You (2019)', ad.body.metas[0].name);
-  check('asian-dramas names are show-level (no Episode suffix)',
-    ad.body.metas.every((m) => !/Episode \d+/.test(m.name)), ad.body.metas.map((m) => m.name));
-
-  section('routing: asian-dramas search (episode posts collapse to shows)');
-  Core.resetCaches();
-  const adq = await getJSON(makeMockFetch(), '/catalog/series/asian-dramas/search=crash%20landing.json');
-  check('asian-dramas search 200', adq.status === 200);
-  check('3 episode posts collapse to 1 show meta', adq.body.metas.length === 1, adq.body.metas);
-  check('collapsed show meta resolved to tmdb', adq.body.metas.length === 1 && adq.body.metas[0].id === 'tmdb:99910', adq.body.metas);
-  const adv = await getJSON(makeMockFetch(), '/catalog/series/asian-dramas/search=vincenzo.json');
-  check('search skips non-title pages (Sample Page)', adv.body.metas.length === 1 && adv.body.metas[0].id === 'tmdb:99911', adv.body.metas);
-
-  section('routing: asian-movies by country');
-  Core.resetCaches();
-  const am = await getJSON(makeMockFetch(), '/catalog/movie/asian-movies/genre=Korean.json');
-  check('asian-movies Korean responds 200', am.status === 200);
-  check('asian-movies returns 2 movies', am.body.metas.length === 2, am.body.metas);
-  check('asian-movies resolved to tmdb', am.body.metas.every((m) => m.id === 'tmdb:99913' || m.id === 'tmdb:99914'), am.body.metas.map((m) => m.id));
-  const am2 = await getJSON(makeMockFetch(), '/catalog/movie/asian-movies/genre=Japanese.json');
-  check('asian-movies empty country -> 200 []', am2.status === 200 && am2.body.metas.length === 0, am2.body);
-
-  section('routing: asian-dramas-country');
-  Core.resetCaches();
-  const adc = await getJSON(makeMockFetch(), '/catalog/series/asian-dramas-country/genre=Korean.json');
-  check('asian-dramas-country Korean 200 + 2 metas', adc.status === 200 && adc.body.metas.length === 2, adc.body.metas);
-  check('asian-dramas-country sidebar movie excluded', adc.body.metas.every((m) => m.name !== 'Parasite'), adc.body.metas.map((m) => m.name));
-
-  section('routing: errors and edge cases');
-  const nf1 = await getJSON(makeMockFetch(), '/catalog/movie/unknown-catalog.json');
-  check('unknown catalog -> 404', nf1.status === 404);
-  const nf2 = await getJSON(makeMockFetch(), '/catalog/anime/pinoy-movies.json');
-  check('unknown type -> 404', nf2.status === 404);
-  const nf3 = await getJSON(makeMockFetch(), '/definitely-not-a-route');
-  check('unknown route -> 404', nf3.status === 404);
-  const nf4 = await getJSON(makeMockFetch(), '/catalog/series/pinoy-movies.json');
-  check('type/catalog mismatch -> 404', nf4.status === 404);
-  const boom = makeMockFetch();
-  const brokenFetch = (url) => { if (url.indexOf('themoviedb') === -1) return Promise.reject(new Error('site down')); return boom(url); };
-  brokenFetch.calls = boom.calls;
-  const errRes = await getJSON(brokenFetch, '/catalog/movie/pinoy-movies.json');
-  check('site failure -> 502 json error', errRes.status === 502 && !!errRes.body.error, errRes.status);
-
-  section('routing: deep-page 404 ends listing gracefully');
-  Core.resetCaches();
-  const fm = makeMockFetch();
-  const fn404 = (url) => {
-    if (url === SITE + '/series/page/2') return Promise.resolve(new Response('not found', { status: 404 }));
-    return fm(url);
-  };
-  fn404.calls = fm.calls;
-  const p404 = await getJSON(fn404, '/catalog/series/pinoy-series.json');
-  check('deep-page 404 -> 200 with page-1 items only',
-    p404.status === 200 && p404.body.metas && p404.body.metas.length === 6,
-    { status: p404.status, n: p404.body && p404.body.metas && p404.body.metas.length });
-
-  section('keepUnmatched fallback');
-  Core.resetCaches();
-  const ku = await getJSON(makeMockFetch(), '/catalog/series/pinoy-series.json', { PINOYHUB_KEEP_UNMATCHED: '1' });
-  const pinoyIds = ku.body.metas.filter((m) => m.id.indexOf('asian:pinoy:') === 0);
-  check('keepUnmatched emits asian:pinoy: ids', pinoyIds.length >= 1, pinoyIds.map((m) => m.id));
-  check('pinoyhub ids keep site metadata',
-    pinoyIds.length === 0 || pinoyIds.every((m) => (m.description === undefined || typeof m.description === 'string') && !!m.releaseInfo),
-    pinoyIds[0]);
-
-  section('metadata enrichment (details + credits)');
-  Core.resetCaches();
-  const en = await getJSON(makeMockFetch(), '/catalog/series/asian-dramas.json');
-  const en0 = en.body.metas[0];
-  check('tv meta gains genres array (details beats genre_ids)', Array.isArray(en0.genres) && en0.genres.indexOf('Drama') !== -1, en0.genres);
-  check('tv meta gains genre string alias', typeof en0.genre === 'string' && en0.genre.length > 0, en0.genre);
-  check('tv meta gains country from origin_country', en0.country === 'South Korea', en0.country);
-  check('tv meta gains episode runtime', en0.runtime === '64 min', en0.runtime);
-  check('tv meta gains cast (null names skipped)', Array.isArray(en0.cast) && en0.cast.indexOf('Hyun Bin') !== -1 && en0.cast.indexOf(null) === -1, en0.cast);
-  check('tv meta has no director field', en0.director === undefined);
-  Core.resetCaches();
-  const enM = await getJSON(makeMockFetch(), '/catalog/movie/asian-movies/genre=Korean.json');
-  const par = enM.body.metas.find((m) => m.id === 'tmdb:99913');
-  check('movie meta gains runtime', !!par && par.runtime === '132 min', par);
-  check('movie meta gains director from credits', !!par && Array.isArray(par.director) && par.director[0] === 'Bong Joon-ho', par && par.director);
-  check('movie meta gains production country', !!par && par.country === 'South Korea', par && par.country);
-  check('movie meta genres from details', !!par && Array.isArray(par.genres) && par.genres.indexOf('Thriller') !== -1, par && par.genres);
-
-  section('TMDB outage keeps catalog visible (no more silent empties)');
-  Core.resetCaches();
-  const outageBase = makeMockFetch();
-  const outageFetch = (url) => {
-    if (url.indexOf('themoviedb') !== -1) return Promise.resolve(new Response(JSON.stringify({ status_message: 'Internal error' }), { status: 500 }));
-    return outageBase(url);
-  };
-  outageFetch.calls = outageBase.calls;
-  const out = await getJSON(outageFetch, '/catalog/series/asian-dramas/search=crash%20landing.json');
-  check('outage search responds 200 (not 502)', out.status === 200, out.status);
-  check('outage search still returns rows', out.body.metas.length >= 1, out.body);
-  check('outage rows use asian: ids', out.body.metas.every((m) => m.id.indexOf('asian:matv:') === 0), out.body.metas.map((m) => m.id));
-  check('outage episode posts still collapse (norm-title id)', out.body.metas.length === 1 && out.body.metas[0].id === 'asian:matv:crash-landing-on-you', out.body.metas);
-  check('outage rows keep site name + year', out.body.metas.length === 1 && out.body.metas[0].name === 'Crash Landing on You (2019)' && out.body.metas[0].releaseInfo === '2019', out.body.metas[0]);
-  check('outage wp-json rows tolerate missing art (search JSON carries none)', out.body.metas.length === 1 && out.body.metas[0].poster === undefined, out.body.metas[0] && out.body.metas[0].poster);
-  const outP = await getJSON(outageFetch, '/catalog/movie/pinoy-movies/search=love%20ngo.json');
-  check('outage pinoy rows keep site poster art', outP.status === 200 && outP.body.metas.length >= 1 && outP.body.metas.every((m) => (m.poster || '').indexOf('test-site.local') !== -1), outP.body.metas && outP.body.metas.map((m) => m.poster));
-
-  section('/health diagnostics');
-  Core.resetCaches();
-  const h1 = await getJSON(makeMockFetch(), '/health');
-  check('health responds 200', h1.status === 200, h1.status);
-  check('health reports version + addonId', h1.body.version === Core.VERSION && h1.body.addonId === 'community.asianhub.catalog', h1.body);
-  check('health checks 4 dependencies', Array.isArray(h1.body.sources) && h1.body.sources.length === 4, h1.body.sources && h1.body.sources.map((s) => s.label));
-  check('health all-ok offline', h1.body.status === 'ok' && h1.body.healthy === true, h1.body.status);
-  check('health items counted', h1.body.sources.every((s) => s.ok && s.items > 0), h1.body.sources);
-  Core.resetCaches();
-  const h2 = await getJSON(outageFetch, '/health');
-  check('health flags degraded on TMDB outage', h2.body.status === 'degraded' && h2.body.healthy === false, h2.body.status);
-  check('health tmdb check fails with error', h2.body.sources[3].ok === false && /HTTP 500/.test(h2.body.sources[3].error || ''), h2.body.sources[3]);
-  check('health hints mention TMDB key', h2.body.hints.some((t) => /TMDB_API_KEY/.test(t)), h2.body.hints);
-
-  section('workerd fetch binding (v2.1.1 regression)');
-  // workerd receiver-checks native API fns: v2.1.0 aliased global fetch into
-  // cfg.fetchFn, so cfg.fetchFn(url) ran with `this === cfg` and crashed with
-  // "Illegal invocation" on Workers at ms:0 - invisible to Node tests because
-  // Node's fetch ignores its receiver and the harness injects __fetchFn.
-  // This test simulates workerd's receiver check on globalThis.fetch and
-  // exercises the production path (no __fetchFn injected).
-  const origFetchDesc = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
-  let receiverSeen = 'unset';
-  let servedCount = 0;
-  const receiverCheckedFetch = function (url, opts) {
-    receiverSeen = this;
-    if (this !== globalThis) {
-      throw new TypeError('Illegal invocation: function called with incorrect `this` reference. See https://developers.cloudflare.com/workers/observability/errors/#illegal-invocation-errors for details.');
-    }
-    servedCount++;
-    return makeMockFetch()(url, opts);
-  };
-  let selfTest = false;
-  try { receiverCheckedFetch.call({ notGlobal: true }, 'https://x.local/', {}); }
-  catch (e) { selfTest = /Illegal invocation/.test(e.message); }
-  check('harness self-test: receiver-checked fetch throws when detached', selfTest);
-  try {
-    Object.defineProperty(globalThis, 'fetch', { value: receiverCheckedFetch, writable: true, configurable: true });
-    Core.resetCaches();
-    const hb = await getJSON(undefined, '/health', { __fetchFn: undefined });
-    check('health works under workerd-style receiver-checked global fetch',
-      hb.status === 200 && hb.body.healthy === true && hb.body.sources.every((s) => s.ok),
-      hb.body && hb.body.sources);
-    check('global fetch was invoked with the global receiver', receiverSeen === globalThis, String(receiverSeen));
-    check('global fetch actually served the probes', servedCount >= 4, servedCount);
-    check('makeConfig fetchFn survives round-trip', typeof Core.makeConfig({}).fetchFn === 'function');
-    Core.resetCaches();
-    const hc = await getJSON(undefined, '/health', { __fetchFn: undefined });
-    check('health still ok on repeat (cache path)', hc.body.healthy === true, hc.body && hc.body.status);
-  } finally {
-    if (origFetchDesc) Object.defineProperty(globalThis, 'fetch', origFetchDesc);
-    Core.resetCaches();
-  }
-}
-
-// ============================================================
-// LIVE TESTS
-// ============================================================
-
-async function liveTests() {
-  section('LIVE manifest');
-  const lm = await Core.handle('https://self.local/manifest.json', {});
-  check('live manifest 200', lm.status === 200);
-
-  section('LIVE movie catalog');
-  const mv = await Core.handle('https://self.local/catalog/movie/pinoy-movies.json', {});
-  const mvBody = await mv.json();
-  check('movies 200', mv.status === 200);
-  check('movies >= 5 metas', mvBody.metas && mvBody.metas.length >= 5, mvBody.metas && mvBody.metas.length);
-  const tmdbShare = mvBody.metas.filter((m) => m.id.indexOf('tmdb:') === 0).length;
-  check('movies TMDB match rate >= 60%', mvBody.metas.length && tmdbShare / mvBody.metas.length >= 0.6, tmdbShare + '/' + mvBody.metas.length);
-  check('movies posters present', mvBody.metas.every((m) => !!m.poster && !/\/no\//.test(m.poster)), mvBody.metas.map((m) => m.poster).slice(0, 3));
-
-  section('LIVE series catalog');
-  const sv = await Core.handle('https://self.local/catalog/series/pinoy-series.json', {});
-  const svBody = await sv.json();
-  check('series 200 + >= 5 metas', sv.status === 200 && svBody.metas.length >= 5, svBody.metas && svBody.metas.length);
-
-  section('LIVE genre catalog');
-  const gv = await Core.handle('https://self.local/catalog/series/pinoy-series-genre/genre=Tagalog Dubbed.json', {});
-  const gvBody = await gv.json();
-  check('genre 200 + >= 1 metas', gv.status === 200 && gvBody.metas.length >= 1, gvBody.metas && gvBody.metas.length);
-
-  section('LIVE search');
-  const q = await Core.handle('https://self.local/catalog/series/pinoy-series/search=cobra.json', {});
-  const qBody = await q.json();
-  check('search 200 + >= 1 metas', q.status === 200 && qBody.metas.length >= 1, qBody.metas && qBody.metas.length);
-
-  section('LIVE pagination');
-  const p1 = await Core.handle('https://self.local/catalog/movie/pinoy-movies.json', {});
-  const p1Body = await p1.json();
-  const p2 = await Core.handle('https://self.local/catalog/movie/pinoy-movies/skip=' + p1Body.metas.length + '.json', {});
-  const p2Body = await p2.json();
-  check('page 2 returns items', p2.status === 200 && p2Body.metas.length >= 1, p2Body.metas && p2Body.metas.length);
-  check('page 2 differs from page 1', p1Body.metas.length && p2Body.metas.length && p1Body.metas[0].id !== p2Body.metas[0].id);
-
-  section('LIVE asian-dramas');
-  const lad = await Core.handle('https://self.local/catalog/series/asian-dramas.json', {});
-  const ladBody = await lad.json();
-  check('asian-dramas 200 + >= 5 metas', lad.status === 200 && ladBody.metas && ladBody.metas.length >= 5, ladBody.metas && ladBody.metas.length);
-  const ladTmdb = ladBody.metas.filter((m) => m.id.indexOf('tmdb:') === 0).length;
-  check('asian-dramas TMDB match rate >= 60%', ladBody.metas.length && ladTmdb / ladBody.metas.length >= 0.6, ladTmdb + '/' + ladBody.metas.length);
-
-  section('LIVE asian-dramas search');
-  const laq = await Core.handle('https://self.local/catalog/series/asian-dramas/search=crash landing.json', {});
-  const laqBody = await laq.json();
-  check('asian search 200 + >= 1 metas', laq.status === 200 && laqBody.metas && laqBody.metas.length >= 1, laqBody.metas && laqBody.metas.length);
-
-  section('LIVE asian-movies by country');
-  const lam = await Core.handle('https://self.local/catalog/movie/asian-movies/genre=Korean.json', {});
-  const lamBody = await lam.json();
-  // the dramacool country grid only server-renders its popular block
-  // (2-12 items); the deep asian catalog is the MyAsianTV-based one
-  check('asian-movies Korean 200 + >= 2 metas', lam.status === 200 && lamBody.metas && lamBody.metas.length >= 2, lamBody.metas && lamBody.metas.length);
-  const lamTmdb = (lamBody.metas || []).filter((m) => m.id.indexOf('tmdb:') === 0).length;
-  check('asian-movies TMDB match rate >= 50%', lamBody.metas.length && lamTmdb / lamBody.metas.length >= 0.5, lamTmdb + '/' + lamBody.metas.length);
-
-  section('LIVE asian-dramas-country');
-  const ladc = await Core.handle('https://self.local/catalog/series/asian-dramas-country/genre=Thai.json', {});
-  const ladcBody = await ladc.json();
-  check('asian-dramas-country Thai 200', ladc.status === 200, ladc.status);
-
-  section('LIVE metadata enrichment');
-  const len = await Core.handle('https://self.local/catalog/series/asian-dramas.json', {});
-  const lenBody = await len.json();
-  const lenMetas = (lenBody.metas || []).filter((m) => m.id.indexOf('tmdb:') === 0);
-  const withGenres = lenMetas.filter((m) => Array.isArray(m.genres) && m.genres.length > 0);
-  check('live metas carry genres (>= 70%)', lenMetas.length && withGenres.length / lenMetas.length >= 0.7, withGenres.length + '/' + lenMetas.length);
-  const withCountry = lenMetas.filter((m) => typeof m.country === 'string' && m.country.length > 0);
-  check('live metas carry country (>= 70%)', lenMetas.length && withCountry.length / lenMetas.length >= 0.7, withCountry.length + '/' + lenMetas.length);
-  check('live genre values look real (Drama/Comedy/Romance...)',
-    withGenres.every((m) => m.genres.every((g) => /^[A-Za-z& '-]+$/.test(g))), withGenres[0] && withGenres[0].genres);
-
-  section('LIVE /health');
-  const lh = await Core.handle('https://self.local/health', {});
-  const lhBody = await lh.json();
-  check('live health 200/503 + payload', (lh.status === 200 || lh.status === 503) && !!lhBody.status && Array.isArray(lhBody.sources) && lhBody.sources.length === 4, lh.status);
-  check('live health status ok or degraded', lhBody.status === 'ok' || lhBody.status === 'degraded', lhBody.status);
-  check('live health sources report items', lhBody.sources.filter((s) => s.ok).length >= 2, lhBody.sources.map((s) => s.label + ':' + s.ok + ':' + s.items).join(' | '));
-  if (lhBody.status !== 'ok') {
-    console.log('  (health hints: ' + JSON.stringify(lhBody.hints).substring(0, 240) + ')');
-  }
-}
-
-// ============================================================
-
 (async () => {
-  console.log('Asian Catalog addon tests');
-  await offlineTests();
-  if (process.env.LIVE === '1') {
-    await liveTests();
-  } else {
-    console.log('\n(live tests skipped — run with LIVE=1)');
+  section('manifest shape + organized directory');
+  {
+    const cfg = Core.makeConfig({});
+    const man = Core.manifest(cfg);
+    check('addon id', man.id === 'community.asian.catalog', man.id);
+    check('version 2.2.0', man.version === '2.2.0', man.version);
+    check('resources catalog-only', JSON.stringify(man.resources) === '["catalog"]');
+    check('idPrefixes tmdb+asian', JSON.stringify(man.idPrefixes) === '["tmdb:","asian:"]', man.idPrefixes);
+    check('9 catalogs', man.catalogs.length === 9, man.catalogs.length);
+    const ids = man.catalogs.map(c => c.id);
+    check('unique ids', new Set(ids).size === ids.length);
+    check('pinoy group first', ids.slice(0, 4).join(',') === 'pinoy-movies,pinoy-series,pinoy-movies-genre,pinoy-series-genre', ids.slice(0, 4));
+    check('dramacool group middle', ids.slice(4, 6).join(',') === 'asian-series,asian-series-genre', ids.slice(4, 6));
+    check('tmdb group last', ids.slice(6).join(',') === 'asian-movies,asian-series-trending,asian-movies-genre', ids.slice(6));
+    const typesOk = man.catalogs.every(c => c.type === 'movie' || c.type === 'series');
+    check('all catalogs typed movie/series', typesOk);
+    const searchOk = man.catalogs.every(c => {
+      const def = Core.catalogDefinitions().find(d => d.id === c.id);
+      return def.mode === 'archive'
+        ? c.extra.some(e => e.name === 'search')
+        : c.extra.some(e => e.name === 'genre');
+    });
+    check('archive catalogs searchable, genre catalogs chipped', searchOk);
+    const skipOk = man.catalogs.every(c => c.extra.some(e => e.name === 'skip'));
+    check('every catalog declares skip (pagination)', skipOk);
+    const genreCats = man.catalogs.filter(c => c.id.endsWith('-genre'));
+    check('4 genre catalogs with options', genreCats.length === 4 && genreCats.every(c => (c.extra.find(e => e.name === 'genre') || {}).options && c.extra.find(e => e.name === 'genre').options.length > 5));
+    const dcChips = (man.catalogs.find(c => c.id === 'asian-series-genre').extra.find(e => e.name === 'genre')).options;
+    check('dramacool chips include languages', ['Korean', 'Chinese', 'Japanese', 'Thai'].every(l => dcChips.indexOf(l) !== -1), dcChips);
+    // manifest.json snapshot stays in sync
+    const snapshot = JSON.parse(fs.readFileSync(path.join(__dirname, 'manifest.json'), 'utf8'));
+    check('manifest.json snapshot matches engine', JSON.stringify(snapshot) === JSON.stringify(man));
   }
-  console.log(`\nRESULT: ${passed} passed, ${failed} failed`);
+
+  section('pinoy source: archive + TMDB mapping + fallback rows');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/catalog/movie/pinoy-movies.json');
+    check('HTTP 200', r.status === 200, r.status);
+    check('metas returned', Array.isArray(r.body.metas) && r.body.metas.length > 0, r.body && r.body.metas && r.body.metas.length);
+    const metas = r.body.metas;
+    check('page 1 size respected (limit 5)', metas.length === PAGE_LIMIT, metas.length);
+    check('first row is Queen Mantis', metas[0].name.indexOf('Queen Mantis') === 0, metas[0].name);
+    check('TMDB-matched row uses tmdb: id', /^tmdb:\d+$/.test(metas[0].id), metas[0].id);
+    check('matched row has poster', !!(metas[0].poster), metas[0].poster);
+    const fallback = metas.filter(m => /^asian:/.test(m.id));
+    check('unmatched titles become visible asian: rows', fallback.length >= 1, fallback.length);
+    check('fallback rows carry site posters', fallback.every(m => m.poster && m.poster.indexOf(PINOY) === 0), fallback.map(m => m.poster));
+    // pagination: skip=5 pulls page 2
+    const r2 = await getJson(Core.handle, env, '/catalog/movie/pinoy-movies/skip=5.json');
+    check('skip=5 returns next window', r2.body.metas.length === PAGE_LIMIT && r2.body.metas[0].id !== metas[0].id, r2.body.metas.length);
+    const names1 = metas.map(m => m.id).join(',');
+    const names1again = (await getJson(Core.handle, env, '/catalog/movie/pinoy-movies.json')).body.metas.map(m => m.id).join(',');
+    check('stable slices (skip=0 twice identical)', names1 === names1again);
+  }
+
+  section('pinoy source: search');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/catalog/series/pinoy-series/search=mantis.json');
+    check('search finds Queen Mantis (series)', r.body.metas.some(m => m.name.indexOf('Queen Mantis') === 0), r.body.metas.map(m => m.name));
+    check('search rows resolve to tmdb ids', r.body.metas.every(m => /^tmdb:/.test(m.id)), r.body.metas.map(m => m.id));
+    const rEmpty = await getJson(Core.handle, env, '/catalog/movie/pinoy-movies/search=zzzznotfound.json');
+    check('no-results search -> empty metas array', rEmpty.status === 200 && Array.isArray(rEmpty.body.metas) && rEmpty.body.metas.length === 0);
+  }
+
+  section('pinoy source: genre chips');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/catalog/series/pinoy-series-genre/genre=Tagalog Dubbed.json');
+    check('tagalog-dubbed genre rows', r.body.metas.length === 2, r.body.metas.length);
+    const env2 = makeEnv();
+    const r2 = await getJson(Core.handle, env2, '/catalog/movie/pinoy-movies-genre/genre=Action&skip=0.json');
+    check('known-good genre with 0 matches -> empty array', r2.status === 200 && r2.body.metas.length === 0);
+  }
+
+  section('dramacool source: REST list + parse');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/catalog/series/asian-series.json');
+    check('HTTP 200', r.status === 200);
+    const metas = r.body.metas;
+    check('rows present (limit 5 from dc page1+2)', metas.length === PAGE_LIMIT, metas.length);
+    check('The Love Lab row', metas.some(m => stripYear(m.name) === 'The Love Lab'), metas.map(m => m.name));
+    const dcPosterCount = metas.filter(m => m.poster && m.poster.indexOf(DC) === 0).length;
+    check('dc posters via REST _embedded', dcPosterCount >= 3, metas.map(m => m.poster));
+    check('fallback display names keep site year tag (informational)', metas.every(m => m.name.length > 0));
+    check('all page-1 rows resolve to tmdb: ids (parens bug fixed)', metas.every(m => /^tmdb:/.test(m.id)), metas.map(m => m.id));
+    // pagination across REST pages
+    const r2 = await getJson(Core.handle, env, '/catalog/series/asian-series/skip=4.json');
+    check('skip=4 pulls REST page 2 (2 rows)', r2.body.metas.length === 2, r2.body.metas.length);
+    check('page2 rows are Club Friday + Weak Hero', r2.body.metas.every(m => ['Club Friday', 'Weak Hero'].indexOf(stripYear(m.name)) !== -1), r2.body.metas.map(m => m.name));
+  }
+
+  section('dramacool source: search + genre/language chips');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/catalog/series/asian-series/search=queen of tears.json');
+    check('REST search finds Queen of Tears', r.body.metas.length === 1 && r.body.metas[0].name === 'Queen of Tears', r.body.metas.map(m => m.name));
+    check('search called with q param', env.__router.calls.some(u => u.indexOf('search=queen%20of%20tears') !== -1 || u.indexOf('search=queen+of+tears') !== -1), env.__router.calls.filter(u => u.indexOf('search=') !== -1));
+
+    Core.resetCaches();
+    const envK = makeEnv();
+    const rk = await getJson(Core.handle, envK, '/catalog/series/asian-series-genre/genre=Korean.json');
+    check('language chip routes to anime_language', envK.__router.calls.some(u => u.indexOf('anime_language=77') !== -1), envK.__router.calls);
+    check('korean rows only', rk.body.metas.length === 3 && rk.body.metas.every(m => ['The Love Lab', 'Queen of Tears', 'Weak Hero'].indexOf(stripYear(m.name)) !== -1), rk.body.metas.map(m => m.name));
+
+    Core.resetCaches();
+    const envG = makeEnv();
+    const rg = await getJson(Core.handle, envG, '/catalog/series/asian-series-genre/genre=Romance.json');
+    check('genre chip routes to anime_genre', envG.__router.calls.some(u => u.indexOf('anime_genre=88') !== -1), envG.__router.calls);
+    check('romance rows', rg.body.metas.length === 2, rg.body.metas.map(m => m.name));
+
+    // taxonomy endpoint down -> snapshot fallback map still resolves
+    Core.resetCaches();
+    const envF = makeEnv();
+    const prevFetch = envF.__fetchFn;
+    envF.__fetchFn = (url, opts) => {
+      if (String(url).indexOf('wp-json/wp/v2/anime_') !== -1) {
+        return Promise.resolve({ ok: false, status: 500, text: async () => 'boom' });
+      }
+      return prevFetch(url, opts);
+    };
+    const rf = await getJson(Core.handle, envF, '/catalog/series/asian-series-genre/genre=Korean.json');
+    check('taxonomy down -> fallback term map used (korean=29)', rf.body.metas.length === 3, rf.body.metas.map(m => m.name));
+  }
+
+  section('tmdb source: discover directories');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/catalog/movie/asian-movies.json');
+    check('asian-movies rows (limit 5)', r.body.metas.length === PAGE_LIMIT, r.body.metas.length);
+    check('rows are tmdb: ids with posters', r.body.metas.every(m => /^tmdb:\d+$/.test(m.id) && m.poster && m.poster.indexOf('image.tmdb.org') !== -1));
+    check('asian-only rows (Demon Slayer first)', r.body.metas[0].name === 'Demon Slayer Infinity Castle', r.body.metas[0].name);
+    check('discover used asian language filter', env.__router.calls.some(u => u.indexOf('with_original_language=ko%7Czh%7Cja%7Cth%7Ctl') !== -1 || u.indexOf('with_original_language=ko|zh|ja|th|tl') !== -1), env.__router.calls.filter(u => u.indexOf('discover') !== -1));
+    check('popularity sort requested', env.__router.calls.some(u => u.indexOf('sort_by=popularity.desc') !== -1));
+
+    Core.resetCaches();
+    const envT = makeEnv();
+    const rt = await getJson(Core.handle, envT, '/catalog/series/asian-series-trending.json');
+    check('trending rows (Spiritual Realm Walker first)', rt.body.metas.length === PAGE_LIMIT && rt.body.metas[0].name === 'Spiritual Realm Walker', rt.body.metas.map(m => m.name));
+    check('trending uses first_air_date sort', envT.__router.calls.some(u => u.indexOf('sort_by=first_air_date.desc') !== -1 && u.indexOf('vote_count.gte=3') !== -1));
+
+    Core.resetCaches();
+    const envG = makeEnv();
+    const rg = await getJson(Core.handle, envG, '/catalog/movie/asian-movies-genre/genre=Action.json');
+    check('tmdb genre chip -> with_genres=28', envG.__router.calls.some(u => u.indexOf('with_genres=28') !== -1), envG.__router.calls.filter(u => u.indexOf('discover') !== -1));
+    check('genre rows served', rg.body.metas.length === PAGE_LIMIT);
+  }
+
+  section('tmdb source: search filters to asian languages');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/catalog/movie/asian-movies/search=parasite.json');
+    check('only asian-language rows kept', r.body.metas.length === 1 && r.body.metas[0].id === 'tmdb:496243', r.body.metas.map(m => m.id));
+    check('search hit /search/movie endpoint', env.__router.calls.some(u => u.indexOf('/search/movie') !== -1));
+  }
+
+  section('ASIAN_KEEP_UNMATCHED=0 drops fallback rows');
+  {
+    Core.resetCaches();
+    const env = makeEnv({ ASIAN_KEEP_UNMATCHED: '0' });
+    const r = await getJson(Core.handle, env, '/catalog/movie/pinoy-movies.json');
+    check('fallback rows dropped', r.body.metas.every(m => /^tmdb:/.test(m.id)), r.body.metas.map(m => m.id));
+  }
+
+  section('workerd fetch-binding regression (v2.1.1 lesson)');
+  {
+    // Simulate workerd's receiver check on native fetch: calling the bound
+    // fetch with a non-global `this` must throw. The production path (no
+    // __fetchFn) binds fetch to the IIFE global, so handle() must work.
+    const realFetch = global.fetch;
+    const calls = [];
+    global.fetch = function (url, opts) {
+      if (this !== globalThis) {
+        throw new TypeError('Illegal invocation: function called with incorrect `this` reference');
+      }
+      calls.push(String(url));
+      return makeRouter()(url, opts);
+    };
+    try {
+      Core.resetCaches();
+      const r = await getJson(Core.handle, { PINOY_SITE: PINOY, DRAMACOOL_SITE: DC }, '/catalog/series/asian-series.json');
+      check('production fetch path works under receiver check', r.status === 200 && Array.isArray(r.body.metas) && r.body.metas.length > 0, r.body);
+      check('fetch was actually exercised', calls.length > 0, calls.length);
+      const cfg = Core.makeConfig({});
+      check('makeConfig binds a fetch fn', typeof cfg.fetchFn === 'function');
+      check('__fetchFn override still wins', Core.makeConfig({ __fetchFn: realFetch }).fetchFn === realFetch);
+      // health via production path too
+      Core.resetCaches();
+      const h = await getJson(Core.handle, { PINOY_SITE: PINOY, DRAMACOOL_SITE: DC }, '/health');
+      check('health works under receiver check', h.status === 200 && h.body.status === 'up', h.body && h.body.status);
+    } finally {
+      global.fetch = realFetch;
+    }
+  }
+
+  section('/health reports + hints');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const h = await getJson(Core.handle, env, '/health');
+    check('status up', h.body.status === 'up', h.body.status);
+    check('three sources probed', Object.keys(h.body.sources).join(',') === 'pinoymovieshub,dramacool,tmdb');
+    check('all sources ok with ms+items', Object.keys(h.body.sources).every(k => h.body.sources[k].ok && typeof h.body.sources[k].ms === 'number'));
+    check('healthy hint present', h.body.hints.some(x => /All 3 sources healthy/.test(x)), h.body.hints);
+    check('health echoes version', h.body.version === '2.2.0' && h.body.addon === 'community.asian.catalog');
+
+    // same-error-everywhere -> runtime bug hint (not IP blocking)
+    Core.resetCaches();
+    const envBug = makeEnv();
+    envBug.__fetchFn = () => { throw new TypeError('Illegal invocation: function called with incorrect `this` reference'); };
+    const hb = await getJson(Core.handle, envBug, '/health');
+    check('runtime bug -> status down', hb.body.status === 'down');
+    check('runtime bug hint mentions worker-code bug, NOT IP blocking', hb.body.hints.length === 1 && /worker-code bug/.test(hb.body.hints[0]) && /NOT IP blocking/.test(hb.body.hints[0]), hb.body.hints);
+
+    // partial outage -> degraded + per-source hint
+    Core.resetCaches();
+    const envP = makeEnv();
+    const prev = envP.__fetchFn;
+    envP.__fetchFn = (url, opts) => String(url).indexOf(DC) === 0
+      ? Promise.resolve({ ok: false, status: 404, text: async () => 'nope' })
+      : prev(url, opts);
+    const hp = await getJson(Core.handle, envP, '/health');
+    check('partial outage -> degraded', hp.body.status === 'degraded', hp.body.status);
+    check('dramacool hint present', hp.body.hints.some(x => /dramacool/.test(x)), hp.body.hints);
+  }
+
+  section('routing edges');
+  {
+    const env = makeEnv();
+    const r404 = await getJson(Core.handle, env, '/catalog/movie/unknown-catalog.json');
+    check('unknown catalog -> 404 json', r404.status === 404 && r404.body.error === 'unknown catalog');
+    const rBad = await getJson(Core.handle, env, '/bogus/path.json');
+    check('bad path -> 404 with hint', rBad.status === 404 && /hint/.test(JSON.stringify(rBad.body)));
+    // extras via query string also work (apps send path segments; curl likes queries)
+    Core.resetCaches();
+    const rq = await getJson(Core.handle, env, '/catalog/series/asian-series.json?search=queen+of+tears');
+    check('query-string extras accepted', rq.status === 200 && rq.body.metas.length === 1, rq.body && rq.body.metas && rq.body.metas.length);
+    // tv type alias
+    const rtv = await getJson(Core.handle, env, '/catalog/tv/asian-series.json');
+    check('tv type alias maps to series', rtv.status === 200 && rtv.body.metas.length > 0);
+    // html index renders catalog table
+    const resHtml = await Core.handle('/', env);
+    const html = await resHtml.text();
+    check('index lists all 9 catalogs', (html.match(/\/catalog\//g) || []).length >= 9);
+    check('index links /health', html.indexOf('/health') !== -1);
+  }
+
+  section('unit: title cleaning + scoring');
+  {
+    check('strips tagalog-dubbed qualifier', Core.cleanTitleForSearch('Queen Mantis (Tagalog Dubbed)') === 'Queen Mantis');
+    check('strips year parens', Core.cleanTitleForSearch('The Love Lab (2026)') === 'The Love Lab');
+    check('strips ep prefix', Core.cleanTitleForSearch('ep14 – Love, Siargao') === 'Love, Siargao');
+    check('display name keeps site naming', Core.cleanDisplayName('Queen Mantis (Tagalog Dubbed)') === 'Queen Mantis (Tagalog Dubbed)');
+    check('exact title scores 3', Core.titleScore('queen of tears', 'queen of tears') === 3);
+    check('year gap penalized', Core.yearScore('2020', '2024') === -2);
+    check('slugify sci-fi', Core.slugifyGenre('Sci-Fi') === 'sci-fi');
+    check('slugify tagalog dubbed', Core.slugifyGenre('Tagalog Dubbed') === 'tagalog-dubbed');
+    const pick = Core.pickBestTmdb(
+      [{ id: 1, title: 'Wrong', original: 'Wrong', year: '2020' }, { id: 2, title: 'Hidden Love', original: 'Hidden Love', year: '2023' }],
+      'Hidden Love', '2023');
+    check('pickBestTmdb prefers confident match', pick && pick.id === 2);
+  }
+
+  // ============================================================
+  // LIVE TESTS
+  // ============================================================
+
+  if (process.env.LIVE === '1') {
+    section('LIVE: real sources');
+    Core.resetCaches();
+    const liveEnv = {}; // production fetch path
+    const checks = [
+      ['/catalog/movie/pinoy-movies.json', m => m.length > 0, 'pinoy movies rows'],
+      ['/catalog/series/pinoy-series.json', m => m.length > 0, 'pinoy series rows'],
+      ['/catalog/movie/pinoy-movies/search=hello love again.json', m => m.length > 0, 'pinoy search'],
+      ['/catalog/series/asian-series.json', m => m.length > 0, 'dramacool rows'],
+      ['/catalog/series/asian-series-genre/genre=Korean.json', m => m.length > 0, 'dramacool korean chip'],
+      ['/catalog/movie/asian-movies.json', m => m.length >= 10, 'tmdb asian movies rows'],
+      ['/catalog/series/asian-series-trending.json', m => m.length >= 10, 'tmdb trending rows'],
+      ['/catalog/movie/asian-movies-genre/genre=Action.json', m => m.length > 0, 'tmdb genre rows'],
+      ['/catalog/movie/asian-movies/search=parasite.json', m => m.length > 0 && m.every(x => /^tmdb:/.test(x.id)), 'tmdb asian-only search'],
+      ['/health', (m, body) => body.status === 'up', 'health up']
+    ];
+    for (const [url, cond, name] of checks) {
+      try {
+        Core.resetCaches();
+        const r = await getJson(Core.handle, liveEnv, url);
+        check('LIVE ' + name, r.status === 200 && cond(r.body.metas || [], r.body), r.text.slice(0, 160));
+      } catch (e) {
+        check('LIVE ' + name, false, String(e.message || e));
+      }
+    }
+  }
+
+  console.log(`\n${passed} passed, ${failed} failed`);
   if (failures.length) {
-    console.log('Failures:');
-    failures.forEach((f) => console.log('  - ' + f));
+    console.log('FAILURES:');
+    failures.forEach(f => console.log('  - ' + f));
     process.exit(1);
   }
-})().catch((err) => {
-  console.error('Harness crashed:', err);
-  process.exit(1);
-});
+})().catch(e => { console.error('HARNESS ERROR', e); process.exit(2); });
