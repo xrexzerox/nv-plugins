@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "3.6.0",
-  "description": "Canonical Nuvio provider collection. v3.6.0: asianhub 1.1.0 restores the Dramacool lane (dramacool.uno VidTube embed now resolves via kisskh.asianc.sr/api/resolve/{cid} — old regex saw nothing on variant-B embeds, series returned no streams); asian-catalog addon 2.3.0 adds the Anime Latest Releases catalog (TMDB airing view, pairs with the AnimePahe plugin) + 4th health probe.",
+  "version": "3.7.0",
+  "description": "Canonical Nuvio provider collection. v3.7.0: asian-catalog addon 3.0.0 swaps series sources to kissasian.cam + viewasian.lol (myasiantv/dramacool/animepahe catalogs removed, 11 catalogs) and asianhub provider 2.0.0 adds three new lanes (KissAsian via the captcha+PoW-gated Byse player with AES payload decrypt, ViewAsian via kisskh.space/vidmoly, KissKH API on kisskh.co) — all three live-verified.",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -836,8 +836,8 @@
     {
       "id": "asianhub",
       "name": "AsianHub",
-      "description": "Asian movies & series (Korean/Chinese/Japanese/Thai/Taiwan) from MyAsianTV + Dramacool mirrors, direct HLS extraction with search matching",
-      "version": "1.1.0",
+      "description": "Asian movies & series (Korean/Chinese/Japanese/Thai) from KissAsian + ViewAsian + KissKH: search-matched episodes, Byse PoW-gated player resolution (captcha + AES-CTR payload decrypt), vidmoly direct HLS and KissKH JSON API (kisskh.co with kisskh.ovh fallback), direct HLS extraction",
+      "version": "2.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",

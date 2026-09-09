@@ -1,56 +1,88 @@
 /**
  * AsianHub Nuvio Plugin - Direct Streams Edition
- * Sources: MyAsianTV (myasiantv.com.lv) + Dramacool (dramacool.uno)
+ * Sources: KissAsian (kissasian.cam) + ViewAsian (viewasian.lol) + KissKH (kisskh.co)
  * Supports: Movies & TV Shows (Korean / Chinese / Japanese / Thai / Taiwan /
- *           Hong Kong / Indian / other Asian titles, English subs)
+ *           Hong Kong / other Asian titles, English subs)
  * Language: ko / zh / ja / th / en
  * Author: xrexzerox
- * Version: 1.1.0
+ * Version: 2.0.0
  *
- * v1.1.0 (2026-09-09) — "series not fetching" fix:
- *   dramacool.uno migrated its embed player to "VidTube" (jwplayer+hls.js).
- *   Variant A still inlines the direct HLS URL in the embed HTML (old regex
- *   keeps working), but variant B embeds only carry
- *     var streamUrl = "https://kisskh.asianc.sr/api/resolve/{cid}"
- *   which the old regex could not see -> the Dramacool lane silently died
- *   for every episode served through that variant. Added the resolve hop:
- *   parse {cid} (streamUrl / settings.cid / data-id), GET the resolve
- *   endpoint, take {"file": ".../hls/{hash}/index.m3u8"}. Both lanes
- *   live-verified end-to-end on 2026-09-09.
+ * v2.0.0 (2026-09-09) — source swap (user request):
+ *   REMOVED: MyAsianTV (myasiantv.com.lv) and Dramacool (dramacool.uno) lanes.
+ *   ADDED (all three verified live end-to-end on 2026-09-09):
  *
- * EXTRACTION CHAINS (both verified live end-to-end on 2026-09-09):
+ *   KissAsian (WordPress "dramastream" theme):
+ *     1. search   GET /?s={title}
+ *                 -> <article class="bs"> rows with /series/{slug}/ links
+ *     2. series   GET /series/{slug}/
+ *                 -> /{slug}-episode-{n}/ links
+ *     3. episode  GET /{slug}-episode-{n}/
+ *                 -> <iframe src="https://justplay.cam/e/{code}">
+ *     4. justplay.cam is a Byse player (React SPA) with a captcha-gated API:
+ *          a. POST /api/videos/{code}/embed/captcha
+ *             (headers X-Embed-Origin/Referer/Parent = kissasian.cam)
+ *             -> { pow_nonce, pow_difficulty(16), pow_token,
+ *                  algorithm: "sha256-leading-zero-bits" }
+ *             (the label lies: the hash is a custom xxHash-style mixer,
+ *              ported below as byseHashDigest - real sha256 fails verify)
+ *          b. solve: find counter N so digest(pow_nonce + ":" + N) has
+ *             >= difficulty leading zero bits. N is the solution string.
+ *             (difficulty 16 ~= 65k iterations, ~1-2s in pure JS)
+ *          c. POST /api/videos/{code}/embed/captcha/verify
+ *             { pow_token, solution } -> { status:"ok", token }
+ *          d. POST /api/videos/{code}/embed/playback
+ *             header X-Captcha-Token: {token}
+ *             -> { playback: { algorithm:"AES-256-GCM", iv, payload,
+ *                              key_parts[30], version, expires_at } }
+ *          e. key = key_parts[version-1] ++ key_parts[30-version] (b64url)
+ *             plain = AES-256-CTR(key, iv||0x00000002, payload[-16:])  (tag
+ *             skipped - same proven decryptor as pinoyhub.js Byse)
+ *             -> { sources: [{ url, label, height, mime_type }] } with
+ *             signed self-authorizing HLS URLs (play headerless).
  *
- *   MyAsianTV (WordPress, wp-json REST enabled):
- *     1. search   GET /wp-json/wp/v2/search?search={title}&per_page=20
- *                 -> [{ title: "Crash Landing on You (2019) Episode 16",
- *                       url: ".../crash-landing-on-you-2019-episode-16/" }]
- *        (fallback: construct show URL /series/{slug}-{year}/ and scrape
- *         the episode list when wp-json returns nothing usable)
- *     2. episode  GET /{slug}-episode-{n}/
- *                 -> <iframe src="https://catalog.dramavibe.cfd/player_embed.php?episode=421">
- *     3. player   GET catalog.dramavibe.cfd/player_embed.php?episode=421
- *                 -> https://cdn.dramavite... cdn.dramav2.xyz/{uuid}/video.m3u8   (DIRECT HLS)
+ *   ViewAsian (WordPress "viewasian" theme):
+ *     1. search   GET /?s={title}
+ *                 -> <a href="/drama/{slug}/" class="img" title="Show (2024)">
+ *     2. drama    GET /drama/{slug}/
+ *                 -> episode list ul.list-episode-item-2.all-episode with
+ *                    /{show}-ep-{n}-eng-sub-drama/ links (server variants
+ *                    carry an extra -1/-2 segment before -eng-sub)
+ *     3. episode  GET /{show}-ep-{n}-eng-sub-drama/
+ *                 -> <iframe src="https://kisskh.space/{show}-ep-{n}/">
+ *     4. player   GET kisskh.space/{show}-ep-{n}/
+ *                 -> iframe on a vidmoly embed host /embed-{id}.html
+ *     5. embed    GET vidmoly embed (Referer kisskh.space)
+ *                 -> plaintext m3u8 URL in the page (jwplayer + eval packer
+ *                    still leaks the playlist URL as a plain string)
  *
- *   Dramacool (episode pages are static, player embeds are server-rendered):
- *     1. episode  GET /{slug}-episode-{n}.html   (slug may or may not carry the year;
- *                 both variants are probed; movies live at -episode-1.html too)
- *                 -> https://dramacool.uno/embed/{base64token}[?server=N]
- *     2. embed    GET /embed/{token}   (Referer: episode page)
- *                 -> https://kisskh.asianc.sr/hls/{hash}/index.m3u8   (DIRECT HLS)
+ *   KissKH (kisskh.co JSON API; kisskh.ovh fallback - same site, either
+ *   domain may be Cloudflare-challenged depending on network):
+ *     1. search   GET /api/DramaList/Search?q={title}&type=0
+ *     2. detail   GET /api/DramaList/Drama/{id}?isq=false -> episodes[]
+ *     3. key      GET <google apps script>?id={epsId}&version=2.8.10
+ *     4. sources  GET /api/DramaList/Episode/{epsId}.png?err=false&ts=&
+ *                 time=&kkey={key} -> { Video, Video_tmp, ThirdParty }
+ *     (device-side lane: kisskh.co challenges datacenter IPs, but Nuvio
+ *      clients on residential connections are served normally - same
+ *      behaviour the standalone kisskh.js provider has always had)
  *
  * SANDBOX SAFETY (NuvioTVSmart worker + NuvioMobile QuickJS):
  *   - No require() of anything; global fetch only
  *   - Pure ES5 promise chains, no async/await
  *   - No Buffer / TextDecoder / URL / padStart / Object.entries / Array.prototype.flat
  *   - Pure-regex HTML parsing (no cheerio)
- *   - Every lane fully fail-soft; a dead source never blocks the other one
+ *   - Pure-JS crypto (base64url, AES-256, custom hash) - no WebCrypto dependency
+ *   - Every lane fully fail-soft; a dead source never blocks the others
  */
 
 var PROVIDER_NAME = "AsianHub";
 var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 
-var MYASIANTV_BASE = "https://myasiantv.com.lv";
-var DRAMACOOL_BASE = "https://dramacool.uno";
+var KISSASIAN_BASE = "https://kissasian.cam";
+var JUSTPLAY_BASE = "https://justplay.cam";
+var VIEWASIAN_BASE = "https://viewasian.lol";
+var KISSKH_BASES = ["https://kisskh.co", "https://kisskh.ovh"];
+var KISSKH_KEY_API = "https://script.google.com/macros/s/AKfycbzn8B31PuDxzaMa9_CQ0VGEDasFqfzI5bXvjaIZH4DM8DNq9q6xj1ALvZNz_JT3jF0suA/exec";
 
 var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
@@ -60,7 +92,8 @@ var HEADERS = {
 
 var PAGE_TIMEOUT_MS = 12000;
 var EMBED_TIMEOUT_MS = 10000;
-var GLOBAL_DEADLINE_MS = 12000;
+var GLOBAL_DEADLINE_MS = 22000; // Byse chain is 6 sequential hops + PoW
+var POW_MAX_MS = 8000;
 
 // ===== SMALL UTILITIES =====
 
@@ -137,6 +170,22 @@ function fetchJson(url, options) {
     if (!res.ok) return null;
     return raceBody(res.json(), deadline);
   }).catch(function() { return null; });
+}
+
+/** POST JSON, resolve { status, data } - never rejects (fail-soft callers). */
+function postJson(url, bodyObj, headers, timeoutMs) {
+  return fetchWithTimeout(url, {
+    method: "POST",
+    redirect: "follow",
+    headers: merge(merge(HEADERS, { "Content-Type": "application/json", "Accept": "application/json" }), headers || {}),
+    body: JSON.stringify(bodyObj || {})
+  }, timeoutMs || EMBED_TIMEOUT_MS).then(function(res) {
+    return raceBody(res.text(), timeoutMs || EMBED_TIMEOUT_MS).then(function(text) {
+      var data = null;
+      try { data = JSON.parse(text); } catch (e) { data = null; }
+      return { status: res.status, data: data };
+    });
+  }).catch(function() { return { status: 0, data: null }; });
 }
 
 function hostOf(url) {
@@ -227,7 +276,7 @@ function getTmdbEpisodeTitle(tmdbId, season, episode) {
   }).catch(function() { return ""; });
 }
 
-// ===== GLOBAL EXTRACTION DEADLINE (same pattern as pinoyhub v5.2.0) =====
+// ===== GLOBAL EXTRACTION DEADLINE =====
 
 /**
  * Runs lane thunks in parallel. When the deadline fires, ALREADY-COMPLETED
@@ -262,15 +311,15 @@ function withExtractionDeadline(promises, ms) {
 // ===== STREAM BUILDER =====
 
 function buildStream(displayTitle, meta, resolved) {
-  // resolved: { url, quality, source, host }
+  // resolved: { url, quality, source, host, headers? }
   var q = resolved.quality || "HLS";
   var line1 = meta.isSeries
     ? "S" + meta.season + "E" + meta.episode + (meta.episodeTitle ? " - " + meta.episodeTitle : "") + " | " + displayTitle
     : displayTitle;
-  var line2 = "Direct HLS | " + q + " | " + (resolved.host || "");
+  var line2 = (resolved.headers ? "Signed HLS" : "Direct HLS") + " | " + q + " | " + (resolved.host || "");
   var line3 = resolved.source;
 
-  return {
+  var stream = {
     name: PROVIDER_NAME + " | " + resolved.source + " | " + q,
     title: line1 + "\n" + line2 + "\n" + line3,
     url: resolved.url,
@@ -279,6 +328,8 @@ function buildStream(displayTitle, meta, resolved) {
       bingeGroup: "asianhub-hls"
     }
   };
+  if (resolved.headers) stream.headers = resolved.headers;
+  return stream;
 }
 
 /**
@@ -289,18 +340,14 @@ function buildStream(displayTitle, meta, resolved) {
 function resolveHls(url, referer, sourceLabel) {
   var headers = referer ? { "Referer": referer } : {};
   // 5s verify budget: a healthy playlist arrives in <2s. A throttled CDN
-  // (some datacenter IPs) times out -> the URL is still returned unverified
-  // below, because it IS the player's real stream URL and devices on
-  // residential IPs typically fetch it fine.
+  // times out -> the URL is still returned unverified below, because it IS
+  // the player's real stream URL and devices typically fetch it fine.
   return fetchText(url, { headers: headers, timeoutMs: 5000 }).then(function(text) {
     if (!text || text.indexOf("#EXTM3U") !== 0) {
-      // Not a playlist (maybe an mp4 direct link or an HTML error page):
-      // still return the URL if it looks like media.
       if (/\.mp4(\?|$)/i.test(url)) return { url: url, quality: "" };
       return null;
     }
     if (text.indexOf("#EXT-X-STREAM-INF") !== -1) {
-      // master playlist: choose highest RESOLUTION / BANDWIDTH variant
       var lines = text.split("\n");
       var best = null, bestH = 0, i;
       for (i = 0; i < lines.length - 1; i++) {
@@ -322,279 +369,750 @@ function resolveHls(url, referer, sourceLabel) {
       }
       return null;
     }
-    // plain media playlist
     return { url: url, quality: parseQualityFromPlaylist(text) };
   }).catch(function(err) {
     var msg = String((err && err.message) || err);
     if (msg.indexOf("body read timeout") !== -1 || msg.indexOf("fetch timeout") !== -1) {
-      // throttled CDN: hand back the real stream URL unverified
       return { url: url, quality: "" };
     }
     return null;
   });
 }
 
-// ===== SOURCE 1: MyAsianTV =====
+// ===== CRYPTO (ported from providers/pinoyhub.js - proven on-device) =====
+
+function b64urlToBytes(str) {
+  var ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  var t = String(str || "").replace(/-/g, "+").replace(/_/g, "/");
+  var out = [];
+  var acc = 0, bits = 0, i, v;
+  for (i = 0; i < t.length; i++) {
+    var ch = t.charAt(i);
+    if (ch === "=") break;
+    v = ALPHA.indexOf(ch);
+    if (v < 0) continue;
+    acc = (acc << 6) | v;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push((acc >> bits) & 0xff);
+    }
+  }
+  return out;
+}
+
+function bytesToUtf8(bytes) {
+  var out = "", i = 0, c, cp;
+  while (i < bytes.length) {
+    c = bytes[i];
+    if (c < 0x80) { out += String.fromCharCode(c); i += 1; }
+    else if (c < 0xe0) {
+      out += String.fromCharCode(((c & 0x1f) << 6) | (bytes[i + 1] & 0x3f));
+      i += 2;
+    } else if (c < 0xf0) {
+      out += String.fromCharCode(((c & 0x0f) << 12) | ((bytes[i + 1] & 0x3f) << 6) | (bytes[i + 2] & 0x3f));
+      i += 3;
+    } else {
+      cp = ((c & 0x07) << 18) | ((bytes[i + 1] & 0x3f) << 12) | ((bytes[i + 2] & 0x3f) << 6) | (bytes[i + 3] & 0x3f);
+      cp -= 0x10000;
+      out += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3ff));
+      i += 4;
+    }
+  }
+  return out;
+}
+
+// AES S-box built at load time (avoids a 256-entry literal table).
+var AES_SBOX = (function () {
+  var box = new Array(256);
+  var p = 1, q = 1, t;
+  do {
+    p = p ^ ((p << 1) ^ (p & 0x80 ? 0x11b : 0));
+    p &= 0xff;
+    q = (q ^ (q << 1)) & 0xff;
+    q = (q ^ (q << 2)) & 0xff;
+    q = (q ^ (q << 4)) & 0xff;
+    if (q & 0x80) q ^= 0x09;
+    t = q ^ ((q << 1) | (q >>> 7)) ^ ((q << 2) | (q >>> 6)) ^ ((q << 3) | (q >>> 5)) ^ ((q << 4) | (q >>> 4));
+    box[p] = (t ^ 0x63) & 0xff;
+  } while (p !== 1);
+  box[0] = 0x63;
+  return box;
+})();
+
+function aes256ExpandKey(keyBytes) {
+  var rcon = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40];
+  var w = [];
+  var i, t;
+  for (i = 0; i < 8; i++) {
+    w.push([keyBytes[4 * i], keyBytes[4 * i + 1], keyBytes[4 * i + 2], keyBytes[4 * i + 3]]);
+  }
+  for (i = 8; i < 60; i++) {
+    t = w[i - 1].slice(0);
+    if (i % 8 === 0) {
+      t = [AES_SBOX[t[1]] ^ rcon[i / 8 - 1], AES_SBOX[t[2]], AES_SBOX[t[3]], AES_SBOX[t[0]]];
+    } else if (i % 8 === 4) {
+      t = [AES_SBOX[t[0]], AES_SBOX[t[1]], AES_SBOX[t[2]], AES_SBOX[t[3]]];
+    }
+    w.push([w[i - 8][0] ^ t[0], w[i - 8][1] ^ t[1], w[i - 8][2] ^ t[2], w[i - 8][3] ^ t[3]]);
+  }
+  return w;
+}
+
+function aesXtime(x) {
+  return ((x << 1) ^ (x & 0x80 ? 0x1b : 0)) & 0xff;
+}
+
+function aes256EncryptBlock(w, input) {
+  var s = new Array(16);
+  var out = new Array(16);
+  var i, c, r, round, a0, a1, a2, a3, t0, t1, t2, t3, src;
+  for (i = 0; i < 16; i++) s[i] = input[i] ^ w[Math.floor(i / 4)][i % 4];
+  for (round = 1; round < 14; round++) {
+    src = s.slice(0);
+    for (c = 0; c < 4; c++) {
+      a0 = AES_SBOX[src[((c + 0) % 4) * 4 + 0]];
+      a1 = AES_SBOX[src[((c + 1) % 4) * 4 + 1]];
+      a2 = AES_SBOX[src[((c + 2) % 4) * 4 + 2]];
+      a3 = AES_SBOX[src[((c + 3) % 4) * 4 + 3]];
+      t0 = aesXtime(a0); t1 = aesXtime(a1); t2 = aesXtime(a2); t3 = aesXtime(a3);
+      s[c * 4 + 0] = (t0 ^ a1 ^ t1 ^ a2 ^ a3) & 0xff;
+      s[c * 4 + 1] = (a0 ^ t1 ^ a2 ^ t2 ^ a3) & 0xff;
+      s[c * 4 + 2] = (a0 ^ a1 ^ t2 ^ a3 ^ t3) & 0xff;
+      s[c * 4 + 3] = (a0 ^ t0 ^ a1 ^ a2 ^ t3) & 0xff;
+    }
+    for (i = 0; i < 16; i++) s[i] ^= w[4 * round + Math.floor(i / 4)][i % 4];
+  }
+  for (c = 0; c < 4; c++) {
+    for (r = 0; r < 4; r++) {
+      out[c * 4 + r] = AES_SBOX[s[((c + r) % 4) * 4 + r]] ^ w[56 + c][r];
+    }
+  }
+  return out;
+}
 
 /**
- * wp-json search returns episode posts:
- *   [{ title: "Crash Landing on You (2019) Episode 16",
- *      url: "https://myasiantv.com.lv/crash-landing-on-you-2019-episode-16/" }]
- * Matching rules:
- *   - TV: ONLY exact-episode candidates are accepted (a wrong episode is
- *     worse than none; the show-page fallback enumerates the full list).
- *   - Movies: episode-1 (or an episode-less watch post) preferred.
+ * GCM-mode plaintext recovery (CTR phase only). The trailing 16 bytes of the
+ * wire payload are the auth tag and are skipped (not decrypted, not
+ * verified): a wrong key/IV yields garbage that fails JSON.parse. Counter
+ * starts at inc32(J0) per the GCM spec, with J0 = IV(12) || 0x00000001
+ * shifted once (0x00000002) - matches the Byse frontend.
  */
-function myasiantvSearchEpisodeUrl(tmdb, isSeries, episode) {
+function aesGcmDecryptNoTag(keyBytes, ivBytes, dataBytes) {
+  var w = aes256ExpandKey(keyBytes);
+  var cb = [];
+  var i, j, ks, off = 0, n = dataBytes.length - 16; /* last 16 bytes = tag */
+  for (i = 0; i < 12; i++) cb.push(ivBytes[i] & 0xff);
+  cb.push(0, 0, 0, 2);
+  var out = [];
+  while (off < n) {
+    ks = aes256EncryptBlock(w, cb);
+    for (j = 0; j < 16 && off < n; j++, off++) {
+      out.push(dataBytes[off] ^ ks[j]);
+    }
+    for (j = 3; j >= 0; j--) {
+      cb[12 + j] = (cb[12 + j] + 1) & 0xff;
+      if (cb[12 + j]) break;
+    }
+  }
+  return out;
+}
+
+/**
+ * Byse ships the AES key split into key_parts; the playback version picks
+ * two 1-based indices [version, 31 - version] whose base64url payloads
+ * concatenate to the 32-byte key.
+ */
+function byseKeyFromParts(playback) {
+  var parts = playback.key_parts;
+  if (!parts || !parts.length) return null;
+  var version = parseInt(playback.version, 10);
+  var picked = [];
+  var i, b;
+  if (version >= 1 && version <= 20) {
+    var i1 = version - 1;
+    var i2 = 30 - version;
+    if (parts[i1]) picked.push(parts[i1]);
+    if (parts[i2] && i2 !== i1) picked.push(parts[i2]);
+    if (!picked.length) return null;
+  } else {
+    picked = parts;
+  }
+  var bytes = [];
+  for (i = 0; i < picked.length; i++) {
+    if (typeof picked[i] !== "string" || !picked[i].length) continue;
+    b = b64urlToBytes(picked[i]);
+    bytes = bytes.concat(b);
+  }
+  return bytes;
+}
+
+// ===== BYSE PROOF-OF-WORK (custom hash, ported from the justplay bundle) =====
+// The API labels it "sha256-leading-zero-bits" but the bundle implements a
+// custom xxHash-style 32-bit mixer. Real sha256 does NOT verify.
+
+function byseRotl(x, n) { return ((x << n) | (x >>> (32 - n))) >>> 0; }
+
+function byseMix(s) {
+  s[0] = (s[0] + s[1]) >>> 0; s[3] = byseRotl(s[3] ^ s[0], 16);
+  s[2] = (s[2] + s[3]) >>> 0; s[1] = byseRotl(s[1] ^ s[2], 12);
+  s[0] = (s[0] + s[1]) >>> 0; s[3] = byseRotl(s[3] ^ s[0], 8);
+  s[2] = (s[2] + s[3]) >>> 0; s[1] = byseRotl(s[1] ^ s[2], 7);
+}
+
+/** latin1 bytes of str (matches the site's charCodeAt & 255) */
+function byseBytes(str) {
+  var out = new Uint8Array(str.length);
+  for (var i = 0; i < str.length; i++) out[i] = str.charCodeAt(i) & 255;
+  return out;
+}
+
+function byseHashDigest(bytes) {
+  var s = new Uint32Array([1779033703, 3144134277, 1013904242, 2773480762]);
+  var i, f, a, rd, k, w, t, d, v;
+  for (i = 0; i < bytes.length; i++) {
+    s[0] = (s[0] + bytes[i]) >>> 0;
+    s[0] = byseRotl(s[0], 7);
+    byseMix(s);
+  }
+  for (f = 0; f < 8; f++) byseMix(s);
+  var r = new Uint32Array(512);
+  for (a = 0; a < 512; a++) { byseMix(s); r[a] = (s[0] ^ s[2]) >>> 0; }
+  for (rd = 0; rd < 2; rd++) {
+    for (k = 0; k < 512; k++) {
+      var idx = r[k] & 511;
+      var c = (r[k] + r[idx]) >>> 0;
+      c = byseRotl(c, 13);
+      c = (c ^ Math.imul(r[(k + 1) & 511], 2654435761)) >>> 0;
+      r[k] = c;
+      s[0] = (s[0] ^ c) >>> 0;
+      byseMix(s);
+    }
+  }
+  var n = new Uint32Array(8);
+  for (w = 0; w < 8; w++) {
+    byseMix(s);
+    v = s[0];
+    var base = w * 64;
+    for (t = 0; t < 64; t++) {
+      d = r[base + t];
+      v = (v + d) >>> 0;
+      v = byseRotl(v, 5);
+      v = (v ^ Math.imul(d, 2246822519)) >>> 0;
+    }
+    n[w] = (v ^ s[2]) >>> 0;
+  }
+  return n;
+}
+
+function byseLeadingZeroBits(words) {
+  var bits = 0;
+  for (var i = 0; i < words.length; i++) {
+    if (words[i] === 0) { bits += 32; continue; }
+    return bits + Math.clz32(words[i]);
+  }
+  return bits;
+}
+
+/**
+ * Finds the counter N (returned as a DECIMAL STRING) such that
+ * digest(pow_nonce + ":" + N) has >= difficulty leading zero bits.
+ * Difficulty 16 -> ~65k iterations (~1-2s in pure JS). Returns null on
+ * timeout (the lane fails soft).
+ */
+function byseSolvePow(nonceStr, difficulty, maxMs) {
+  if (difficulty <= 0) return "0";
+  var prefix = String(nonceStr) + ":";
+  var counter = 0;
+  var t0 = Date.now();
+  var budget = maxMs || POW_MAX_MS;
+  for (;;) {
+    var d = byseHashDigest(byseBytes(prefix + counter));
+    if (byseLeadingZeroBits(d) >= difficulty) return String(counter);
+    counter++;
+    // time check every 8192 hashes (Date.now() is not free), plus a hard
+    // iteration cap so a runaway loop can never wedge a device runtime
+    if ((counter & 8191) === 0 && Date.now() - t0 > budget) return null;
+    if (counter > 4000000) return null;
+  }
+}
+
+// ===== SOURCE 1: KissAsian (kissasian.cam -> justplay.cam Byse) =====
+
+/**
+ * Search returns <article class="bs"> rows. Series rows carry
+ * /series/{slug}/ links with a clean title="Show" attribute (no year).
+ * Episode rows (/{slug}-episode-{n}/) are ignored here.
+ * Returns the series page URL of the best title match ("" when none).
+ */
+function kissasianSearchSeriesUrl(tmdb) {
   var query = tmdb.title || tmdb.original || "";
   if (!query) return Promise.resolve("");
-  var url = MYASIANTV_BASE + "/wp-json/wp/v2/search?search=" + encodeURIComponent(query) + "&per_page=40";
-  return fetchJson(url, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(data) {
-    if (!Array.isArray(data)) return "";
+  var url = KISSASIAN_BASE + "/?s=" + encodeURIComponent(query);
+  return fetchText(url, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
     var normTitle = normalizeTitle(tmdb.title);
     var normOrig = normalizeTitle(tmdb.original);
-    var bestExact = null, bestExactScore = 0;
-    var bestMovie = null, bestMovieScore = 0;
-    var i, item, t, epm, epNum, score;
-    for (i = 0; i < data.length; i++) {
-      item = data[i];
-      if (!item || !item.url) continue;
-      t = String(item.title || "");
-      var tNorm = normalizeTitle(t);
-      score = Math.max(titleScore(normTitle, tNorm), titleScore(normOrig, tNorm));
-      if (score < 1.5) continue;
-      epm = t.match(/episode\s*(\d+)/i);
-      epNum = epm ? parseInt(epm[1], 10) : 0;
-      if (isSeries) {
-        if (epNum === parseInt(episode, 10) && score > bestExactScore) {
-          bestExactScore = score;
-          bestExact = item.url;
-        }
-      } else {
-        // movies: episode-1 is the watch page; an episode-less post can be one too
-        if (epNum === 1) score += 2;
-        else if (epNum === 0) score += 1;
-        else score -= 0.5;
-        if (score > bestMovieScore) { bestMovieScore = score; bestMovie = item.url; }
+    var best = "", bestScore = 0;
+    var re = /<article class="bs"[^>]*>([\s\S]*?)<\/article>/g;
+    var m;
+    while ((m = re.exec(html)) !== null) {
+      var body = m[1];
+      var lm = body.match(/href="https?:\/\/kissasian\.cam\/series\/([a-z0-9-]+)\/"/i);
+      if (!lm) continue;
+      var tm = body.match(/title="([^"]+)"/i);
+      if (!tm) continue;
+      var tNorm = normalizeTitle(tm[1]);
+      var score = Math.max(titleScore(normTitle, tNorm), titleScore(normOrig, tNorm));
+      if (score > bestScore) {
+        bestScore = score;
+        best = KISSASIAN_BASE + "/series/" + lm[1] + "/";
       }
     }
-    if (isSeries) return bestExact || "";
-    return bestMovie || "";
+    return bestScore >= 1.5 ? best : "";
   }).catch(function() { return ""; });
 }
 
 /**
- * Fallback: scrape the show page /series/{slug}/ for its episode list.
- * STRICT: only episode links whose slug starts with the show's own slug are
- * accepted (episode widgets in the sidebar link to unrelated shows and must
- * never match - that used to return the same "recently added" video for
- * every title).
+ * Series page -> episode links /{slug}-episode-{n}/. STRICT: the episode
+ * slug must start with the series' own slug (avoids the "recently added"
+ * widget matching unrelated shows). Exact-episode or bust for TV (a wrong
+ * episode is worse than none).
  */
-function myasiantvShowPageEpisodeUrl(tmdb, isSeries, episode) {
-  var base = slugify(tmdb.title || tmdb.original || "");
-  if (!base) return Promise.resolve("");
-  var withYear = tmdb.year ? base + "-" + tmdb.year : base;
-  var candidates = [
-    { url: MYASIANTV_BASE + "/series/" + withYear + "/", slug: withYear },
-    { url: MYASIANTV_BASE + "/series/" + base + "/", slug: base }
-  ];
-  var wantEp = isSeries ? parseInt(episode, 10) || 1 : 1;
-
-  function tryIdx(idx) {
-    if (idx >= candidates.length) return Promise.resolve("");
-    var cand = candidates[idx];
-    return fetchText(cand.url, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
-      var eps = [];
-      var re = /href="https?:\/\/myasiantv\.com\.lv\/([a-z0-9-]+-episode-(\d+))\/"/gi;
-      var m;
-      while ((m = re.exec(html)) !== null) {
-        // episode slug must belong to THIS show: "{slug}-episode-N" or
-        // "{base}-episode-N" (some shows carry the year, some do not)
-        if (m[1].indexOf(cand.slug + "-episode-") !== 0 &&
-            m[1].indexOf(base + "-episode-") !== 0) {
-          continue;
-        }
-        eps.push({ url: MYASIANTV_BASE + "/" + m[1] + "/", num: parseInt(m[2], 10) });
-      }
-      if (!eps.length) return tryIdx(idx + 1);
-      var picked = null, i;
-      for (i = 0; i < eps.length; i++) {
-        if (eps[i].num === wantEp) { picked = eps[i].url; break; }
-      }
-      if (!picked && !isSeries) {
-        // movie: the lowest episode number is the watch page
-        var lo = null;
-        for (i = 0; i < eps.length; i++) {
-          if (lo === null || eps[i].num < lo.num) lo = eps[i];
-        }
-        picked = lo ? lo.url : "";
-      }
-      // TV: if the exact episode is not on the show page we return nothing
-      // (never a wrong episode)
-      return picked || "";
-    }).catch(function() { return tryIdx(idx + 1); });
-  }
-  return tryIdx(0);
+function kissasianFindEpisodeUrl(seriesUrl, wantEp) {
+  if (!seriesUrl) return Promise.resolve("");
+  return fetchText(seriesUrl, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
+    var slugm = seriesUrl.match(/\/series\/([a-z0-9-]+)\/?/i);
+    var slug = slugm ? slugm[1] : "";
+    var eps = [];
+    var re = /href="https?:\/\/kissasian\.cam\/([a-z0-9-]+-episode-(\d+))\/"/gi;
+    var m;
+    while ((m = re.exec(html)) !== null) {
+      if (slug && m[1].indexOf(slug + "-episode-") !== 0) continue;
+      eps.push({ path: m[1], num: parseInt(m[2], 10) });
+    }
+    var i;
+    for (i = 0; i < eps.length; i++) {
+      if (eps[i].num === wantEp) return KISSASIAN_BASE + "/" + eps[i].path + "/";
+    }
+    // construct fallback (slug pattern is uniform on this site)
+    if (slug) return KISSASIAN_BASE + "/" + slug + "-episode-" + wantEp + "/";
+    return "";
+  }).catch(function() {
+    var slugm = seriesUrl.match(/\/series\/([a-z0-9-]+)\/?/i);
+    return slugm ? KISSASIAN_BASE + "/" + slugm[1] + "-episode-" + wantEp + "/" : "";
+  });
 }
 
-/** MyAsianTV episode page -> dramavibe player -> direct m3u8 */
-function myasiantvExtract(episodePageUrl) {
-  if (!episodePageUrl) return Promise.resolve(null);
-  return fetchText(episodePageUrl, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
-    var m = html.match(/iframe[^>]*src="(https?:\/\/catalog\.dramavibe\.cfd\/player_embed\.php\?episode=\d+)"/i);
-    if (!m) {
-      // looser fallback: any dramavibe player link on the page
-      m = html.match(/(https?:\/\/catalog\.dramavibe\.cfd\/player_embed\.php\?episode=\d+)/i);
+/**
+ * Runs the captcha-gated Byse API on justplay.cam for one video code.
+ * Flow documented in the header. Returns { url, quality } or null.
+ */
+function byseResolve(code, refererUrl) {
+  var embedHeaders = {
+    "Referer": refererUrl || (KISSASIAN_BASE + "/"),
+    "X-Embed-Origin": KISSASIAN_BASE,
+    "X-Embed-Referer": refererUrl || (KISSASIAN_BASE + "/"),
+    "X-Embed-Parent": KISSASIAN_BASE
+  };
+  var fingerprint = { device_id: "nuvio", confidence: 0.9 };
+  return postJson(JUSTPLAY_BASE + "/api/videos/" + code + "/embed/captcha", { fingerprint: fingerprint }, embedHeaders)
+    .then(function(ch) {
+      var c = ch.data;
+      if (!c || !c.pow_nonce || !c.pow_token || ch.status !== 200) return null;
+      var solution = byseSolvePow(c.pow_nonce, parseInt(c.pow_difficulty, 10) || 16, POW_MAX_MS);
+      if (solution === null) return null;
+      return postJson(JUSTPLAY_BASE + "/api/videos/" + code + "/embed/captcha/verify",
+        { pow_token: c.pow_token, solution: solution }, embedHeaders).then(function(vr) {
+        var v = vr.data;
+        if (!v || v.status !== "ok" || !v.token) return null;
+        var headers = merge(embedHeaders, { "X-Captcha-Token": v.token });
+        return postJson(JUSTPLAY_BASE + "/api/videos/" + code + "/embed/playback",
+          { fingerprint: fingerprint }, headers).then(function(pr) {
+          var body = pr.data;
+          if (!body || !body.playback) return null;
+          var pb = body.playback;
+          if (!pb || !pb.payload || !pb.iv || pb.algorithm !== "AES-256-GCM") return null;
+          var keyBytes = byseKeyFromParts(pb);
+          if (!keyBytes || keyBytes.length !== 32) return null;
+          var plain = aesGcmDecryptNoTag(keyBytes, b64urlToBytes(pb.iv), b64urlToBytes(pb.payload));
+          if (!plain.length) return null;
+          var info = null;
+          try { info = JSON.parse(bytesToUtf8(plain)); } catch (e) { return null; }
+          var sources = (info && info.sources) || [];
+          var best = null, bestH = -1, i, s, h;
+          for (i = 0; i < sources.length; i++) {
+            s = sources[i];
+            if (!s || !s.url || String(s.url).indexOf("http") !== 0) continue;
+            h = parseInt(s.height, 10) || 0;
+            if (h >= bestH) { bestH = h; best = s; }
+          }
+          if (!best) return null;
+          var q = (best.label && best.label !== "x")
+            ? (parseInt(best.height, 10) ? best.height + "p" : String(best.label))
+            : (parseInt(best.height, 10) ? best.height + "p" : "Auto");
+          // v2.0.0 TV-SAFE: Byse signed URLs are self-authorizing, no
+          // playback headers attached (same policy as pinoyhub.js).
+          return { url: String(best.url), quality: q };
+        });
+      });
+    }).catch(function() { return null; });
+}
+
+function kissasianExtract(episodeUrl) {
+  if (!episodeUrl) return Promise.resolve(null);
+  return fetchText(episodeUrl, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
+    var m = html.match(/<iframe[^>]*src="https?:\/\/justplay\.cam\/e\/([a-z0-9]+)/i);
+    if (!m) m = html.match(/https?:\/\/justplay\.cam\/e\/([a-z0-9]+)/i);
+    if (!m) return null;
+    return byseResolve(m[1], episodeUrl).then(function(r) {
+      if (!r) return null;
+      r.source = "KissAsian";
+      r.host = hostOf(r.url);
+      return r;
+    });
+  }).catch(function() { return null; });
+}
+
+function kissasianLane(tmdb, isSeries, season, episode) {
+  var wantEp = isSeries ? (parseInt(episode, 10) || 1) : 1;
+  return kissasianSearchSeriesUrl(tmdb).then(function(seriesUrl) {
+    if (!seriesUrl) return null;
+    return kissasianFindEpisodeUrl(seriesUrl, wantEp).then(function(epUrl) {
+      return kissasianExtract(epUrl);
+    });
+  });
+}
+
+// ===== SOURCE 2: ViewAsian (viewasian.lol -> kisskh.space -> vidmoly) =====
+
+/**
+ * Search rows: <a href="https://viewasian.lol/drama/{slug}/" class="img"
+ * title="Show (2024)">. Returns the best-matching drama page URL.
+ */
+function viewasianSearchDramaUrl(tmdb) {
+  var query = tmdb.title || tmdb.original || "";
+  if (!query) return Promise.resolve("");
+  var url = VIEWASIAN_BASE + "/?s=" + encodeURIComponent(query);
+  return fetchText(url, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
+    var normTitle = normalizeTitle(tmdb.title);
+    var normOrig = normalizeTitle(tmdb.original);
+    var best = "", bestScore = 0;
+    var seen = {};
+    // a-tag attribute order varies; capture the whole tag then pick title=
+    var re = /<a href="(https?:\/\/viewasian\.lol\/drama\/[a-z0-9-]+\/?)"([^>]*)>/gi;
+    var m;
+    while ((m = re.exec(html)) !== null) {
+      var slugm = m[1].match(/\/drama\/([a-z0-9-]+?)\/?$/i);
+      if (!slugm || seen[slugm[1]]) continue;
+      seen[slugm[1]] = true;
+      var tm = m[2].match(/title="([^"]+)"/i);
+      if (!tm) continue;
+      var tNorm = normalizeTitle(tm[1]);
+      var score = Math.max(titleScore(normTitle, tNorm), titleScore(normOrig, tNorm));
+      if (score > bestScore) {
+        bestScore = score;
+        best = m[1];
+      }
     }
+    return bestScore >= 1.5 ? best : "";
+  }).catch(function() { return ""; });
+}
+
+/**
+ * Drama page -> episode list. Link shapes seen live:
+ *   - "/{show}-ep-{n}-eng-sub-drama/"  (server variants add "-1"/"-2")
+ *   - "/{show}-ep-{n}-eng-sub/"        (tail varies per show)
+ *   - "/{show}-episode-{n}-english-sub/"
+ *   - movies: "/{show}-full-hd-movie/" (single watch page)
+ * The tail is not assumed; the link with the SHORTEST suffix (main server)
+ * wins for TV. Movies resolve through their -full-hd-movie page.
+ */
+function viewasianFindEpisodeUrl(dramaUrl, wantEp, isSeries) {
+  if (!dramaUrl) return Promise.resolve("");
+  return fetchText(dramaUrl, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
+    var moviePath = "";
+    var links = {};
+    var re = /href="https?:\/\/viewasian\.lol\/([a-z0-9-]+-(?:ep|episode)-(\d+)(-[a-z0-9-]+)?)\/"/gi;
+    var mre = /href="https?:\/\/viewasian\.lol\/([a-z0-9-]+-(?:full-hd-)?movie)\/"/i;
+    var mm = html.match(mre);
+    if (mm) moviePath = mm[1];
+    var m;
+    while ((m = re.exec(html)) !== null) {
+      var num = parseInt(m[2], 10);
+      var tail = m[3] || "";
+      var svm = tail.match(/^-(\d+)(?:-|$)/);
+      var sv = svm ? parseInt(svm[1], 10) : 0;
+      var key = num + "-" + sv;
+      if (!links[key] || tail.length < links[key].tailLen) {
+        links[key] = { path: m[1], num: num, sv: sv, tailLen: tail.length };
+      }
+    }
+    if (!isSeries) {
+      // movies: the -full-hd-movie page first, then lowest episode number
+      if (moviePath) return VIEWASIAN_BASE + "/" + moviePath + "/";
+      var lo = null, k;
+      for (k in links) {
+        if (!lo || links[k].num < lo.num) lo = links[k];
+      }
+      return lo ? VIEWASIAN_BASE + "/" + lo.path + "/" : "";
+    }
+    var bestMain = null, bestAlt = null, k2;
+    for (k2 in links) {
+      var e = links[k2];
+      if (e.num !== wantEp) continue;
+      if (e.sv === 0) {
+        if (!bestMain || e.tailLen < bestMain.tailLen) bestMain = e;
+      } else {
+        if (!bestAlt || e.sv < bestAlt.sv) bestAlt = e;
+      }
+    }
+    var picked = bestMain || bestAlt;
+    return picked ? VIEWASIAN_BASE + "/" + picked.path + "/" : "";
+  }).catch(function() { return ""; });
+}
+
+/**
+ * viewasian episode page -> kisskh.space iframe -> vidmoly iframe -> m3u8.
+ * The vidmoly embed page obfuscates its player with an eval packer but the
+ * playlist URL leaks as a plain string.
+ */
+function viewasianExtract(episodeUrl) {
+  if (!episodeUrl) return Promise.resolve(null);
+  return fetchText(episodeUrl, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
+    var m = html.match(/<iframe[^>]*src="(https?:\/\/kisskh\.space\/[a-z0-9-]+\/?)"/i);
+    if (!m) m = html.match(/(https?:\/\/kisskh\.space\/[a-z0-9-]+\/?)/i);
     if (!m) return null;
     var playerUrl = m[1].replace(/\\u002F/gi, "/");
     return fetchText(playerUrl, {
-      headers: { "Referer": MYASIANTV_BASE + "/" },
+      headers: { "Referer": VIEWASIAN_BASE + "/" },
       timeoutMs: EMBED_TIMEOUT_MS
     }).then(function(playerHtml) {
-      var vm = playerHtml.match(/(https?:\/\/[a-z0-9.-]+\/[a-z0-9-]+\/video\.m3u8)/i);
-      if (!vm) {
-        vm = playerHtml.match(/(https?:\/\/[^"'\s\\]+\.m3u8[^"'\s\\]*)/i);
-      }
-      if (!vm) return null;
-      var m3u8 = vm[1].replace(/\\u002F/gi, "/").replace(/\\\//g, "/");
-      return resolveHls(m3u8, "https://catalog.dramavibe.cfd/", "MyAsianTV").then(function(r) {
-        if (!r) return null;
-        r.source = "MyAsianTV";
-        r.host = hostOf(r.url);
-        return r;
+      var em = playerHtml.match(/<iframe[^>]*src="(https?:\/\/[^"]*vidmoly[^"]*\/embed-[a-z0-9]+\.html)"/i);
+      if (!em) em = playerHtml.match(/(https?:\/\/[a-z0-9.-]*vidmoly[a-z0-9.-]*\/embed-[a-z0-9]+\.html)/i);
+      if (!em) return null;
+      var embedUrl = em[1].replace(/\\u002F/gi, "/");
+      return fetchText(embedUrl, {
+        headers: { "Referer": playerUrl },
+        timeoutMs: EMBED_TIMEOUT_MS
+      }).then(function(embedHtml) {
+        var mm = embedHtml.match(/(https?:\/\/[^"'\s\\]+\.m3u8[^"'\s\\]*)/i);
+        if (!mm) return null;
+        var m3u8 = mm[1].replace(/\\u002F/gi, "/").replace(/\\\//g, "/");
+        return resolveHls(m3u8, embedUrl, "ViewAsian").then(function(r) {
+          if (!r) return null;
+          r.source = "ViewAsian";
+          r.host = hostOf(r.url);
+          return r;
+        });
       });
     });
   }).catch(function() { return null; });
 }
 
-function myasiantvLane(tmdb, isSeries, season, episode) {
-  var wantEp = isSeries ? String(episode) : "1";
-  return myasiantvSearchEpisodeUrl(tmdb, isSeries, wantEp).then(function(found) {
-    if (found) return found;
-    return myasiantvShowPageEpisodeUrl(tmdb, isSeries, wantEp);
-  }).then(function(episodeUrl) {
-    if (!episodeUrl) return null;
-    return myasiantvExtract(episodeUrl);
-  });
-}
-
-// ===== SOURCE 2: Dramacool =====
-
-/**
- * Episode URLs are constructible: /{slug}-episode-{n}.html (slug may or may
- * not carry the year; movies are -episode-1.html). The episode page embeds
- * /embed/{token} player URLs (server variants ?server=N included).
- */
-function dramacoolLane(tmdb, isSeries, season, episode) {
-  var base = slugify(tmdb.title || tmdb.original || "");
-  if (!base) return Promise.resolve(null);
+function viewasianLane(tmdb, isSeries, season, episode) {
   var wantEp = isSeries ? (parseInt(episode, 10) || 1) : 1;
-  var withYear = tmdb.year ? base + "-" + tmdb.year : "";
-  var epPaths = [];
-  if (withYear) epPaths.push("/" + withYear + "-episode-" + wantEp + ".html");
-  epPaths.push("/" + base + "-episode-" + wantEp + ".html");
-
-  var referer = DRAMACOOL_BASE + "/";
-
-  function tryEpisodePage(idx) {
-    if (idx >= epPaths.length) return Promise.resolve(null);
-    var pageUrl = DRAMACOOL_BASE + epPaths[idx];
-    return fetchText(pageUrl, { timeoutMs: EMBED_TIMEOUT_MS, headers: { "Referer": referer } }).then(function(html) {
-      // collect all embed tokens (dedupe, keep up to 3 server variants)
-      var seen = {};
-      var embeds = [];
-      var re = /(https?:\/\/dramacool\.uno\/embed\/[A-Za-z0-9]+=*(?:\?server=\d+)?)/g;
-      var m;
-      while ((m = re.exec(html)) !== null) {
-        var u = m[1];
-        var bare = u.split("?")[0];
-        if (!seen[bare]) {
-          seen[bare] = true;
-          embeds.push(u);
-        } else if (u.indexOf("server=") !== -1 && embeds.length < 3 && u !== embeds[embeds.length - 1]) {
-          embeds.push(u);
-        }
-        if (embeds.length >= 3) break;
-      }
-      if (!embeds.length) return tryEpisodePage(idx + 1);
-      return extractDramacoolEmbeds(embeds, pageUrl).then(function(best) {
-        if (best) return best;
-        return tryEpisodePage(idx + 1);
-      });
-    }).catch(function() { return tryEpisodePage(idx + 1); });
-  }
-  return tryEpisodePage(0);
+  return viewasianSearchDramaUrl(tmdb).then(function(dramaUrl) {
+    if (!dramaUrl) return null;
+    return viewasianFindEpisodeUrl(dramaUrl, wantEp, isSeries).then(function(epUrl) {
+      return viewasianExtract(epUrl);
+    });
+  });
 }
 
-function dramacoolTagStream(m3u8, referer) {
-  return resolveHls(m3u8, referer, "Dramacool").then(function(r) {
-    if (!r) return null;
-    r.source = "Dramacool";
-    r.host = hostOf(r.url);
-    return r;
-  });
+// ===== SOURCE 3: KissKH (kisskh.co API, kisskh.ovh fallback) =====
+// Ported from providers/kisskh.js v4.0.0 (proven on devices). KissKH is
+// Cloudflare-challenged from datacenter IPs but serves Nuvio clients
+// normally; kisskh.co (user-requested) is tried first, kisskh.ovh is the
+// automatic fallback when a request errors or is challenged.
+
+function kisskhFetchJson(path) {
+  var idx = 0;
+  function attempt() {
+    if (idx >= KISSKH_BASES.length) return Promise.resolve(null);
+    var base = KISSKH_BASES[idx++];
+    return fetchJson(base + path, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(data) {
+      if (data) return data;
+      return attempt();
+    });
+  }
+  return attempt();
 }
 
 /**
- * Second-chance hop for the VidTube embed variant: the embed page sometimes
- * has NO inline m3u8 and instead points the player at a resolve endpoint
- *   var streamUrl = "https://kisskh.asianc.sr/api/resolve/{cid}"
- * where {cid} also sits in settings.cid / data-id. Hitting the endpoint
- * returns {"file":"https://kisskh.asianc.sr/hls/{hash}/index.m3u8", ...}.
- * Verified live 2026-09-09 (episode pages of dramacool.uno).
+ * Levenshtein + token similarity scoring, ported from kisskh.js v4.0.0
+ * (threshold 6000 proved a good confidence bar on live catalogs).
  */
-function dramacoolResolveVariant(html, pageUrl) {
-  var ru = html.match(/(https?:\/\/[^"'\s]+?\/api\/resolve\/\d+)/i);
-  var cidm = null;
-  if (!ru) cidm = html.match(/\bcid\b\s*[:=]\s*["']?(\d+)/i);
-  if (!ru && !cidm) cidm = html.match(/data-id=["'](\d+)["']/i);
-  if (!ru && !cidm) return Promise.resolve(null);
-  var resolveUrl = ru
-    ? ru[1]
-    : "https://kisskh.asianc.sr/api/resolve/" + cidm[1];
-  return fetchText(resolveUrl, {
-    headers: { "Referer": pageUrl },
-    timeoutMs: EMBED_TIMEOUT_MS
-  }).then(function(body) {
-    var fm = body.match(/"file"\s*:\s*"([^"]+)"/i) ||
-             body.match(/(https?:\/\/[^"'\s]+?\.m3u8[^"'\s]*)/i);
-    if (!fm) return null;
-    var m3u8 = fm[1]
-      .replace(/\\u002F/gi, "/")
-      .replace(/\\u003D/gi, "=")
-      .replace(/\\u003d/gi, "=")
-      .replace(/\\\//g, "/");
-    return dramacoolTagStream(m3u8, resolveUrl);
-  }).catch(function() { return null; });
+function levenshtein(a, b) {
+  var matrix = [];
+  for (var i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (var j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (i = 1; i <= b.length; i++) {
+    for (j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) == a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
+      }
+    }
+  }
+  return matrix[b.length][a.length];
 }
 
-function extractDramacoolEmbeds(embedUrls, pageUrl) {
-  var jobs = embedUrls.slice(0, 3).map(function(embedUrl) {
-    return fetchText(embedUrl, {
-      headers: { "Referer": pageUrl },
-      timeoutMs: EMBED_TIMEOUT_MS
-    }).then(function(html) {
-      var m = html.match(/(https?:\/\/[^"'\s]+?\/hls\/[a-z0-9]+\/index\.m3u8)/i);
-      if (!m) m = html.match(/(https?:\/\/[^"'\s]+?\.m3u8[^"'\s]*)/i);
-      if (m) {
-        var m3u8 = m[1].replace(/\\u002F/gi, "/").replace(/\\\//g, "/");
-        return dramacoolTagStream(m3u8, embedUrl);
+function similarityScore(query, candidate) {
+  var q = query.toLowerCase().trim();
+  var c = candidate.toLowerCase().trim();
+  if (q === c) return 10000;
+  var qClean = "", cClean = "", i, ch;
+  for (i = 0; i < q.length; i++) {
+    ch = q.charAt(i);
+    if ((ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9") || ch === " ") qClean += ch;
+  }
+  for (i = 0; i < c.length; i++) {
+    ch = c.charAt(i);
+    if ((ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9") || ch === " ") cClean += ch;
+  }
+  qClean = qClean.trim();
+  cClean = cClean.trim();
+  if (qClean === cClean) return 9500;
+  var qWords = qClean.split(" ");
+  var cWords = cClean.split(" ");
+  if (qWords.length >= 2) {
+    var allFound = true;
+    for (i = 0; i < qWords.length; i++) {
+      var found = false;
+      for (var j = 0; j < cWords.length; j++) {
+        if (qWords[i] === cWords[j]) { found = true; break; }
       }
-      // VidTube variant: stream lives behind the resolve endpoint
-      return dramacoolResolveVariant(html, embedUrl);
-    }).catch(function() { return null; });
-  });
-  return Promise.all(jobs).then(function(results) {
-    var best = null, bestScore = -1, i;
-    for (i = 0; i < results.length; i++) {
-      var r = results[i];
-      if (!r) continue;
-      var score = r.quality === "2160p" ? 4 : r.quality === "1080p" ? 3 : r.quality === "720p" ? 2 : r.quality === "480p" ? 1 : 0;
-      if (score > bestScore) { bestScore = score; best = r; }
+      if (!found) { allFound = false; break; }
     }
+    if (allFound) {
+      if (cWords.length === qWords.length) {
+        var totalDist = 0;
+        for (i = 0; i < qWords.length; i++) {
+          if (qWords[i] !== cWords[i]) {
+            if (qWords[i].indexOf(cWords[i]) !== -1 || cWords[i].indexOf(qWords[i]) !== -1) {
+              totalDist += Math.abs(qWords[i].length - cWords[i].length) * 2;
+            } else {
+              totalDist += Math.max(qWords[i].length, cWords[i].length);
+            }
+          }
+        }
+        if (totalDist <= 2) return 9000;
+        if (totalDist <= 5) return 7000;
+        return 5000;
+      }
+      var extraCount = cWords.length - qWords.length;
+      if (extraCount <= 2) return 8000 - extraCount * 100;
+      return 4000;
+    }
+    return 0;
+  }
+  if (qClean.indexOf(cClean) !== -1) return 6000;
+  if (cClean.indexOf(qClean) !== -1) return 5500;
+  var dist = levenshtein(qClean, cClean);
+  var maxLen = Math.max(qClean.length, cClean.length);
+  if (maxLen === 0) return 0;
+  return Math.floor((1 - dist / maxLen) * 4000);
+}
+
+function kisskhSearch(title) {
+  var q = String(title || "");
+  if (!q) return Promise.reject(new Error("no title"));
+  return kisskhFetchJson("/api/DramaList/Search?q=" + encodeURIComponent(q) + "&type=0").then(function(list) {
+    if (!list || !Array.isArray(list) || !list.length) throw new Error("no kisskh results");
+    var best = null, bestScore = -1, i;
+    for (i = 0; i < list.length; i++) {
+      var item = list[i];
+      var itemTitle = String(item && item.title || "");
+      var clean = itemTitle.replace(/\s*\(\d{4}\)\s*$/, "").trim();
+      var score = similarityScore(q, clean);
+      if (score > bestScore) { bestScore = score; best = item; }
+    }
+    if (!best || bestScore < 6000) throw new Error("no confident kisskh match (score " + bestScore + ")");
     return best;
   });
+}
+
+function kisskhDetail(dramaId) {
+  return kisskhFetchJson("/api/DramaList/Drama/" + dramaId + "?isq=false").then(function(detail) {
+    if (!detail || !detail.episodes || !detail.episodes.length) throw new Error("no kisskh episodes");
+    return detail;
+  });
+}
+
+function kisskhFindEpisode(episodes, mediaType, episodeNum) {
+  var targetNum = parseInt(episodeNum, 10);
+  var i;
+  if (mediaType === "movie") return episodes[episodes.length - 1];
+  for (i = 0; i < episodes.length; i++) {
+    if (parseInt(episodes[i].number, 10) === targetNum) return episodes[i];
+  }
+  var idx = targetNum - 1;
+  if (idx >= 0 && idx < episodes.length) return episodes[idx];
+  for (i = 0; i < episodes.length; i++) {
+    if (String(episodes[i].number || "").indexOf(String(targetNum)) !== -1) return episodes[i];
+  }
+  throw new Error("kisskh episode " + episodeNum + " not found");
+}
+
+function kisskhGenerateKey(epsId) {
+  return kisskhFetchJson("/keygen?id=" + epsId + "&version=2.8.10").then(function(k) {
+    if (k && k.key) return k.key;
+    // fall back to the Google Apps Script key generator used by kisskh.js
+    return fetchJson(KISSKH_KEY_API + "?id=" + epsId + "&version=2.8.10", { timeoutMs: EMBED_TIMEOUT_MS }).then(function(k2) {
+      if (k2 && k2.key) return k2.key;
+      throw new Error("kisskh keygen failed");
+    });
+  });
+}
+
+function kisskhVideoSources(epsId, key) {
+  return kisskhFetchJson("/api/DramaList/Episode/" + epsId + ".png?err=false&ts=&time=&kkey=" + encodeURIComponent(key))
+    .then(function(sources) {
+      if (!sources) throw new Error("empty kisskh video response");
+      return sources;
+    });
+}
+
+function kisskhLane(tmdb, isSeries, season, episode) {
+  var wantEp = isSeries ? String(episode) : "";
+  var title = tmdb.title || tmdb.original || "";
+  if (!title) return Promise.resolve(null);
+  return kisskhSearch(title).then(function(drama) {
+    return kisskhDetail(drama.id).then(function(detail) {
+      var ep = kisskhFindEpisode(detail.episodes, isSeries ? "tv" : "movie", wantEp || 1);
+      return { drama: drama, ep: ep };
+    });
+  }).then(function(info) {
+    return kisskhGenerateKey(info.ep.id).then(function(key) {
+      return kisskhVideoSources(info.ep.id, key).then(function(sources) {
+        var links = [];
+        if (sources.Video) links.push(sources.Video);
+        if (sources.Video_tmp) links.push(sources.Video_tmp);
+        if (sources.ThirdParty) links.push(sources.ThirdParty);
+        if (!links.length) return null;
+        var link = links[0];
+        var isM3u8 = link.indexOf(".m3u8") !== -1;
+        if (!isM3u8 && link.indexOf(".mp4") === -1) return null;
+        var base = KISSKH_BASES[0];
+        var headers = {
+          "Origin": base,
+          "Referer": base + "/",
+          "User-Agent": HEADERS["User-Agent"]
+        };
+        var qm = link.match(/_(\d+p)_/i);
+        var q = qm ? qm[1] : (/1080p/i.test(link) ? "1080p" : (/720p/i.test(link) ? "720p" : "Auto"));
+        return resolveHls(link, base + "/", "KissKH").then(function(r) {
+          if (!r) r = { url: link, quality: "" };
+          r.quality = r.quality || q;
+          r.source = "KissKH";
+          r.host = hostOf(r.url);
+          r.headers = headers;
+          return r;
+        });
+      });
+    });
+  }).catch(function() { return null; });
 }
 
 // ===== MAIN ENTRY =====
@@ -654,11 +1172,12 @@ function getStreams(tmdbId, mediaType, season, episode) {
         ? tmdb.title + " S" + season + "E" + episode
         : tmdb.title;
 
-      // Both lanes run in parallel under the global deadline; each is
-      // individually fail-soft so a dead source never blocks the other.
+      // Three lanes run in parallel under the global deadline; each is
+      // individually fail-soft so a dead source never blocks the others.
       return withExtractionDeadline([
-        function() { return myasiantvLane(tmdb, isSeries, season, episode); },
-        function() { return dramacoolLane(tmdb, isSeries, season, episode); }
+        function() { return kissasianLane(tmdb, isSeries, season, episode); },
+        function() { return viewasianLane(tmdb, isSeries, season, episode); },
+        function() { return kisskhLane(tmdb, isSeries, season, episode); }
       ], GLOBAL_DEADLINE_MS).then(function(results) {
         var streams = [];
         var seen = {};

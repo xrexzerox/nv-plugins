@@ -1,19 +1,20 @@
 /**
- * Asian Catalog — Stremio-protocol catalog addon engine (v2.2.0)
+ * Asian Catalog — Stremio-protocol catalog addon engine (v3.0.0)
  * Sources (all verified server-side reachable, Sep 2026):
  *   1. pinoymovieshub.win   — WordPress/Dooplay HTML scrape (Pinoy movies+series)
- *   2. dramacool.org.es     — WordPress REST API /wp-json/wp/v2/anime (Asian series)
- *   3. TMDB Discover/Search — official asian-language directories (ko|zh|ja|th|tl)
+ *   2. kissasian.cam        — WordPress "dramastream" HTML scrape (Asian series)
+ *   3. viewasian.lol        — WordPress "viewasian" HTML scrape (Asian series)
+ *   4. TMDB Discover/Search — official asian-language directories (ko|zh|ja|th|tl)
  *
- * WHY THE SOURCES CHANGED (fixes "some movies and series not fetching"):
- *   - myasiantv.ac now serves a JS-only shell ("Loading...") to non-browsers:
- *     every scraped row came back empty. Replaced by dramacool.org.es REST +
- *     TMDB directories.
- *   - the old dramacool domains redirect to dramacool.org.es whose grids and
- *     search render client-side; its REST API is the reliable path and is used
- *     here directly.
- *   - kisskh.ovh is Cloudflare-gated from datacenter IPs (catalog worker cannot
- *     browse it); the KissKH *playback* provider keeps working on devices.
+ * WHY THE SOURCES CHANGED (v3.0.0, user request):
+ *   - myasiantv.com.lv, dramacool and the AnimePahe-mirror catalog were
+ *     REMOVED. Series now come from kissasian.cam (home archive pagination
+ *     deduped to series, /?s= search, /genres/ archives) and viewasian.lol
+ *     (home archive pagination, /?s= search, /genre/ + /country/ archives).
+ *   - kisskh.co is NOT a catalog source: it Cloudflare-challenges datacenter
+ *     IPs. It remains a PLAYBACK lane inside providers/asianhub.js (devices
+ *     are served normally) — same split the standalone kisskh.js provider
+ *     has always had.
  *
  * WHAT THIS IS
  *   Nuvio QuickJS plugins can only export getStreams() — catalogs and meta
@@ -33,17 +34,16 @@
  *     - NuvioTVSmart (JS): catalogRepository.js — same path-segment extras,
  *       honors per-catalog `pageSize` for skip steps, `{metas:[...]}` shape.
  *
- * ORGANIZED DIRECTORY (10 catalogs, grouped by source in the manifest order):
+ * ORGANIZED DIRECTORY (11 catalogs, grouped by source in the manifest order):
  *   Pinoy Movies Hub ....... pinoy-movies, pinoy-series (+ genre browses)
- *   Dramacool .............. asian-series, asian-series-genre
+ *   KissAsian .............. asian-series, asian-series-genre
+ *   ViewAsian .............. asian-series-viewasian, asian-series-viewasian-genre
  *   TMDB Asian directory ... asian-movies, asian-series-trending,
  *                            asian-movies-genre
- *   Anime .................. anime-latest (newest airing Japanese anime;
- *                            playback pairs with the AnimePahe plugin)
- *   Every catalog supports search; chips (genre/language) render as extras.
+ *   Every catalog supports search; chips (genre/country) render as extras.
  *
  * PAGINATION MODEL
- *   Sources hold 10-26 items per page and some items fail TMDB matching and
+ *   Sources hold 10-30 items per page and some items fail TMDB matching and
  *   are turned into `asian:<slug>` fallback rows (visible, site poster) or
  *   dropped. Naively mapping site pages to skip offsets would desync Nuvio's
  *   `skip` (nextSkip = skip + returnedCount). So the engine maintains a
@@ -60,17 +60,19 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '2.3.0';
+  var VERSION = '3.0.0';
   var ADDON_ID = 'community.asian.catalog';
   var ADDON_NAME = 'Asian Catalog';
 
   var PINOY_SITE_DEFAULT = 'https://pinoymovieshub.win';
-  var DRAMACOOL_SITE_DEFAULT = 'https://dramacool.org.es';
+  var KISSASIAN_SITE_DEFAULT = 'https://kissasian.cam';
+  var VIEWASIAN_SITE_DEFAULT = 'https://viewasian.lol';
   // Same public TMDB key the Nuvio plugin ecosystem already embeds
   // (providers/pinoyhub.js et al). Override with TMDB_API_KEY env/secret.
   var DEFAULT_TMDB_KEY = '439c478a771f35c05022f9feabcca01c';
   var PINOY_ICON = '/wp-content/uploads/2025/04/cropped-favicon-11-192x192.png';
-  var DRAMACOOL_ICON = '/wp-content/uploads/2026/05/cropped-download__37_-removebg-preview-2-2.png';
+  var KS_ICON = '/wp-content/uploads/2024/03/cropped-favicon-1-1-192x192.png';
+  var VA_ICON = '/wp-content/uploads/2024/09/logo.png';
 
   // Asian original languages surfaced through TMDB discover/search filters.
   var ASIAN_LANGS = ['ko', 'zh', 'ja', 'th', 'tl'];
@@ -99,7 +101,7 @@
   var BUFFER_TTL = 30 * 60 * 1000;            // per-catalog resolved buffers
   var RESOLVED_TTL = 24 * 60 * 60 * 1000;     // TMDB lookups
   var RESOLVED_NULL_TTL = 6 * 60 * 60 * 1000; // negative TMDB lookups
-  var TERMS_TTL = 6 * 60 * 60 * 1000;         // dramacool taxonomy term ids
+  var TERMS_TTL = 6 * 60 * 60 * 1000;         // (retained for cache-cap compat)
 
   // ===== caches (module-level) =====
 
@@ -108,7 +110,6 @@
   var buffers = new Map();       // stateKey -> buffer
   var bufferInflight = new Map(); // stateKey -> Promise
   var tmdbInflight = new Map();  // lookup key -> Promise
-  var termsCache = new Map();    // taxonomy -> { ts, slugToId }
   var CACHE_CAPS = { page: 250, resolved: 4000, buffers: 80, terms: 20 };
 
   function cachePrune(map, cap) {
@@ -127,7 +128,6 @@
     buffers.clear();
     bufferInflight.clear();
     tmdbInflight.clear();
-    termsCache.clear();
   }
 
   // ===== config =====
@@ -148,7 +148,8 @@
     }
     return {
       pinoySite: String(env.PINOY_SITE || PINOY_SITE_DEFAULT).replace(/\/+$/, ''),
-      dcSite: String(env.DRAMACOOL_SITE || DRAMACOOL_SITE_DEFAULT).replace(/\/+$/, ''),
+      kissasianSite: String(env.KISSASIAN_SITE || KISSASIAN_SITE_DEFAULT).replace(/\/+$/, ''),
+      viewasianSite: String(env.VIEWASIAN_SITE || VIEWASIAN_SITE_DEFAULT).replace(/\/+$/, ''),
       tmdbKey: String(env.TMDB_API_KEY || DEFAULT_TMDB_KEY),
       pageLimit: Math.min(Math.max(isFinite(limit) && limit > 0 ? limit : PAGE_LIMIT_DEFAULT, 5), 50),
       maxSitePages: isFinite(maxPages) && maxPages > 0 ? maxPages : MAX_SITE_PAGES_DEFAULT,
@@ -484,21 +485,25 @@
       name: cleanDisplayName(item.title),
       posterShape: 'poster'
     };
-    var sitePoster = cleanPosterUrl(cfg.pinoySite, item.poster);
+    var sitePoster = cleanPosterUrl(cfg.pinoySite, item.poster) ||
+      cleanPosterUrl(cfg.kissasianSite, item.poster) ||
+      cleanPosterUrl(cfg.viewasianSite, item.poster);
     if (sitePoster) meta.poster = sitePoster;
     if (item.description) meta.description = item.description;
     if (item.year) meta.releaseInfo = String(item.year);
     return meta;
   }
 
-  // Scraped item (pinoy HTML / dramacool REST) -> meta. TMDB match first,
-  // visible `asian:<slug>` fallback row when unmatched (or dropped when
-  // ASIAN_KEEP_UNMATCHED=0).
+  // Scraped item (pinoy HTML / kissasian HTML / viewasian HTML) -> meta.
+  // TMDB match first, visible `asian:<slug>` fallback row when unmatched (or
+  // dropped when ASIAN_KEEP_UNMATCHED=0).
   function toMeta(cfg, item, tmdb) {
     var type = item.type === 'series' ? 'series' : 'movie';
     var name = cleanDisplayName(item.title);
     if (!name) return null;
-    var sitePoster = cleanPosterUrl(cfg.pinoySite, item.poster) || cleanPosterUrl(cfg.dcSite, item.poster);
+    var sitePoster = cleanPosterUrl(cfg.pinoySite, item.poster) ||
+      cleanPosterUrl(cfg.kissasianSite, item.poster) ||
+      cleanPosterUrl(cfg.viewasianSite, item.poster);
     if (tmdb) {
       var meta = {
         id: 'tmdb:' + tmdb.id,
@@ -653,114 +658,252 @@
     });
   }
 
-  // ===== source 2: dramacool.org.es (WordPress REST) =====
+  // ===== source 2: kissasian.cam (WordPress "dramastream" HTML) =====
+  // v3.0.0: replaces myasiantv.com.lv (user request). The site serves:
+  //   - home archive  /page/{n}/  -> <article class="bs"> episode rows;
+  //     rows are deduped to SERIES by stripping the "-episode-{n}" suffix
+  //     (a fresh "latest updates" browse — every page mixes ~26 series)
+  //   - search        /?s={q}    -> <article class="bs"> rows with
+  //     /series/{slug}/ links and clean title attributes
+  //   - genre archive /genres/{slug}/ (page 1; deeper pages 404 -> the
+  //     buffer engine simply marks the listing exhausted)
+  // Titles carry no year; posters are episode thumbs (upgraded via
+  // cleanPosterUrl). TMDB matching runs as for every other source.
 
-  // dramacool exposes CPT `anime` with taxonomies anime_genre / anime_language.
-  // Term ids are resolved live (cached 6h) and fall back to the snapshot map
-  // below (verified Sep 2026) if the taxonomy endpoint is unavailable.
-  var DC_GENRE_TERMS = {
-    action: 47, comedy: 25, drama: 3, fantasy: 15, food: 37, historical: 14,
-    life: 32, medical: 36, melodrama: 42, military: 38, mystery: 53,
-    political: 16, romance: 10, 'sci-fi': 59, supernatural: 26,
-    thriller: 56, youth: 11
-  };
-  var DC_LANGUAGE_TERMS = { chinese: 6, japanese: 22, korean: 29, thai: 45 };
-
-  // Genre chips for the dramacool catalog: 17 site genres + 4 languages.
-  var DC_GENRE_CHIPS = [
-    'Action', 'Comedy', 'Drama', 'Fantasy', 'Food', 'Historical', 'Life',
-    'Medical', 'Melodrama', 'Military', 'Mystery', 'Political', 'Romance',
-    'Sci-Fi', 'Supernatural', 'Thriller', 'Youth',
-    'Korean', 'Chinese', 'Japanese', 'Thai'
+  // Genre chips for the kissasian catalog (live /genres/ slugs, Sep 2026).
+  var KS_GENRE_CHIPS = [
+    'Action', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Fantasy',
+    'Historical', 'Horror', 'Life', 'Mature', 'Music', 'Mystery',
+    'Romance', 'Sci-Fi', 'Supernatural', 'Thriller', 'War', 'Wuxia', 'Youth'
   ];
 
-  function dcFetchTerms(cfg, taxonomy, fallbackMap) {
-    var now = cfg.nowFn();
-    var hit = termsCache.get(taxonomy);
-    if (hit && now - hit.ts < TERMS_TTL) return Promise.resolve(hit.slugToId);
-    return fetchJson(cfg, cfg.dcSite + '/wp-json/wp/v2/' + taxonomy + '?per_page=60', 10000)
-      .then(function (terms) {
-        var map = {};
-        if (Array.isArray(terms)) {
-          for (var i = 0; i < terms.length; i++) {
-            if (terms[i] && terms[i].slug) map[terms[i].slug] = terms[i].id;
-          }
-        }
-        if (!Object.keys(map).length) map = fallbackMap;
-        termsCache.set(taxonomy, { ts: now, slugToId: map });
-        cachePrune(termsCache, CACHE_CAPS.terms);
-        return map;
-      })
-      .catch(function () { return fallbackMap; });
+  function ksSlugToGenre(slug) {
+    var s = String(slug || '');
+    var map = {
+      action: 'Action', comedy: 'Comedy', crime: 'Crime',
+      documentary: 'Documentary', drama: 'Drama', fantasy: 'Fantasy',
+      historical: 'Historical', horror: 'Horror', life: 'Life',
+      mature: 'Mature', music: 'Music', mystery: 'Mystery',
+      romance: 'Romance', 'sci-fi': 'Sci-Fi', supernatural: 'Supernatural',
+      thriller: 'Thriller', war: 'War', wuxia: 'Wuxia', youth: 'Youth'
+    };
+    return map[s] || s.charAt(0).toUpperCase() + s.slice(1);
   }
 
-  function dcRestParse(cfg, data) {
-    var out = [];
-    if (!Array.isArray(data)) return out;
-    for (var i = 0; i < data.length; i++) {
-      var a = data[i];
-      if (!a || a.status && a.status !== 'publish') continue;
-      var link = String(a.link || a.guid && a.guid.rendered || '');
-      var slug = a.slug || (link.replace(/\/+$/, '').split('/').pop() || '');
-      if (!slug) continue;
-      var title = a.title && a.title.rendered ? a.title.rendered : '';
-      if (!title) continue;
-      var year = String(a.date_gmt || a.date || '').split('-')[0] || '';
-      if (!/^(19|20)\d{2}$/.test(year)) year = '';
-      var desc = stripTags(a.excerpt && a.excerpt.rendered || '');
-      if (desc.length > 260) desc = desc.substring(0, 257) + '...';
+  /**
+   * Parses one kissasian.cam HTML page into series rows.
+   * Episode rows (/{slug}-episode-{n}/) dedupe to their series; /series/
+   * rows pass through as-is; movie rows (no episode suffix) are dropped —
+   * this catalog is series-only by design.
+   */
+  function ksParseListPage(cfg, html) {
+    var items = [];
+    var seen = {};
+    // host is config-driven (KISSASIAN_SITE override / test fixtures)
+    var host = String(cfg.kissasianSite || '').replace(/^https?:\/\//, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var reHref = new RegExp('href="https?://' + host + '/(?:series/)?([a-z0-9-]+)/"', 'i');
+    var reSeries = new RegExp('href="https?://' + host + '/series/', 'i');
+    var re = /<article class="bs"[^>]*>([\s\S]*?)<\/article>/g;
+    var m;
+    while ((m = re.exec(html)) !== null) {
+      var body = m[1];
+      var isSeriesRow = reSeries.test(body);
+      // first link inside the row: search rows point at /series/{slug}/,
+      // home rows at /{slug}-episode-{n}/ — capture the full path tail
+      var link = body.match(reHref);
+      if (!link) continue;
+      var slug = link[1];
+      var img = body.match(/<img[^>]*>/i);
       var poster = '';
-      var emb = a._embedded && a._embedded['wp:featuredmedia'] && a._embedded['wp:featuredmedia'][0];
-      if (emb) {
-        var sizes = emb.media_details && emb.media_details.sizes || {};
-        poster = (sizes.medium_large && sizes.medium_large.source_url) ||
-          (sizes.medium && sizes.medium.source_url) || emb.source_url || '';
+      if (img) {
+        poster = attr(img[0], 'src') || attr(img[0], 'data-original') || attr(img[0], 'data-lazy-src');
       }
-      out.push({
+      var title = '';
+      var tm = body.match(/title="([^"]+)"/i);
+      if (tm) title = stripTags(decodeEntities(tm[1]));
+      if (!title && img) {
+        var alt = attr(img[0], 'alt') || attr(img[0], 'title');
+        if (alt) title = stripTags(decodeEntities(alt));
+      }
+      if (!title) continue;
+
+      var epm = slug.match(/^(.*)-episode-\d+$/);
+      if (epm) {
+        slug = epm[1];
+        title = title.replace(/\s*[-\u2013\u2014]?\s*Episode\s*\d+.*$/i, '');
+      } else if (!isSeriesRow) {
+        // movie / non-series row (search rows carry /series/ links)
+        continue;
+      }
+      if (seen[slug]) continue;
+      seen[slug] = true;
+      items.push({
         slug: slug,
-        url: link,
-        type: 'series', // dramacool CPT anime = series only
-        title: collapseWs(decodeEntities(title)),
-        year: year,
+        url: cfg.kissasianSite + '/series/' + slug + '/',
+        type: 'series',
+        title: collapseWs(title),
+        year: '',
         poster: poster,
-        description: desc
+        description: ''
       });
     }
-    return out;
+    return items;
   }
 
-  function dcPageRaw(cfg, url) {
-    return fetchPageCached(cfg, url, function (c, u) {
-      return fetchJson(c, u, 12000).then(function (data) { return dcRestParse(c, data); });
+  function ksParseUrl(cfg, url) {
+    return fetchTextWithRetry(cfg, url, 12000).then(function (html) {
+      return ksParseListPage(cfg, html);
     });
   }
 
-  function dcPageMetas(cfg, def, page, extras) {
-    var search = String(extras.search || '').trim();
-    var genreSlug = slugifyGenre(extras.genre || '');
-    var params = '?per_page=' + Math.max(cfg.pageLimit, 10) + '&page=' + page + '&_embed=wp:featuredmedia';
+  function ksPageRaw(cfg, url) {
+    return fetchPageCached(cfg, url, ksParseUrl);
+  }
+
+  function ksPageMetas(cfg, def, page, extras) {
     var url;
+    var search = String(extras.search || '').trim();
     if (search) {
-      url = cfg.dcSite + '/wp-json/wp/v2/anime' + params + '&search=' + encodeURIComponent(search);
-    } else if (def.mode === 'genre' && genreSlug) {
-      var tax = DC_LANGUAGE_TERMS.hasOwnProperty(genreSlug) ? 'anime_language' : 'anime_genre';
-      return dcFetchTerms(cfg, tax, tax === 'anime_language' ? DC_LANGUAGE_TERMS : DC_GENRE_TERMS)
-        .then(function (map) {
-          var termId = map[genreSlug] || (tax === 'anime_language' ? DC_LANGUAGE_TERMS[genreSlug] : DC_GENRE_TERMS[genreSlug]);
-          if (!termId) return [];
-          return dcPageRaw(cfg, cfg.dcSite + '/wp-json/wp/v2/anime' + params + '&' + tax + '=' + termId)
-            .then(function (items) { return items.length ? resolveBatch(cfg, items) : []; });
-        });
+      url = page === 1
+        ? cfg.kissasianSite + '/?s=' + encodeURIComponent(search)
+        : cfg.kissasianSite + '/page/' + page + '/?s=' + encodeURIComponent(search);
+    } else if (def.mode === 'genre' && extras.genre) {
+      var slug = slugifyGenre(extras.genre);
+      url = cfg.kissasianSite + '/genres/' + slug + '/';
+      return ksPageRaw(cfg, url).then(function (items) {
+        return items.length ? resolveBatch(cfg, items) : [];
+      }).catch(function () { return []; }); // genre archives are shallow; empty beats a 502
     } else {
-      url = cfg.dcSite + '/wp-json/wp/v2/anime' + params + '&orderby=date&order=desc';
+      url = page === 1 ? cfg.kissasianSite + '/' : cfg.kissasianSite + '/page/' + page + '/';
     }
-    return dcPageRaw(cfg, url).then(function (items) {
+    return ksPageRaw(cfg, url).then(function (items) {
       if (!items.length) return [];
       return resolveBatch(cfg, items);
     });
   }
 
-  // ===== source 3: TMDB Discover / Search (official asian directories) =====
+  // ===== source 3: viewasian.lol (WordPress "viewasian" HTML) =====
+  // v3.0.0: second series source (user request). The site serves:
+  //   - home archive  /page/{n}/  -> ul.switch-block.list-episode-item rows;
+  //     li titles look like "Show (2026) Episode 2 English Sub" (year inline)
+  //   - search        /?s={q}    -> /drama/{slug}/ rows, a-title "Show (2024)"
+  //   - genre archive /genre/{slug}/ + /genre/{slug}/page/{n}/ (verified)
+  //   - country       /country/{slug}/ (korean/chinese/japanese verified;
+  //     thai archive does not exist on this site)
+
+  // Genre chips for the viewasian catalog (all slugs verified live, Sep 2026).
+  var VA_GENRE_CHIPS = [
+    'Action', 'Adventure', 'Business', 'Comedy', 'Crime', 'Documentary',
+    'Drama', 'Friendship', 'Historical', 'Horror', 'Life', 'Medical',
+    'Melodrama', 'Music', 'Mystery', 'Political', 'Romance', 'School',
+    'Sci-Fi', 'Supernatural', 'Thriller', 'War', 'Youth',
+    'Korean', 'Chinese', 'Japanese'
+  ];
+
+  function vaGenreUrlPart(genre) {
+    // country chips route to /country/ archives, everything else /genre/
+    var map = { korean: 'country', chinese: 'country', japanese: 'country' };
+    var slug = slugifyGenre(genre);
+    return (map[slug] || 'genre') + '/' + slug;
+  }
+
+  /**
+   * Parses one viewasian.lol listing/search page into series rows.
+   * Episode rows dedupe to their series; a-titles / img alts carry
+   * "Show (Year) Episode N ..." — the year is kept for TMDB matching.
+   */
+  function vaParseListPage(cfg, html) {
+    var items = [];
+    var seen = {};
+    // host is config-driven (VIEWASIAN_SITE override / test fixtures)
+    var host = String(cfg.viewasianSite || '').replace(/^https?:\/\//, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // per-<li> scan: rows live in <li><a href=...><img ...><h2 class=title>.
+    // Listing rows link to root episode URLs, search rows to /drama/{slug}/.
+    var re = new RegExp('<li>\\s*<a href="https?://' + host + '/(?:drama/)?([a-z0-9-]+)/"([^>]*)>([\\s\\S]*?)</li>', 'g');
+    var m;
+    while ((m = re.exec(html)) !== null) {
+      var isDramaRow = m[0].indexOf('/drama/') !== -1;
+      var slug = m[1];
+      var body = m[3];
+      var img = body.match(/<img[^>]*>/i);
+      if (!img) continue; // menu/nav rows have no thumbnails
+      var poster = attr(img[0], 'data-original') || attr(img[0], 'src');
+      var title = attr(img[0], 'title') || attr(img[0], 'alt');
+      if (!title) {
+        var at = m[0].match(/<a[^>]*title="([^"]+)"/i);
+        if (at) title = at[1];
+      }
+      if (!title) {
+        var h2 = body.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+        if (h2) title = stripTags(h2[1]);
+      }
+      if (!title) continue;
+      title = stripTags(decodeEntities(title));
+
+      var year = '';
+      var ym = title.match(/\((19|20)\d{2}\)/);
+      if (ym) year = ym[0].slice(1, -1);
+
+      var epm = slug.match(/^(.*?)(?:-episode-\d+|-ep-\d+)(?:-[a-z0-9-]+)?$/);
+      if (epm) {
+        slug = epm[1];
+        title = title.replace(/\s*[-\u2013\u2014]?\s*Episode\s*\d+.*$/i, '');
+      } else if (slug.indexOf('movie') !== -1) {
+        slug = slug.replace(/-(?:full-hd-)?movie$/, '');
+        title = title.replace(/\s*[-\u2013\u2014]?\s*Full[\s-]*HD[\s-]*Movie.*$/i, '');
+      } else if (!isDramaRow) {
+        continue; // non-content row (nav chips etc)
+      }
+      if (seen[slug]) continue;
+      seen[slug] = true;
+      items.push({
+        slug: slug,
+        url: cfg.viewasianSite + '/drama/' + slug + '/',
+        type: 'series',
+        title: collapseWs(title),
+        year: year,
+        poster: poster,
+        description: ''
+      });
+    }
+    return items;
+  }
+
+  function vaParseUrl(cfg, url) {
+    return fetchTextWithRetry(cfg, url, 12000).then(function (html) {
+      return vaParseListPage(cfg, html);
+    });
+  }
+
+  function vaPageRaw(cfg, url) {
+    return fetchPageCached(cfg, url, vaParseUrl);
+  }
+
+  function vaPageMetas(cfg, def, page, extras) {
+    var url;
+    var search = String(extras.search || '').trim();
+    if (search) {
+      url = page === 1
+        ? cfg.viewasianSite + '/?s=' + encodeURIComponent(search)
+        : cfg.viewasianSite + '/page/' + page + '/?s=' + encodeURIComponent(search);
+    } else if (def.mode === 'genre' && extras.genre) {
+      var part = vaGenreUrlPart(extras.genre);
+      url = page === 1
+        ? cfg.viewasianSite + '/' + part + '/'
+        : cfg.viewasianSite + '/' + part + '/page/' + page + '/';
+      return vaPageRaw(cfg, url).then(function (items) {
+        return items.length ? resolveBatch(cfg, items) : [];
+      }).catch(function () { return []; }); // missing archives (e.g. thai) stay empty
+    } else {
+      url = page === 1 ? cfg.viewasianSite + '/' : cfg.viewasianSite + '/page/' + page + '/';
+    }
+    return vaPageRaw(cfg, url).then(function (items) {
+      if (!items.length) return [];
+      return resolveBatch(cfg, items);
+    });
+  }
+
+  // ===== source 4: TMDB Discover / Search (official asian directories) =====
 
   // Official TMDB movie genre ids (stable).
   var TMDB_MOVIE_GENRES = {
@@ -822,12 +965,7 @@
         if (data && Array.isArray(data.results)) {
           for (var i = 0; i < data.results.length; i++) {
             var r = data.results[i];
-            if (def.id === 'anime-latest') {
-              // keep the catalog anime-only: Japanese originals with the
-              // Animation genre tag on the search result
-              if (r.original_language !== 'ja') continue;
-              if (!r.genre_ids || r.genre_ids.indexOf(16) === -1) continue;
-            } else if (ASIAN_LANGS.indexOf(r.original_language) === -1) {
+            if (ASIAN_LANGS.indexOf(r.original_language) === -1) {
               continue;
             }
             var m = tmdbResultToMeta(cfg, r, type);
@@ -840,13 +978,7 @@
 
     url = base + 'discover/' + kind + '?api_key=' + encodeURIComponent(cfg.tmdbKey) +
       '&' + langFilter + '&include_adult=false&page=' + page;
-    if (def.id === 'anime-latest') {
-      // newest airing anime: Animation genre + Japanese originals first-seen
-      // on top. Mirrors the animepahe latest-release lineup (see catalogDefinitions).
-      url = base + 'discover/' + kind + '?api_key=' + encodeURIComponent(cfg.tmdbKey) +
-        '&with_genres=16&with_original_language=ja&include_adult=false' +
-        '&sort_by=' + dateField + '.desc&vote_count.gte=3&include_null_first_air_dates=false&page=' + page;
-    } else if (def.mode === 'genre' && genreSlug) {
+    if (def.mode === 'genre' && genreSlug) {
       var gid = TMDB_MOVIE_GENRES[genreSlug];
       if (!gid) return Promise.resolve([]);
       url += '&with_genres=' + gid;
@@ -990,18 +1122,31 @@
         description: 'Browse Pinoy series by genre',
         extra: [{ name: 'genre', options: pinoyGenres }, { name: 'skip' }]
       },
-      // --- Dramacool (dramacool.org.es REST) ---
+      // --- KissAsian (kissasian.cam HTML, series) ---
       {
-        type: 'series', id: 'asian-series', name: 'Asian Series (Dramacool)', source: 'dramacool',
+        type: 'series', id: 'asian-series', name: 'Asian Series (KissAsian)', source: 'kissasian',
         mode: 'archive',
-        description: 'Latest Asian dramas — Korean, Chinese, Japanese, Thai — from dramacool.org.es',
+        description: 'Latest Asian dramas — Korean, Chinese, Japanese and more — from kissasian.cam',
         extra: [{ name: 'search' }, { name: 'skip' }]
       },
       {
-        type: 'series', id: 'asian-series-genre', name: 'Asian Series by Genre (Dramacool)', source: 'dramacool',
+        type: 'series', id: 'asian-series-genre', name: 'Asian Series by Genre (KissAsian)', source: 'kissasian',
         mode: 'genre',
-        description: 'Browse Asian dramas by genre or language',
-        extra: [{ name: 'genre', options: DC_GENRE_CHIPS.slice() }, { name: 'skip' }]
+        description: 'Browse Asian dramas by genre on kissasian.cam',
+        extra: [{ name: 'genre', options: KS_GENRE_CHIPS.slice() }, { name: 'skip' }]
+      },
+      // --- ViewAsian (viewasian.lol HTML, series) ---
+      {
+        type: 'series', id: 'asian-series-viewasian', name: 'Asian Series (ViewAsian)', source: 'viewasian',
+        mode: 'archive',
+        description: 'Latest Asian dramas — Korean, Chinese, Japanese, Thai — from viewasian.lol',
+        extra: [{ name: 'search' }, { name: 'skip' }]
+      },
+      {
+        type: 'series', id: 'asian-series-viewasian-genre', name: 'Asian Series by Genre (ViewAsian)', source: 'viewasian',
+        mode: 'genre',
+        description: 'Browse Asian dramas by genre or country on viewasian.lol',
+        extra: [{ name: 'genre', options: VA_GENRE_CHIPS.slice() }, { name: 'skip' }]
       },
       // --- TMDB asian-language directory ---
       {
@@ -1021,18 +1166,6 @@
         mode: 'genre',
         description: 'Browse Asian movies by genre (official TMDB directory)',
         extra: [{ name: 'genre', options: TMDB_GENRE_CHIPS.slice() }, { name: 'skip' }]
-      },
-      // --- Anime (TMDB airing-now view; playback via the AnimePahe plugin) ---
-      // animepahe.pw itself DDoS-Guard-blocks datacenter IPs (403), so the
-      // worker cannot scrape its latest-release feed server-side. The airing
-      // lineup is mirrored through the official TMDB directory instead
-      // (Japanese animation, newest first): every row is a tmdb: id, so
-      // playback goes straight through the AnimePahe Nuvio plugin.
-      {
-        type: 'series', id: 'anime-latest', name: 'Anime Latest Releases', source: 'tmdb',
-        mode: 'archive',
-        description: 'Newest airing anime (Japanese animation), newest first — pairs with the AnimePahe playback plugin',
-        extra: [{ name: 'search' }, { name: 'skip' }]
       }
     ];
   }
@@ -1042,7 +1175,7 @@
       id: ADDON_ID,
       version: VERSION,
       name: ADDON_NAME,
-      description: 'Organized Asian catalogs: Pinoy movies & series (pinoymovieshub), Asian dramas (dramacool.org.es), Asian movies/series directories by language (TMDB) and Anime Latest Releases (pairs with the AnimePahe plugin). Titles resolve to TMDB ids for playback.',
+      description: 'Organized Asian catalogs: Pinoy movies & series (pinoymovieshub), Asian dramas (kissasian.cam + viewasian.lol) and Asian movies/series directories by language (TMDB). Titles resolve to TMDB ids for playback.',
       logo: cfg.pinoySite + PINOY_ICON,
       resources: ['catalog'],
       types: ['movie', 'series'],
@@ -1079,21 +1212,20 @@
           return { ok: items.length > 0, items: items.length, error: items.length ? undefined : 'parsed 0 items (site markup changed?)' };
         });
       })],
-      ['dramacool', timeProbe(function () {
-        return dcPageRaw(cfg, cfg.dcSite + '/wp-json/wp/v2/anime?per_page=10&page=1&_embed=wp:featuredmedia').then(function (items) {
-          return { ok: items.length > 0, items: items.length, error: items.length ? undefined : 'REST returned 0 items' };
+      ['kissasian', timeProbe(function () {
+        return ksPageRaw(cfg, cfg.kissasianSite + '/page/2/').then(function (items) {
+          return { ok: items.length > 0, items: items.length, error: items.length ? undefined : 'parsed 0 series rows (site markup changed?)' };
+        });
+      })],
+      ['viewasian', timeProbe(function () {
+        return vaPageRaw(cfg, cfg.viewasianSite + '/page/2/').then(function (items) {
+          return { ok: items.length > 0, items: items.length, error: items.length ? undefined : 'parsed 0 series rows (site markup changed?)' };
         });
       })],
       ['tmdb', timeProbe(function () {
         var def = { type: 'movie', id: 'asian-movies', mode: 'archive' };
         return tmdbPageMetas(cfg, def, 1, {}).then(function (metas) {
           return { ok: metas.length > 0, items: metas.length, error: metas.length ? undefined : 'discover returned 0 rows (check TMDB_API_KEY)' };
-        });
-      })],
-      ['anime', timeProbe(function () {
-        var def = { type: 'series', id: 'anime-latest', mode: 'archive' };
-        return tmdbPageMetas(cfg, def, 1, {}).then(function (metas) {
-          return { ok: metas.length > 0, items: metas.length, error: metas.length ? undefined : 'anime discover returned 0 rows (check TMDB_API_KEY)' };
         });
       })]
     ];
@@ -1122,9 +1254,9 @@
         hints.push('All probes fail with the same error (' + errors[0] + ') — likely a worker-code bug, not IP blocking. Redeploy the current worker-bundle.js (' + ADDON_NAME + ' v' + VERSION + ').');
       } else {
         if (!sources.pinoymovieshub.ok) hints.push('pinoymovieshub unreachable from this runtime (site down or IP blocked). Pinoy catalogs may be empty; set PINOY_SITE to an alternate mirror if the site moved.');
-        if (!sources.dramacool.ok) hints.push('dramacool.org.es REST unreachable. Asian Series catalogs may be empty; set DRAMACOOL_SITE to an alternate mirror.');
+        if (!sources.kissasian.ok) hints.push('kissasian.cam unreachable from this runtime (site down or IP blocked). KissAsian series catalogs may be empty; set KISSASIAN_SITE to an alternate mirror.');
+        if (!sources.viewasian.ok) hints.push('viewasian.lol unreachable from this runtime (site down or IP blocked). ViewAsian series catalogs may be empty; set VIEWASIAN_SITE to an alternate mirror.');
         if (!sources.tmdb.ok) hints.push('TMDB discover failed — check TMDB_API_KEY and outbound access; Asian Movies / Trending catalogs may be empty.');
-        if (!sources.anime.ok) hints.push('Anime discover failed — check TMDB_API_KEY; the Anime Latest Releases catalog may be empty.');
         if (okCount > 0 && okCount < sourceCount) hints.push('Partial outage: only ' + okCount + '/' + sourceCount + ' sources healthy — affected catalogs fall back to serve-stale cache.');
       }
       if (okCount === sourceCount) hints.push('All ' + sourceCount + ' sources healthy.');
@@ -1173,7 +1305,8 @@
 
   function pageMetasFor(cfg, def, extras) {
     if (def.source === 'pinoy') return function (page) { return pinoyPageMetas(cfg, def, page, extras); };
-    if (def.source === 'dramacool') return function (page) { return dcPageMetas(cfg, def, page, extras); };
+    if (def.source === 'kissasian') return function (page) { return ksPageMetas(cfg, def, page, extras); };
+    if (def.source === 'viewasian') return function (page) { return vaPageMetas(cfg, def, page, extras); };
     return function (page) { return tmdbPageMetas(cfg, def, page, extras); };
   }
 
@@ -1194,7 +1327,7 @@
     var defs = catalogDefinitions();
     var rows = defs.map(function (c) {
       return '<tr><td>' + c.name + '</td><td><code>' + c.type + '</code></td><td>' +
-        (c.source === 'pinoy' ? 'pinoymovieshub.win' : c.source === 'dramacool' ? 'dramacool.org.es' : 'TMDB') +
+        (c.source === 'pinoy' ? 'pinoymovieshub.win' : c.source === 'kissasian' ? 'kissasian.cam' : c.source === 'viewasian' ? 'viewasian.lol' : 'TMDB') +
         '</td><td><code>/catalog/' + c.type + '/' + c.id + '.json</code></td></tr>';
     }).join('');
     return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + ADDON_NAME + '</title>' +
@@ -1204,9 +1337,9 @@
       '<p>Stremio-protocol catalog addon for Nuvio — organized directory:</p>' +
       '<ul>' +
       '<li><b>Pinoy Movies Hub</b> — <a href="' + cfg.pinoySite + '">' + cfg.pinoySite.replace(/^https:\/\//, '') + '</a> (movies, series, genres, search)</li>' +
-      '<li><b>Dramacool</b> — <a href="' + cfg.dcSite + '">' + cfg.dcSite.replace(/^https:\/\//, '') + '</a> REST API (Asian dramas: Korean / Chinese / Japanese / Thai)</li>' +
+      '<li><b>KissAsian</b> — <a href="' + cfg.kissasianSite + '">' + cfg.kissasianSite.replace(/^https:\/\//, '') + '</a> (Asian dramas: latest, genres, search)</li>' +
+      '<li><b>ViewAsian</b> — <a href="' + cfg.viewasianSite + '">' + cfg.viewasianSite.replace(/^https:\/\//, '') + '</a> (Asian dramas: latest, genres, countries, search)</li>' +
       '<li><b>TMDB</b> — official Asian-language movie &amp; series directories (Korean, Chinese, Japanese, Thai, Filipino)</li>' +
-      '<li><b>Anime Latest Releases</b> — newest airing Japanese anime (TMDB view); playback pairs with the AnimePahe Nuvio plugin</li>' +
       '</ul>' +
       '<p>Add this manifest URL in Nuvio (Settings &rarr; Addons): <b>' + (cfg.__selfUrl || 'https://your-deployment') + '/manifest.json</b></p>' +
       '<p>Health probe: <a href="/health"><code>/health</code></a> (per-source status, latency, hints)</p>' +
@@ -1214,13 +1347,14 @@
       '<h2>Search examples</h2>' +
       '<p><code>/catalog/movie/pinoy-movies/search=hello love again.json</code><br>' +
       '<code>/catalog/series/asian-series/search=queen of tears.json</code><br>' +
-      '<code>/catalog/movie/asian-movies/search=parasite.json</code> (TMDB, asian-language results only)<br>' +
-      '<code>/catalog/series/anime-latest/search=frieren.json</code> (anime-only search: Japanese originals tagged Animation)</p>' +
-      '<h2>Genre / language chips</h2>' +
-      '<p><code>/catalog/series/asian-series-genre/genre=Korean.json</code><br>' +
+      '<code>/catalog/series/asian-series-viewasian/search=crash landing on you.json</code><br>' +
+      '<code>/catalog/movie/asian-movies/search=parasite.json</code> (TMDB, asian-language results only)</p>' +
+      '<h2>Genre / country chips</h2>' +
+      '<p><code>/catalog/series/asian-series-genre/genre=Romance.json</code><br>' +
+      '<code>/catalog/series/asian-series-viewasian-genre/genre=Korean.json</code><br>' +
       '<code>/catalog/movie/asian-movies-genre/genre=Action&amp;skip=20.json</code><br>' +
       '<code>/catalog/series/pinoy-series-genre/genre=Tagalog Dubbed.json</code></p>' +
-      '<p>Pair with the <b>PinoyMoviesHub</b> and <b>KissKH</b> Nuvio plugins (xrexzerox/nv-plugins) for playable streams.</p>' +
+      '<p>Pair with the <b>PinoyMoviesHub</b> and <b>AsianHub</b> Nuvio plugins (xrexzerox/nv-plugins) for playable streams.</p>' +
       '</body></html>';
   }
 
@@ -1282,7 +1416,8 @@
     catalogDefinitions: catalogDefinitions,
     // test hooks
     parseListPage: parseListPage,
-    dcRestParse: dcRestParse,
+    ksParseListPage: ksParseListPage,
+    vaParseListPage: vaParseListPage,
     cleanTitleForSearch: cleanTitleForSearch,
     cleanDisplayName: cleanDisplayName,
     normalizeForCompare: normalizeForCompare,
@@ -1293,7 +1428,8 @@
     slugifyGenre: slugifyGenre,
     tmdbResultToMeta: tmdbResultToMeta,
     pinoyPageMetas: pinoyPageMetas,
-    dcPageMetas: dcPageMetas,
+    ksPageMetas: ksPageMetas,
+    vaPageMetas: vaPageMetas,
     tmdbPageMetas: tmdbPageMetas,
     getCatalogMetas: getCatalogMetas,
     healthReport: healthReport

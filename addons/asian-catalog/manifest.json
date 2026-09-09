@@ -1,8 +1,8 @@
 {
   "id": "community.asian.catalog",
-  "version": "2.3.0",
+  "version": "3.0.0",
   "name": "Asian Catalog",
-  "description": "Organized Asian catalogs: Pinoy movies & series (pinoymovieshub), Asian dramas (dramacool.org.es), Asian movies/series directories by language (TMDB) and Anime Latest Releases (pairs with the AnimePahe plugin). Titles resolve to TMDB ids for playback.",
+  "description": "Organized Asian catalogs: Pinoy movies & series (pinoymovieshub), Asian dramas (kissasian.cam + viewasian.lol) and Asian movies/series directories by language (TMDB). Titles resolve to TMDB ids for playback.",
   "logo": "https://pinoymovieshub.win/wp-content/uploads/2025/04/cropped-favicon-11-192x192.png",
   "resources": [
     "catalog"
@@ -139,7 +139,7 @@
     {
       "type": "series",
       "id": "asian-series",
-      "name": "Asian Series (Dramacool)",
+      "name": "Asian Series (KissAsian)",
       "pageSize": 20,
       "extra": [
         {
@@ -153,7 +153,7 @@
     {
       "type": "series",
       "id": "asian-series-genre",
-      "name": "Asian Series by Genre (Dramacool)",
+      "name": "Asian Series by Genre (KissAsian)",
       "pageSize": 20,
       "extra": [
         {
@@ -161,25 +161,79 @@
           "options": [
             "Action",
             "Comedy",
+            "Crime",
+            "Documentary",
             "Drama",
             "Fantasy",
-            "Food",
             "Historical",
+            "Horror",
             "Life",
-            "Medical",
-            "Melodrama",
-            "Military",
+            "Mature",
+            "Music",
             "Mystery",
-            "Political",
             "Romance",
             "Sci-Fi",
             "Supernatural",
             "Thriller",
+            "War",
+            "Wuxia",
+            "Youth"
+          ]
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "asian-series-viewasian",
+      "name": "Asian Series (ViewAsian)",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "asian-series-viewasian-genre",
+      "name": "Asian Series by Genre (ViewAsian)",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "genre",
+          "options": [
+            "Action",
+            "Adventure",
+            "Business",
+            "Comedy",
+            "Crime",
+            "Documentary",
+            "Drama",
+            "Friendship",
+            "Historical",
+            "Horror",
+            "Life",
+            "Medical",
+            "Melodrama",
+            "Music",
+            "Mystery",
+            "Political",
+            "Romance",
+            "School",
+            "Sci-Fi",
+            "Supernatural",
+            "Thriller",
+            "War",
             "Youth",
             "Korean",
             "Chinese",
-            "Japanese",
-            "Thai"
+            "Japanese"
           ]
         },
         {
@@ -242,20 +296,6 @@
             "Thriller",
             "War"
           ]
-        },
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "series",
-      "id": "anime-latest",
-      "name": "Anime Latest Releases",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "search"
         },
         {
           "name": "skip"

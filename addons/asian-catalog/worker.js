@@ -5,7 +5,7 @@
  * Deploy option B (dashboard):  paste worker-bundle.js (single-file build of
  *                               this entry + core.js) into a new Worker.
  *
- * Optional env/secret: TMDB_API_KEY, PINOY_SITE, DRAMACOOL_SITE,
+ * Optional env/secret: TMDB_API_KEY, PINOY_SITE, KISSASIAN_SITE, VIEWASIAN_SITE,
  *                      ASIAN_PAGE_LIMIT, ASIAN_MAX_PAGES, ASIAN_KEEP_UNMATCHED
  */
 

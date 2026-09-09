@@ -9,7 +9,8 @@
  * Optional env:
  *   TMDB_API_KEY            custom TMDB v3 key (a default ecosystem key is embedded)
  *   PINOY_SITE              alternate pinoymovieshub base (default https://pinoymovieshub.win)
- *   DRAMACOOL_SITE          alternate dramacool base (default https://dramacool.org.es)
+ *   KISSASIAN_SITE          alternate kissasian base (default https://kissasian.cam)
+ *   VIEWASIAN_SITE          alternate viewasian base (default https://viewasian.lol)
  *   ASIAN_PAGE_LIMIT        resolved items per response (default 20, max 50)
  *   ASIAN_MAX_PAGES         max source pages consumed per catalog buffer
  *   ASIAN_KEEP_UNMATCHED    "=0" drops titles that fail TMDB matching instead

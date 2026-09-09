@@ -35,7 +35,8 @@ function section(name) { console.log('\n== ' + name + ' =='); }
 // ============================================================
 
 const PINOY = 'https://pinoymovieshub.test';
-const DC = 'https://dramacool.test';
+const KS = 'https://kissasian.test';
+const VA = 'https://viewasian.test';
 const PAGE_LIMIT = 5; // small pages make pagination assertions sharp
 
 // --- pinoy (Dooplay HTML) fixtures ---
@@ -130,61 +131,103 @@ function pinoySearchHtml(page, q) {
   return html || '<div class="no-items">Nothing found</div>';
 }
 
-// --- dramacool (WP REST) fixtures ---
+// --- kissasian (dramastream theme) fixtures ---
+// List rows are EPISODE articles (/{slug}-episode-{n}/) that the engine
+// dedupes to series; search rows carry /series/{slug}/ links. Titles have
+// NO year on this site (TMDB resolves without it).
 
-let dcAnimeId = 400;
-function dcAnime(slug, title, year, lang, genre) {
-  dcAnimeId += 1;
-  return {
-    id: dcAnimeId,
-    date: `${year}-06-24T22:51:00`,
-    date_gmt: `${year}-06-24T17:51:00`,
-    guid: { rendered: `${DC}/series/${slug}/` },
-    modified: `${year}-06-24T22:52:20`,
-    slug: slug,
-    status: 'publish',
-    type: 'anime',
-    link: `${DC}/series/${slug}/`,
-    title: { rendered: title },
-    content: { rendered: `<p>${title} content.</p>` },
-    excerpt: { rendered: `<p>${title} is an asian drama.</p>` },
-    featured_media: 90 + dcAnimeId,
-    _embedded: {
-      'wp:featuredmedia': [{
-        id: 90 + dcAnimeId,
-        source_url: `${DC}/wp-content/uploads/${slug}.jpg`,
-        media_details: { sizes: { medium: { source_url: `${DC}/wp-content/uploads/${slug}-300x169.jpg` } } }
-      }]
-    },
-    class_list: [`anime_language-${lang}`, `anime_genre-${genre}`]
-  };
+function ksEpisodeRow(slug, title, ep) {
+  return `<article class="bs" itemscope="itemscope" itemtype="http://schema.org/CreativeWork"><div class="bsx"> <a href="${KS}/${slug}-episode-${ep}/" itemprop="url" title="${title} Episode ${ep}" class="tip" rel="49346"><div class="limit"><div class="status Ongoing">Ongoing</div><div class="typez Drama">Drama</div></div> <img src="${KS}/wp-content/uploads/${slug}-209x300.jpg" class="ts-post-image wp-post-image" title="${title} Episode ${ep}" alt="${title} Episode ${ep}" width="209" height="300"/></div><div class="tt tts"> ${title} Episode ${ep}<h2 itemprop="headline">${title} Episode ${ep}</h2></div></a></div></article>`;
 }
 
-const DC_DB = {
+function ksSeriesRow(slug, title) {
+  return `<article class="bs" itemscope="itemscope" itemtype="http://schema.org/CreativeWork"><div class="bsx"> <a href="${KS}/series/${slug}/" itemprop="url" title="${title}" class="tip" rel="49347"><div class="limit"><div class="status Completed">Completed</div></div> <img src="${KS}/wp-content/uploads/${slug}-209x300.jpg" class="ts-post-image wp-post-image" title="${title}" alt="${title}" width="209" height="300"/></div><div class="tt tts"> ${title}<h2 itemprop="headline">${title}</h2></div></a></div></article>`;
+}
+
+// pages hold episode rows (latest-updates browse); every page is deduped to
+// its distinct series by the engine
+const KS_PAGE = {
   1: [
-    dcAnime('the-love-lab-2026', 'The Love Lab (2026)', '2026', 'korean', 'romance'),
-    dcAnime('queen-of-tears', 'Queen of Tears', '2024', 'korean', 'drama'),
-    dcAnime('hidden-love', 'Hidden Love', '2023', 'chinese', 'romance'),
-    dcAnime('dr-asura-2025', 'Dr. Asura (2025)', '2025', 'japanese', 'mystery')
-  ],
+    ['crash-landing-on-you', 'Crash Landing on You'],
+    ['the-love-lab', 'The Love Lab'],
+    ['queen-of-tears', 'Queen of Tears'],
+    ['hidden-love', 'Hidden Love'],
+    ['dr-asura', 'Dr. Asura']
+  ].map(([slug, t]) => ksEpisodeRow(slug, t, 1)).join('\n'),
   2: [
-    dcAnime('club-friday', 'Club Friday', '2025', 'thai', 'drama'),
-    dcAnime('weak-hero', 'Weak Hero', '2022', 'korean', 'action')
-  ]
+    ['club-friday', 'Club Friday'],
+    ['weak-hero', 'Weak Hero'],
+    // duplicate of a page-1 series (later episode) -> cross-page dedupe
+    ['crash-landing-on-you', 'Crash Landing on You']
+  ].map(([slug, t]) => ksEpisodeRow(slug, t, 9)).join('\n')
 };
+
+const KS_SEARCH_HTML = [
+  ksSeriesRow('queen-of-tears', 'Queen of Tears'),
+  ksSeriesRow('mr-queen', 'Mr. Queen'),
+  ksSeriesRow('queen-seon-duk', 'Queen Seon Duk')
+].join('\n');
+
+const KS_GENRE_ROMANCE_HTML = [
+  ['the-love-lab', 'The Love Lab'],
+  ['hidden-love', 'Hidden Love'],
+  ['crash-landing-on-you', 'Crash Landing on You']
+].map(([slug, t]) => ksEpisodeRow(slug, t, 2)).join('\n');
+
+const KS_GENRE_OTHER_HTML = ksEpisodeRow('weak-hero', 'Weak Hero', 4);
+
+// --- viewasian (viewasian theme) fixtures ---
+// Rows carry the year inline ("Show (2024) Episode 2 English Sub") and
+// root-level episode URLs; search rows link /drama/{slug}/.
+
+function vaRow(slug, title, ep) {
+  const full = `${title} Episode ${ep} English Sub`;
+  return `<li>
+              <a href="${VA}/${slug}-episode-${ep}-english-sub/" class="img">
+                <img class="lazy" alt="${full}" title="${full}" data-original="${VA}/wp-content/uploads/${slug}.jpg" style="display: block;"> <span class="type">SUB</span>
+                <h2 class="title" onclick="window.location = '${VA}/${slug}-episode-${ep}-english-sub/'">${full}</h2>
+              </a>
+            </li>`;
+}
+
+const VA_PAGE = {
+  1: [
+    ['crash-landing-on-you-2019', 'Crash Landing on You (2019)'],
+    ['the-love-lab-2026', 'The Love Lab (2026)'],
+    ['hidden-love-2023', 'Hidden Love (2023)'],
+    ['dr-asura-2025', 'Dr. Asura (2025)'],
+    ['totally-unknown-show-2026', 'Totally Unknown Show (2026)']
+  ].map(([slug, t]) => vaRow(slug, t, 2)).join('\n'),
+  2: [
+    ['club-friday-2025', 'Club Friday (2025)'],
+    ['weak-hero-2022', 'Weak Hero (2022)']
+  ].map(([slug, t]) => vaRow(slug, t, 4)).join('\n')
+};
+
+const VA_SEARCH_HTML = `<li>
+              <a href="${VA}/drama/crash-landing-on-you-2019/" class="img" title="Crash Landing on You (2019)">
+                <img class="lazy" alt="Crash Landing on You (2019)" title="Crash Landing on You (2019)" data-original="${VA}/wp-content/uploads/crash-landing-on-you-2019.jpg">
+              </a>
+            </li>
+            <li>
+              <a href="${VA}/drama/no-9-hunter-2026/" class="img" title="No. 9 Hunter (2026)">
+                <img class="lazy" alt="No. 9 Hunter (2026)" title="No. 9 Hunter (2026)" data-original="${VA}/wp-content/uploads/no-9-hunter-2026.jpg">
+              </a>
+            </li>`;
+
+const VA_COUNTRY_KOREAN_HTML = [
+  ['crash-landing-on-you-2019', 'Crash Landing on You (2019)'],
+  ['queen-of-tears-2024', 'Queen of Tears (2024)']
+].map(([slug, t]) => vaRow(slug, t, 1)).join('\n');
+
+const VA_GENRE_MELODRAMA_HTML = [
+  ['hidden-love-2023', 'Hidden Love (2023)'],
+  ['queen-of-tears-2024', 'Queen of Tears (2024)']
+].map(([slug, t]) => vaRow(slug, t, 6)).join('\n');
 
 // --- TMDB fixtures ---
 
-// search:tv:frieren — mixed payload proving the anime search filter keeps
-// ONLY ja-original titles tagged Animation (16).
-const TMDB_ANIME_SEARCH = [
-  { id: 910001, name: 'Frieren: Beyond Journey\'s End', original_language: 'ja', first_air_date: '2023-09-29', poster_path: '/fr.jpg', overview: 'Elf mage.', vote_average: 9.0, genre_ids: [16, 10765] },
-  { id: 910002, name: 'Frieren Documentary', original_language: 'ja', first_air_date: '2024-01-01', poster_path: '/frd.jpg', overview: 'Not animation.', vote_average: 6.0, genre_ids: [99] },
-  { id: 910003, name: 'Frieren Live Action', original_language: 'en', first_air_date: '2025-01-01', poster_path: '/frl.jpg', overview: 'Not japanese.', vote_average: 5.0, genre_ids: [16] }
-];
-
 const TMDB_RESULTS = {
-  'search:tv:frieren': TMDB_ANIME_SEARCH,
   'search:movie:queen mantis': [{ id: 99901, title: 'Queen Mantis', original_language: 'ko', release_date: '2025-01-01', poster_path: '/qm.jpg', backdrop_path: '/qmb.jpg', overview: 'A mantis queen.', vote_average: 7.4 }],
   'search:movie:love siargao': [{ id: 99906, title: 'Love Siargao', original_language: 'tl', release_date: '2026-02-14', poster_path: '/ls.jpg', overview: 'Island romance.', vote_average: 6.1 }],
   'search:movie:love ngo': [{ id: 99903, title: 'Love Ngo', original_language: 'tl', release_date: '2026-01-01', poster_path: '/ln.jpg', overview: 'Comedy.', vote_average: 5.5 }],
@@ -205,6 +248,7 @@ const TMDB_RESULTS = {
   'search:tv:dr asura': [{ id: 88004, name: 'Dr. Asura', original_language: 'ja', first_air_date: '2025-04-01', poster_path: '/da.jpg', overview: 'Medical.', vote_average: 6.4 }],
   'search:tv:club friday': [{ id: 88005, name: 'Club Friday', original_language: 'th', first_air_date: '2025-01-01', poster_path: '/cf.jpg', overview: 'Anthology.', vote_average: 6.0 }],
   'search:tv:weak hero': [{ id: 88006, name: 'Weak Hero', original_language: 'ko', first_air_date: '2022-11-18', poster_path: '/wh.jpg', overview: 'Action.', vote_average: 8.3 }],
+  'search:tv:crash landing on you': [{ id: 88008, name: 'Crash Landing on You', original_language: 'ko', first_air_date: '2019-12-14', poster_path: '/cloy.jpg', overview: 'Romance.', vote_average: 8.7 }],
   'search:movie:parasite': [
     { id: 496243, title: 'Parasite', original_language: 'ko', release_date: '2019-05-30', poster_path: '/pa.jpg', overview: 'Class satire.', vote_average: 8.5 },
     { id: 500001, title: 'Parasite in Love', original_language: 'en', release_date: '2021-01-01', poster_path: '/pil.jpg', overview: 'Not asian.', vote_average: 5.0 }
@@ -233,17 +277,6 @@ function tmdbDiscoverTv(sort, page) {
     { id: 800004, name: 'Mousetrap', original_language: 'zh', first_air_date: '2026-08-28', poster_path: '/mt.jpg', overview: 'Mystery.', vote_average: 6.1 },
     { id: 800005, name: 'Club Friday The Series', original_language: 'th', first_air_date: '2026-08-01', poster_path: '/cfs.jpg', overview: 'Anthology.', vote_average: 5.9 },
     { id: 800006, name: 'Beach Boys', original_language: 'tl', first_air_date: '2026-07-15', poster_path: '/bb.jpg', overview: 'Comedy.', vote_average: 5.2 }
-  ];
-}
-
-// anime-latest discover: only reached with with_genres=16 + ja (server-side
-// filtered), so the fixture is already anime-only — newest first.
-function tmdbDiscoverAnime(page) {
-  if (String(page) !== '1') return [];
-  return [
-    { id: 900001, name: 'Frieren: Beyond Journey\'s End Season 2', original_language: 'ja', first_air_date: '2026-09-05', poster_path: '/fr2.jpg', overview: 'Elf mage.', vote_average: 9.1, genre_ids: [16, 10765] },
-    { id: 900002, name: 'One Piece Egghead', original_language: 'ja', first_air_date: '2026-08-30', poster_path: '/op.jpg', overview: 'Pirates.', vote_average: 8.7, genre_ids: [16, 10759] },
-    { id: 900003, name: 'Blue Lock vs U-20 Japan', original_language: 'ja', first_air_date: '2026-08-23', poster_path: '/bl.jpg', overview: 'Soccer.', vote_average: 8.0, genre_ids: [16, 10768] }
   ];
 }
 
@@ -284,29 +317,33 @@ function makeRouter() {
       return respond('<html><body>404</body></html>', 404);
     }
 
-    // dramacool REST
-    if (u.indexOf(DC + '/wp-json/wp/v2/anime?') === 0) {
-      const page = parseInt((u.match(/[?&]page=(\d+)/) || [])[1] || '1', 10);
-      const search = (u.match(/[?&]search=([^&]*)/) || [])[1];
-      const langTerm = (u.match(/[?&]anime_language=(\d+)/) || [])[1];
-      const genreTerm = (u.match(/[?&]anime_genre=(\d+)/) || [])[1];
-      let rows = DC_DB[page] || [];
-      if (search) {
-        const q = decodeURIComponent(search).toLowerCase();
-        const all = [].concat(DC_DB['1'], DC_DB['2']);
-        rows = all.filter(a => a.title.rendered.toLowerCase().indexOf(q) !== -1 || a.slug.indexOf(q.replace(/\s+/g, '-')) !== -1);
-      } else if (langTerm === '77' || langTerm === '29') { // live-mocked id + snapshot fallback id
-        rows = [].concat(DC_DB['1'], DC_DB['2']).filter(a => a.class_list[0] === 'anime_language-korean');
-      } else if (genreTerm === '88' || genreTerm === '10') { // live-mocked + fallback romance
-        rows = [].concat(DC_DB['1'], DC_DB['2']).filter(a => a.class_list[1] === 'anime_genre-romance');
+    // kissasian (dramastream HTML)
+    if (u.indexOf(KS) === 0) {
+      const pathOnly = u.split('?')[0];
+      if (/\/genres\/romance\/?$/.test(pathOnly)) return respond(KS_GENRE_ROMANCE_HTML);
+      if (/\/genres\//.test(pathOnly)) return respond(KS_GENRE_OTHER_HTML);
+      if (/\/genres\/romance\/page\/2/.test(pathOnly)) return respond('<html>404</html>', 404);
+      const mq = u.match(/[?&]s=([^&]*)/);
+      if (mq) return respond(KS_SEARCH_HTML);
+      const mp = u.match(/\/page\/(\d+)/);
+      const page = mp ? parseInt(mp[1], 10) : 1;
+      return respond(KS_PAGE[String(page)] || '', page <= 2 ? 200 : 404);
+    }
+
+    // viewasian (viewasian theme HTML)
+    if (u.indexOf(VA) === 0) {
+      const pathOnly = u.split('?')[0];
+      const mq = u.match(/[?&]s=([^&]*)/);
+      if (mq) {
+        const q = decodeURIComponent(mq[1]).toLowerCase();
+        return respond(q.indexOf('crash') !== -1 ? VA_SEARCH_HTML : VA_SEARCH_HTML);
       }
-      return respond(rows);
-    }
-    if (u === DC + '/wp-json/wp/v2/anime_genre?per_page=60') {
-      return respond([{ id: 88, slug: 'romance', name: 'Romance' }, { id: 89, slug: 'drama', name: 'Drama' }]);
-    }
-    if (u === DC + '/wp-json/wp/v2/anime_language?per_page=60') {
-      return respond([{ id: 77, slug: 'korean', name: 'Korean' }, { id: 78, slug: 'chinese', name: 'Chinese' }]);
+      if (/\/country\/korean(\/page\/\d+)?\/?$/.test(pathOnly)) return respond(VA_COUNTRY_KOREAN_HTML);
+      if (/\/genre\/melodrama(\/page\/\d+)?\/?$/.test(pathOnly)) return respond(VA_GENRE_MELODRAMA_HTML);
+      if (/\/(genre|country)\//.test(pathOnly)) return respond('<html>404</html>', 404);
+      const mp = u.match(/\/page\/(\d+)/);
+      const page = mp ? parseInt(mp[1], 10) : 1;
+      return respond(VA_PAGE[String(page)] || '', page <= 2 ? 200 : 404);
     }
 
     // TMDB
@@ -323,13 +360,6 @@ function makeRouter() {
       }
       if (u.indexOf('/discover/tv') !== -1) {
         const page = (u.match(/[?&]page=(\d+)/) || [])[1];
-        // anime-latest discover is self-identifying via with_genres=16
-        if (u.indexOf('with_genres=16') !== -1) {
-          if (u.indexOf('with_original_language=ja') === -1 || u.indexOf('sort_by=first_air_date.desc') === -1) {
-            return respond({ error: 'anime discover must filter ja + newest first' }, 400);
-          }
-          return respond({ results: tmdbDiscoverAnime(page) });
-        }
         return respond({ results: tmdbDiscoverTv('date', page) });
       }
     }
@@ -343,7 +373,8 @@ function makeRouter() {
 function makeEnv(overrides) {
   const env = Object.assign({
     PINOY_SITE: PINOY,
-    DRAMACOOL_SITE: DC,
+    KISSASIAN_SITE: KS,
+    VIEWASIAN_SITE: VA,
     ASIAN_PAGE_LIMIT: String(PAGE_LIMIT)
   }, overrides || {});
   const router = makeRouter();
@@ -373,17 +404,20 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     const cfg = Core.makeConfig({});
     const man = Core.manifest(cfg);
     check('addon id', man.id === 'community.asian.catalog', man.id);
-    check('version 2.3.0', man.version === '2.3.0', man.version);
+    check('version 3.0.0', man.version === '3.0.0', man.version);
     check('resources catalog-only', JSON.stringify(man.resources) === '["catalog"]');
     check('idPrefixes tmdb+asian', JSON.stringify(man.idPrefixes) === '["tmdb:","asian:"]', man.idPrefixes);
-    check('10 catalogs', man.catalogs.length === 10, man.catalogs.length);
+    check('11 catalogs', man.catalogs.length === 11, man.catalogs.length);
     const ids = man.catalogs.map(c => c.id);
     check('unique ids', new Set(ids).size === ids.length);
     check('pinoy group first', ids.slice(0, 4).join(',') === 'pinoy-movies,pinoy-series,pinoy-movies-genre,pinoy-series-genre', ids.slice(0, 4));
-    check('dramacool group middle', ids.slice(4, 6).join(',') === 'asian-series,asian-series-genre', ids.slice(4, 6));
-    check('tmdb group then anime last', ids.slice(6).join(',') === 'asian-movies,asian-series-trending,asian-movies-genre,anime-latest', ids.slice(6));
+    check('kissasian group middle', ids.slice(4, 6).join(',') === 'asian-series,asian-series-genre', ids.slice(4, 6));
+    check('viewasian group next', ids.slice(6, 8).join(',') === 'asian-series-viewasian,asian-series-viewasian-genre', ids.slice(6, 8));
+    check('tmdb group last', ids.slice(8).join(',') === 'asian-movies,asian-series-trending,asian-movies-genre', ids.slice(8));
     const animeDef = Core.catalogDefinitions().find(d => d.id === 'anime-latest');
-    check('anime-latest def: series/tmdb/searchable', !!animeDef && animeDef.type === 'series' && animeDef.source === 'tmdb' && animeDef.extra.some(e => e.name === 'search'), animeDef);
+    check('anime-latest REMOVED (user request)', !animeDef, animeDef);
+    const matvDef = Core.catalogDefinitions().find(d => d.source === 'myasiantv');
+    check('myasiantv source REMOVED', !matvDef);
     const typesOk = man.catalogs.every(c => c.type === 'movie' || c.type === 'series');
     check('all catalogs typed movie/series', typesOk);
     const searchOk = man.catalogs.every(c => {
@@ -396,9 +430,11 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     const skipOk = man.catalogs.every(c => c.extra.some(e => e.name === 'skip'));
     check('every catalog declares skip (pagination)', skipOk);
     const genreCats = man.catalogs.filter(c => c.id.endsWith('-genre'));
-    check('4 genre catalogs with options', genreCats.length === 4 && genreCats.every(c => (c.extra.find(e => e.name === 'genre') || {}).options && c.extra.find(e => e.name === 'genre').options.length > 5));
-    const dcChips = (man.catalogs.find(c => c.id === 'asian-series-genre').extra.find(e => e.name === 'genre')).options;
-    check('dramacool chips include languages', ['Korean', 'Chinese', 'Japanese', 'Thai'].every(l => dcChips.indexOf(l) !== -1), dcChips);
+    check('5 genre catalogs with options', genreCats.length === 5 && genreCats.every(c => (c.extra.find(e => e.name === 'genre') || {}).options && c.extra.find(e => e.name === 'genre').options.length > 5));
+    const ksChips = (man.catalogs.find(c => c.id === 'asian-series-genre').extra.find(e => e.name === 'genre')).options;
+    check('kissasian chips carry site genres', ['Romance', 'Wuxia', 'Youth'].every(l => ksChips.indexOf(l) !== -1), ksChips);
+    const vaChips = (man.catalogs.find(c => c.id === 'asian-series-viewasian-genre').extra.find(e => e.name === 'genre')).options;
+    check('viewasian chips include countries', ['Korean', 'Chinese', 'Japanese'].every(l => vaChips.indexOf(l) !== -1), vaChips);
     // manifest.json snapshot stays in sync
     const snapshot = JSON.parse(fs.readFileSync(path.join(__dirname, 'manifest.json'), 'utf8'));
     check('manifest.json snapshot matches engine', JSON.stringify(snapshot) === JSON.stringify(man));
@@ -449,57 +485,90 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     check('known-good genre with 0 matches -> empty array', r2.status === 200 && r2.body.metas.length === 0);
   }
 
-  section('dramacool source: REST list + parse');
+  section('kissasian source: archive list + parse');
   {
     Core.resetCaches();
     const env = makeEnv();
     const r = await getJson(Core.handle, env, '/catalog/series/asian-series.json');
     check('HTTP 200', r.status === 200);
     const metas = r.body.metas;
-    check('rows present (limit 5 from dc page1+2)', metas.length === PAGE_LIMIT, metas.length);
+    check('rows present (limit 5 from KS page1)', metas.length === PAGE_LIMIT, metas.length);
     check('The Love Lab row', metas.some(m => stripYear(m.name) === 'The Love Lab'), metas.map(m => m.name));
-    const dcPosterCount = metas.filter(m => m.poster && m.poster.indexOf(DC) === 0).length;
-    check('dc posters via REST _embedded', dcPosterCount >= 3, metas.map(m => m.poster));
-    check('fallback display names keep site year tag (informational)', metas.every(m => m.name.length > 0));
-    check('all page-1 rows resolve to tmdb: ids (parens bug fixed)', metas.every(m => /^tmdb:/.test(m.id)), metas.map(m => m.id));
-    // pagination across REST pages
-    const r2 = await getJson(Core.handle, env, '/catalog/series/asian-series/skip=4.json');
-    check('skip=4 pulls REST page 2 (2 rows)', r2.body.metas.length === 2, r2.body.metas.length);
+    const ksPosterCount = metas.filter(m => m.poster && m.poster.indexOf(KS) === 0).length;
+    check('site posters from episode thumbs', ksPosterCount >= 3, metas.map(m => m.poster));
+    check('all page-1 rows resolve to tmdb: ids', metas.every(m => /^tmdb:/.test(m.id)), metas.map(m => m.id));
+    // episode rows must be deduped to SERIES (no "Episode N" in names)
+    check('episode suffixes stripped from names', metas.every(m => /Episode/i.test(m.name) === false), metas.map(m => m.name));
+    // pagination across HTML pages
+    const r2 = await getJson(Core.handle, env, '/catalog/series/asian-series/skip=5.json');
+    check('skip=5 pulls HTML page 2 (2 rows)', r2.body.metas.length === 2, r2.body.metas.length);
     check('page2 rows are Club Friday + Weak Hero', r2.body.metas.every(m => ['Club Friday', 'Weak Hero'].indexOf(stripYear(m.name)) !== -1), r2.body.metas.map(m => m.name));
   }
 
-  section('dramacool source: search + genre/language chips');
+  section('kissasian source: search + genre chips');
   {
     Core.resetCaches();
     const env = makeEnv();
     const r = await getJson(Core.handle, env, '/catalog/series/asian-series/search=queen of tears.json');
-    check('REST search finds Queen of Tears', r.body.metas.length === 1 && r.body.metas[0].name === 'Queen of Tears', r.body.metas.map(m => m.name));
-    check('search called with q param', env.__router.calls.some(u => u.indexOf('search=queen%20of%20tears') !== -1 || u.indexOf('search=queen+of+tears') !== -1), env.__router.calls.filter(u => u.indexOf('search=') !== -1));
-
-    Core.resetCaches();
-    const envK = makeEnv();
-    const rk = await getJson(Core.handle, envK, '/catalog/series/asian-series-genre/genre=Korean.json');
-    check('language chip routes to anime_language', envK.__router.calls.some(u => u.indexOf('anime_language=77') !== -1), envK.__router.calls);
-    check('korean rows only', rk.body.metas.length === 3 && rk.body.metas.every(m => ['The Love Lab', 'Queen of Tears', 'Weak Hero'].indexOf(stripYear(m.name)) !== -1), rk.body.metas.map(m => m.name));
+    check('KS search finds Queen of Tears', r.body.metas.length >= 1 && r.body.metas[0].name === 'Queen of Tears' && r.body.metas[0].id === 'tmdb:88002', r.body.metas.map(m => m.name + '/' + m.id));
+    check('search called with ?s= param', env.__router.calls.some(u => u.indexOf('s=queen%20of%20tears') !== -1 || u.indexOf('s=queen+of%20tears') !== -1), env.__router.calls.filter(u => u.indexOf('s=') !== -1));
+    check('unmatched search rows stay visible as asian:', r.body.metas.some(m => m.id === 'asian:queen-seon-duk'), r.body.metas.map(m => m.id));
 
     Core.resetCaches();
     const envG = makeEnv();
     const rg = await getJson(Core.handle, envG, '/catalog/series/asian-series-genre/genre=Romance.json');
-    check('genre chip routes to anime_genre', envG.__router.calls.some(u => u.indexOf('anime_genre=88') !== -1), envG.__router.calls);
-    check('romance rows', rg.body.metas.length === 2, rg.body.metas.map(m => m.name));
+    check('genre chip routes to /genres/ archive', envG.__router.calls.some(u => u.indexOf('/genres/romance/') !== -1), envG.__router.calls.filter(u => u.indexOf(KS) === 0));
+    check('romance rows', rg.body.metas.length === 3, rg.body.metas.map(m => m.name));
 
-    // taxonomy endpoint down -> snapshot fallback map still resolves
+    // genre archive DOWN -> empty array, not a 502 (page-1-fatal exempted)
     Core.resetCaches();
     const envF = makeEnv();
     const prevFetch = envF.__fetchFn;
     envF.__fetchFn = (url, opts) => {
-      if (String(url).indexOf('wp-json/wp/v2/anime_') !== -1) {
+      if (String(url).indexOf('/genres/') !== -1) {
         return Promise.resolve({ ok: false, status: 500, text: async () => 'boom' });
       }
       return prevFetch(url, opts);
     };
-    const rf = await getJson(Core.handle, envF, '/catalog/series/asian-series-genre/genre=Korean.json');
-    check('taxonomy down -> fallback term map used (korean=29)', rf.body.metas.length === 3, rf.body.metas.map(m => m.name));
+    const rf = await getJson(Core.handle, envF, '/catalog/series/asian-series-genre/genre=Romance.json');
+    check('genre archive down -> empty array (no 502)', rf.status === 200 && Array.isArray(rf.body.metas) && rf.body.metas.length === 0);
+  }
+
+  section('viewasian source: archive list + parse');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/catalog/series/asian-series-viewasian.json');
+    check('HTTP 200', r.status === 200);
+    const metas = r.body.metas;
+    check('rows present (limit 5 from VA page1)', metas.length === PAGE_LIMIT, metas.length);
+    check('all page-1 rows resolve (4 tmdb + 1 fallback)', metas.filter(m => /^tmdb:/.test(m.id)).length === 4 && metas.some(m => /^asian:/.test(m.id)), metas.map(m => m.id + ':' + m.name));
+    const vaPosterCount = metas.filter(m => m.poster && m.poster.indexOf(VA) === 0).length;
+    check('site posters from data-original thumbs', vaPosterCount >= 3, metas.map(m => m.poster));
+    const cloy = metas.find(m => stripYear(m.name) === 'Crash Landing on You');
+    check('year parsed from row title (CLOY 2019)', !!cloy && String(cloy.releaseInfo) === '2019', cloy && cloy.releaseInfo);
+    const r2 = await getJson(Core.handle, env, '/catalog/series/asian-series-viewasian/skip=5.json');
+    check('skip=5 pulls VA page 2 (2 rows)', r2.body.metas.length === 2, r2.body.metas.length);
+  }
+
+  section('viewasian source: search + genre/country chips');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/catalog/series/asian-series-viewasian/search=crash landing on you.json');
+    check('VA search finds CLOY', r.body.metas.length >= 1 && r.body.metas[0].id === 'tmdb:88008', r.body.metas.map(m => m.name + '/' + m.id));
+
+    Core.resetCaches();
+    const envK = makeEnv();
+    const rk = await getJson(Core.handle, envK, '/catalog/series/asian-series-viewasian-genre/genre=Korean.json');
+    check('country chip routes to /country/korean/', envK.__router.calls.some(u => u.indexOf('/country/korean/') !== -1), envK.__router.calls.filter(u => u.indexOf(VA) === 0));
+    check('korean rows include CLOY + QoT', rk.body.metas.length === 2 && rk.body.metas.every(m => ['Crash Landing on You', 'Queen of Tears'].indexOf(stripYear(m.name)) !== -1), rk.body.metas.map(m => m.name));
+
+    Core.resetCaches();
+    const envG = makeEnv();
+    const rg = await getJson(Core.handle, envG, '/catalog/series/asian-series-viewasian-genre/genre=Melodrama.json');
+    check('genre chip routes to /genre/melodrama/', envG.__router.calls.some(u => u.indexOf('/genre/melodrama/') !== -1));
+    check('melodrama rows', rg.body.metas.length === 2, rg.body.metas.map(m => m.name));
   }
 
   section('tmdb source: discover directories');
@@ -535,26 +604,6 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     check('search hit /search/movie endpoint', env.__router.calls.some(u => u.indexOf('/search/movie') !== -1));
   }
 
-  section('anime-latest: TMDB airing view (AnimePahe pairing)');
-  {
-    Core.resetCaches();
-    const env = makeEnv();
-    const r = await getJson(Core.handle, env, '/catalog/series/anime-latest.json');
-    check('HTTP 200 with rows', r.status === 200 && r.body.metas.length === 3, r.body.metas && r.body.metas.length);
-    check('rows are tmdb: ids', r.body.metas.every(m => /^tmdb:\d+$/.test(m.id)), r.body.metas.map(m => m.id));
-    check('newest first (Frieren S2 on top)', r.body.metas[0].name === 'Frieren: Beyond Journey\'s End Season 2', r.body.metas[0].name);
-    check('discover used anime filter (genres=16 + ja + newest)', env.__router.calls.some(u =>
-      u.indexOf('with_genres=16') !== -1 &&
-      u.indexOf('with_original_language=ja') !== -1 &&
-      u.indexOf('sort_by=first_air_date.desc') !== -1 &&
-      u.indexOf('include_null_first_air_dates=false') !== -1), env.__router.calls.filter(u => u.indexOf('discover') !== -1));
-
-    Core.resetCaches();
-    const envS = makeEnv();
-    const rs = await getJson(Core.handle, envS, '/catalog/series/anime-latest/search=frieren.json');
-    check('anime search keeps ONLY ja+Animation (1 row)', rs.body.metas.length === 1 && rs.body.metas[0].id === 'tmdb:910001', rs.body.metas.map(m => m.id + ':' + m.name));
-  }
-
   section('ASIAN_KEEP_UNMATCHED=0 drops fallback rows');
   {
     Core.resetCaches();
@@ -579,7 +628,7 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     };
     try {
       Core.resetCaches();
-      const r = await getJson(Core.handle, { PINOY_SITE: PINOY, DRAMACOOL_SITE: DC }, '/catalog/series/asian-series.json');
+      const r = await getJson(Core.handle, { PINOY_SITE: PINOY, KISSASIAN_SITE: KS, VIEWASIAN_SITE: VA }, '/catalog/series/asian-series.json');
       check('production fetch path works under receiver check', r.status === 200 && Array.isArray(r.body.metas) && r.body.metas.length > 0, r.body);
       check('fetch was actually exercised', calls.length > 0, calls.length);
       const cfg = Core.makeConfig({});
@@ -587,7 +636,7 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
       check('__fetchFn override still wins', Core.makeConfig({ __fetchFn: realFetch }).fetchFn === realFetch);
       // health via production path too
       Core.resetCaches();
-      const h = await getJson(Core.handle, { PINOY_SITE: PINOY, DRAMACOOL_SITE: DC }, '/health');
+      const h = await getJson(Core.handle, { PINOY_SITE: PINOY, KISSASIAN_SITE: KS, VIEWASIAN_SITE: VA }, '/health');
       check('health works under receiver check', h.status === 200 && h.body.status === 'up', h.body && h.body.status);
     } finally {
       global.fetch = realFetch;
@@ -600,10 +649,10 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     const env = makeEnv();
     const h = await getJson(Core.handle, env, '/health');
     check('status up', h.body.status === 'up', h.body.status);
-    check('four sources probed', Object.keys(h.body.sources).join(',') === 'pinoymovieshub,dramacool,tmdb,anime');
+    check('four sources probed', Object.keys(h.body.sources).join(',') === 'pinoymovieshub,kissasian,viewasian,tmdb');
     check('all sources ok with ms+items', Object.keys(h.body.sources).every(k => h.body.sources[k].ok && typeof h.body.sources[k].ms === 'number'));
     check('healthy hint present', h.body.hints.some(x => /All 4 sources healthy/.test(x)), h.body.hints);
-    check('health echoes version', h.body.version === '2.3.0' && h.body.addon === 'community.asian.catalog');
+    check('health echoes version', h.body.version === '3.0.0' && h.body.addon === 'community.asian.catalog');
 
     // same-error-everywhere -> runtime bug hint (not IP blocking)
     Core.resetCaches();
@@ -617,13 +666,13 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     Core.resetCaches();
     const envP = makeEnv();
     const prev = envP.__fetchFn;
-    envP.__fetchFn = (url, opts) => String(url).indexOf(DC) === 0
+    envP.__fetchFn = (url, opts) => String(url).indexOf(KS) === 0
       ? Promise.resolve({ ok: false, status: 404, text: async () => 'nope' })
       : prev(url, opts);
     const hp = await getJson(Core.handle, envP, '/health');
     check('partial outage -> degraded', hp.body.status === 'degraded', hp.body.status);
     check('partial outage hint says only 3/4 healthy', hp.body.hints.some(x => /only 3\/4 sources healthy/.test(x)), hp.body.hints);
-    check('dramacool hint present', hp.body.hints.some(x => /dramacool/.test(x)), hp.body.hints);
+    check('kissasian hint present', hp.body.hints.some(x => /kissasian/.test(x)), hp.body.hints);
   }
 
   section('routing edges');
@@ -636,16 +685,16 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     // extras via query string also work (apps send path segments; curl likes queries)
     Core.resetCaches();
     const rq = await getJson(Core.handle, env, '/catalog/series/asian-series.json?search=queen+of+tears');
-    check('query-string extras accepted', rq.status === 200 && rq.body.metas.length === 1, rq.body && rq.body.metas && rq.body.metas.length);
+    check('query-string extras accepted', rq.status === 200 && rq.body.metas.length >= 1, rq.body && rq.body.metas && rq.body.metas.length);
     // tv type alias
     const rtv = await getJson(Core.handle, env, '/catalog/tv/asian-series.json');
     check('tv type alias maps to series', rtv.status === 200 && rtv.body.metas.length > 0);
     // html index renders catalog table
     const resHtml = await Core.handle('/', env);
     const html = await resHtml.text();
-    check('index lists all 10 catalogs', (html.match(/\/catalog\//g) || []).length >= 10);
+    check('index lists all 11 catalogs', (html.match(/\/catalog\//g) || []).length >= 11);
     check('index links /health', html.indexOf('/health') !== -1);
-    check('index mentions anime-latest', html.indexOf('anime-latest') !== -1);
+    check('index mentions viewasian catalog', html.indexOf('asian-series-viewasian') !== -1);
   }
 
   section('unit: title cleaning + scoring');
@@ -664,6 +713,30 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     check('pickBestTmdb prefers confident match', pick && pick.id === 2);
   }
 
+  section('unit: ksParseListPage + vaParseListPage');
+  {
+    // kissasian: episode rows dedupe to series, titles carry no year
+    const cfg = Core.makeConfig({ KISSASIAN_SITE: KS, VIEWASIAN_SITE: VA });
+    const ksRows = Core.ksParseListPage(cfg, KS_PAGE['1'] + KS_PAGE['2']);
+    check('ks dedupes 8 rows to 7 series (CLOY spans pages)', ksRows.length === 7, ksRows.map(r => r.slug));
+    check('ks strips episode suffix from slug', ksRows.every(r => r.slug.indexOf('-episode-') === -1), ksRows.map(r => r.slug));
+    check('ks strips episode suffix from title', ksRows.every(r => /Episode/i.test(r.title) === false), ksRows.map(r => r.title));
+    check('ks rows typed series', ksRows.every(r => r.type === 'series'));
+    check('ks posters from article imgs', ksRows.every(r => r.poster.indexOf(KS) === 0), ksRows.map(r => r.poster));
+    const ksSearchRows = Core.ksParseListPage(cfg, KS_SEARCH_HTML);
+    check('ks search rows keep /series/ slugs', ksSearchRows.length === 3 && ksSearchRows[0].slug === 'queen-of-tears', ksSearchRows.map(r => r.slug));
+
+    // viewasian: year extracted from inline title, episode tail stripped
+    const vaRows = Core.vaParseListPage(cfg, VA_PAGE['1']);
+    check('va parses 5 rows', vaRows.length === 5, vaRows.map(r => r.slug));
+    const cloyRow = vaRows.find(r => r.title.indexOf('Crash Landing on You') === 0);
+    check('va year from title', cloyRow && cloyRow.year === '2019', cloyRow && cloyRow.year);
+    check('va episode tail stripped from slug', vaRows.every(r => r.slug.indexOf('-episode-') === -1 && r.slug.indexOf('-ep-') === -1), vaRows.map(r => r.slug));
+    check('va poster from data-original', vaRows.every(r => r.poster.indexOf(VA) === 0), vaRows.map(r => r.poster));
+    const vaSearchRows = Core.vaParseListPage(cfg, VA_SEARCH_HTML);
+    check('va /drama/ search rows accepted', vaSearchRows.length === 2 && vaSearchRows[0].slug === 'crash-landing-on-you-2019', vaSearchRows.map(r => r.slug));
+  }
+
   // ============================================================
   // LIVE TESTS
   // ============================================================
@@ -676,14 +749,16 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
       ['/catalog/movie/pinoy-movies.json', m => m.length > 0, 'pinoy movies rows'],
       ['/catalog/series/pinoy-series.json', m => m.length > 0, 'pinoy series rows'],
       ['/catalog/movie/pinoy-movies/search=hello love again.json', m => m.length > 0, 'pinoy search'],
-      ['/catalog/series/asian-series.json', m => m.length > 0, 'dramacool rows'],
-      ['/catalog/series/asian-series-genre/genre=Korean.json', m => m.length > 0, 'dramacool korean chip'],
+      ['/catalog/series/asian-series.json', m => m.length > 0, 'kissasian rows'],
+      ['/catalog/series/asian-series/search=queen of tears.json', m => m.length > 0, 'kissasian search'],
+      ['/catalog/series/asian-series-genre/genre=Romance.json', m => m.length > 0, 'kissasian romance chip'],
+      ['/catalog/series/asian-series-viewasian.json', m => m.length > 0, 'viewasian rows'],
+      ['/catalog/series/asian-series-viewasian/search=crash landing on you.json', m => m.length > 0, 'viewasian search'],
+      ['/catalog/series/asian-series-viewasian-genre/genre=Korean.json', m => m.length > 0, 'viewasian korean chip'],
       ['/catalog/movie/asian-movies.json', m => m.length >= 10, 'tmdb asian movies rows'],
       ['/catalog/series/asian-series-trending.json', m => m.length >= 10, 'tmdb trending rows'],
       ['/catalog/movie/asian-movies-genre/genre=Action.json', m => m.length > 0, 'tmdb genre rows'],
       ['/catalog/movie/asian-movies/search=parasite.json', m => m.length > 0 && m.every(x => /^tmdb:/.test(x.id)), 'tmdb asian-only search'],
-      ['/catalog/series/anime-latest.json', m => m.length > 0 && m.every(x => /^tmdb:/.test(x.id)), 'anime latest rows'],
-      ['/catalog/series/anime-latest/search=frieren.json', m => m.length > 0 && m.every(x => /^tmdb:/.test(x.id)), 'anime search'],
       ['/health', (m, body) => body.status === 'up', 'health up']
     ];
     for (const [url, cond, name] of checks) {
