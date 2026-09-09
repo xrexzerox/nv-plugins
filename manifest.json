@@ -1,6 +1,6 @@
 {
   "name": "NV Plugins",
-  "version": "3.8.0",
+  "version": "3.9.0",
   "description": "Canonical Nuvio provider collection. v3.7.0: asian-catalog addon 3.0.0 swaps series sources to kissasian.cam + viewasian.lol (myasiantv/dramacool/animepahe catalogs removed, 11 catalogs) and asianhub provider 2.0.0 adds three new lanes (KissAsian via the captcha+PoW-gated Byse player with AES payload decrypt, ViewAsian via kisskh.space/vidmoly, KissKH API on kisskh.co) — all three live-verified.",
   "author": "xrexzerox",
   "scrapers": [
@@ -836,8 +836,8 @@
     {
       "id": "asianhub",
       "name": "AsianHub",
-      "description": "Asian movies & series (Korean/Chinese/Japanese/Thai) from KissAsian + ViewAsian + KissKH: search-matched episodes, Byse PoW-gated player resolution (captcha + AES-CTR payload decrypt), vidmoly direct HLS and KissKH JSON API (kisskh.co with kisskh.ovh fallback), direct HLS extraction",
-      "version": "2.0.0",
+      "description": "Asian movies & series (Korean/Chinese/Japanese/Thai) from KissAsian + ViewAsian + KissKH: catalog-native asian:ks|va-<slug> ids resolve directly (no TMDB lookup), Byse PoW-gated player resolution (captcha + AES-CTR payload decrypt), vidmoly direct HLS and KissKH JSON API (kisskh.co with kisskh.ovh fallback)",
+      "version": "2.1.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",

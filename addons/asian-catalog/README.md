@@ -1,4 +1,4 @@
-# Asian Catalog (community.asian.catalog) — v3.1.0
+# Asian Catalog (community.asian.catalog) — v3.2.0
 
 Stremio-protocol **catalog addon** for Nuvio (NuvioMobile + NuvioTVSmart). Organized
 directory, every catalog searchable, TMDB-mapped rows for playback.
@@ -98,8 +98,50 @@ GET /manifest.json?sources=..&langs=..  personalized manifest (optional)
 GET /catalog/{type}/{catalogId}.json                       first page
 GET /catalog/{type}/{catalogId}/{extras}.json              extras as path segment
 GET /catalog/{type}/{catalogId}.json?search=x&skip=20      extras as query params
+GET /meta/{type}/{id}.json              details + episode videos (asian: ids)
+GET /stream/{type}/{id}.json            playable streams (asian: + tmdb: ids)
 GET /health                             per-source probes: ok/ms/items + hints
 POST /relay                             text-safe binary relay (allowlisted hosts)
+```
+
+## Every catalog row is playable (v3.2.0)
+
+Rows carry two id shapes, and BOTH now resolve to streams:
+
+- `tmdb:<id>` rows — the apps hand these to the AsianHub/PinoyMoviesHub
+  plugins (unchanged), AND the addon serves them server-side via
+  `/stream` (TMDB title lookup -> site search -> extraction).
+- `asian:<site>-<slug>` rows (`ks-` KissAsian, `va-` ViewAsian, `ph-`
+  PinoymoviesHub) — rows the TMDB match could not resolve. Before v3.2.0
+  these were DEAD: both apps only forward `tmdb:`/`tt` ids to plugins
+  (TVSmart skips plugin execution for `asian:` ids entirely; Mobile passes
+  the raw string and the plugin's TMDB lookup 404s). Now:
+  - the addon manifest declares `meta` + `stream` resources with
+    `idPrefixes`, so BOTH apps call `/stream/{type}/{id}.json` and
+    `/meta/{type}/{id}.json` on this worker;
+  - `/stream` resolves the item DIRECTLY from its source page (no title
+    search): KissAsian rows run the full Byse chain server-side (captcha ->
+    PoW -> AES-CTR decrypt), ViewAsian rows run the 3-hop embed chain,
+    Pinoy rows run the Dooplay/dooplayer + Mixdrop/Byse/Dood extractors;
+  - `/meta` returns episode `videos` for series rows so the episode list
+    renders and each episode id (`asian:ks-<slug>:<s>:<e>`) streams;
+  - legacy bare `asian:<slug>` ids (pre-3.2.0 rows cached in apps) fall
+    back to title search across all three sites;
+  - the AsianHub (v2.1.0) and PinoyMoviesHub (v5.3.0) plugins ALSO accept
+    the site-coded ids, so on Mobile every row plays even without the
+    addon stream path.
+
+Caveat: server-minted Byse URLs may be IP-aware; if a KissAsian stream from
+the addon path does not play on a device, the device-side plugin path
+(AsianHub with the same row) remains the primary lane.
+
+Examples:
+
+```
+/meta/series/asian:ks-queen-of-tears.json
+/stream/series/asian:ks-queen-of-tears:1:2.json
+/stream/movie/asian:ph-hello-love-again.json
+/stream/series/tmdb:286988:1:1.json        (server-side title search)
 ```
 
 Extras: `search` (text), `genre` (chip label), `skip` (offset). Nuvio sends them as

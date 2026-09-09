@@ -4,7 +4,17 @@
  * Supports: Movies & TV Shows
  * Language: Filipino / Tagalog / English
  * Author: xrexzerox
- * Version: 5.2.2
+ * Version: 5.3.0
+ *
+ * v5.3.0 changelog (catalog-native ids, pairs with asian-catalog v3.2.0):
+ *  - ACCEPTS "asian:ph-<slug>[:<s>:<e>]" ids. The asian-catalog addon emits
+ *    these for Pinoy rows its TMDB match could not resolve. Nuvio Mobile
+ *    hands them to plugins verbatim, so getStreams now resolves them
+ *    DIRECTLY from /movies/{slug} or /episodes/{slug}-SxE — no TMDB lookup,
+ *    no Dooplay search, no nonce. Non-PH asian: ids (ks/va) are ignored
+ *    here (the AsianHub plugin owns those).
+ *  - (TVSmart skips plugins for asian: ids entirely; those rows stream via
+ *    the addon's own /stream endpoint.)
  *
  * v5.2.2 changelog (NuvioTVSmart / webOS focus - mobile behavior unchanged):
  *  - TV: Byse streams are now emitted HEADERLESS. Byse signed URLs are
@@ -1038,6 +1048,102 @@ function buildStream(displayTitle, player, resolved, meta, embedHost) {
 
 // ===== MAIN ENTRY =====
 
+/**
+ * asian-catalog v3.2.0 site-coded fallback ids ("asian:ph-<slug>[:s:e]").
+ * Slugs never contain colons, so a trailing ":<s>:<e>" is always the app's
+ * episode suffix (parsed as a fallback when s/e args are absent).
+ */
+function parseAsianCatalogId(raw) {
+  var s = String(raw || "");
+  if (s.indexOf("asian:") !== 0) return null;
+  var id = s.substring(6);
+  var season = "", episode = "";
+  var m = id.match(/^(.+):(\d+):(\d+)$/);
+  if (m) {
+    id = m[1];
+    season = m[2];
+    episode = m[3];
+  }
+  var sm = id.match(/^(ph|ks|va)-([a-z0-9-]+)$/i);
+  if (sm) return { site: sm[1].toLowerCase(), slug: sm[2], season: season, episode: episode };
+  return { site: "", slug: id, season: season, episode: episode };
+}
+
+/**
+ * Direct page resolution for catalog-native PH ids. Reuses every extractor
+ * of the TMDB path (dooplayer v2 -> mixdrop/byse/dood) without the search.
+ */
+function asianCatalogStreams(parsed, mediaType, season, episode) {
+  var isSeries = mediaType === "tv" || mediaType === "series" ||
+    !!(season && episode) || !!(parsed.season && parsed.episode);
+  var effSeason = parseInt(season || parsed.season, 10) || 1;
+  var effEpisode = parseInt(episode || parsed.episode, 10) || 1;
+  var displayTitle = parsed.slug.replace(/-/g, " ") +
+    (isSeries ? " S" + effSeason + "E" + effEpisode : "");
+  var meta = { isSeries: isSeries, season: effSeason, episode: effEpisode, episodeTitle: "" };
+
+  var tryPages = isSeries
+    ? [BASE_URL + "/episodes/" + parsed.slug + "-" + effSeason + "x" + effEpisode,
+       BASE_URL + "/series/" + parsed.slug]
+    : [BASE_URL + "/movies/" + parsed.slug];
+
+  return (function tryIdx(i) {
+    if (i >= tryPages.length) return Promise.resolve([]);
+    var pageUrl = tryPages[i];
+    return fetchText(pageUrl).then(function (html) {
+      if (!hasPlayerOptions(html)) return tryIdx(i + 1);
+      var options = extractPlayerOptions(html);
+      var realOptions = [];
+      var trailerOptions = [];
+      for (var oi = 0; oi < options.length; oi++) {
+        if (/trailer/i.test(options[oi].label || "")) trailerOptions.push(options[oi]);
+        else realOptions.push(options[oi]);
+      }
+      var chosen = realOptions.length ? realOptions : trailerOptions;
+      return Promise.all(chosen.slice(0, 8).map(function (player) {
+        return withLaneDeadline(callDooPlayerAPI(player, pageUrl).then(function (embedUrl) {
+          if (!embedUrl) return null;
+          var host = hostOf(embedUrl);
+          var extractor = null;
+          if (isMixdrop(host)) {
+            extractor = extractMixdropDirect(embedUrl);
+          } else if (isByse(host)) {
+            extractor = extractByseDirect(embedUrl);
+          } else if (isDoodFamily(host)) {
+            extractor = extractDoodDirect(embedUrl);
+          } else {
+            extractor = extractMixdropDirect(embedUrl).then(function (direct) {
+              return direct || extractByseDirect(embedUrl);
+            });
+          }
+          return extractor.then(function (direct) {
+            if (direct && direct.url) {
+              return buildStream(displayTitle, player, {
+                url: direct.url,
+                headers: direct.headers,
+                quality: direct.quality
+              }, meta, host);
+            }
+            return null;
+          });
+        })).catch(function () { return null; });
+      })).then(function (results) {
+        var streams = [];
+        for (var si = 0; si < results.length; si++) {
+          if (results[si] && results[si].url) streams.push(results[si]);
+        }
+        if (streams.length) {
+          streams.sort(function (a, b) { return (a._hostPriority || 3) - (b._hostPriority || 3); });
+          for (var ci = 0; ci < streams.length; ci++) delete streams[ci]._hostPriority;
+          console.log("[PinoyMoviesHub] catalog-id path returning " + streams.length + " stream(s)");
+          return streams;
+        }
+        return tryIdx(i + 1);
+      });
+    }).catch(function () { return tryIdx(i + 1); });
+  })(0);
+}
+
 function getStreams(tmdbId, mediaType, season, episode) {
   // Legacy signatures:
   //   getStreams(tmdbId, season, episode)               -> mediaType undefined
@@ -1056,6 +1162,13 @@ function getStreams(tmdbId, mediaType, season, episode) {
   console.log("[PinoyMoviesHub] === START tmdbId=" + tmdbId + " type=" + mediaType + " S" + season + "E" + episode + " ===");
 
   if (!tmdbId) return Promise.resolve([]);
+
+  // v5.3.0: asian-catalog site-coded ids resolve WITHOUT TMDB.
+  var asianParsed = parseAsianCatalogId(tmdbId);
+  if (asianParsed) {
+    if (asianParsed.site !== "ph") return Promise.resolve([]); // AsianHub owns ks/va
+    return asianCatalogStreams(asianParsed, mediaType, season, episode);
+  }
 
   var forceTv = mediaType === "tv" || (!!(season && episode) && !mediaType);
 

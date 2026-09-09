@@ -5,7 +5,21 @@
  *           Hong Kong / other Asian titles, English subs)
  * Language: ko / zh / ja / th / en
  * Author: xrexzerox
- * Version: 2.0.0
+ * Version: 2.1.0
+ *
+ * v2.1.0 (2026-09-09) — catalog-native ids (pairs with asian-catalog v3.2.0):
+ *   The asian-catalog addon emits site-coded fallback ids for rows its TMDB
+ *   match could not resolve: "asian:ks-<slug>" / "asian:va-<slug>". Nuvio
+ *   Mobile hands those ids to plugins verbatim (pluginContentId only strips
+ *   a "tmdb:" prefix), so getStreams now parses them and resolves the item
+ *   DIRECTLY from its source page — no TMDB lookup, no title search:
+ *     asian:ks-<slug>  -> /series/{slug}/ -> episode page -> Byse chain
+ *     asian:va-<slug>  -> /drama/{slug}/  -> episode page -> 3-hop chain
+ *     asian:ph-<slug>  -> ignored here (PinoyMoviesHub plugin owns it)
+ *     asian:<slug>     -> legacy bare id -> treated as a title for the
+ *                          standard search lanes
+ *   (TVSmart skips plugins for asian: ids entirely — those rows are served
+ *   by the addon's own /stream endpoint server-side.)
  *
  * v2.0.0 (2026-09-09) — source swap (user request):
  *   REMOVED: MyAsianTV (myasiantv.com.lv) and Dramacool (dramacool.uno) lanes.
@@ -1117,6 +1131,63 @@ function kisskhLane(tmdb, isSeries, season, episode) {
 
 // ===== MAIN ENTRY =====
 
+/**
+ * asian-catalog v3.2.0 site-coded fallback ids:
+ *   "asian:ks-<slug>[:s:e]" / "asian:va-<slug>[:s:e]" / "asian:ph-<slug>"
+ *   "asian:<slug>" (legacy bare rows) — treated as a title query.
+ * Apps also append ":<season>:<episode>" to series ids; those are parsed
+ * here as a fallback (the runtime normally passes s/e as separate args).
+ */
+function parseAsianCatalogId(raw) {
+  var s = String(raw || "");
+  if (s.indexOf("asian:") !== 0) return null;
+  var id = s.substring(6);
+  var season = "", episode = "";
+  var m = id.match(/^(.+):(\d+):(\d+)$/);
+  if (m) {
+    // Slugs never contain colons, so a trailing ":<s>:<e>" is always the
+    // app's episode suffix (used when the runtime did not pass s/e args).
+    id = m[1];
+    season = m[2];
+    episode = m[3];
+  }
+  var sm = id.match(/^(ph|ks|va)-([a-z0-9-]+)$/i);
+  if (sm) return { site: sm[1].toLowerCase(), slug: sm[2], season: season, episode: episode };
+  return { site: "", slug: id, season: season, episode: episode };
+}
+
+function asianCatalogLane(parsed, mediaType, season, episode) {
+  if (!parsed || parsed.site === "ph") return Promise.resolve(null);
+  var effSeason = season || parsed.season || "";
+  var effEpisode = episode || parsed.episode || "";
+  var isSeries = mediaType === "tv" || mediaType === "series" || !!(effSeason && effEpisode);
+  var wantEp = parseInt(effEpisode, 10) || 1;
+  var lane = null;
+  if (parsed.site === "ks") {
+    lane = kissasianFindEpisodeUrl(KISSASIAN_BASE + "/series/" + parsed.slug + "/", wantEp)
+      .then(function (epUrl) { return kissasianExtract(epUrl); });
+  } else if (parsed.site === "va") {
+    lane = viewasianFindEpisodeUrl(VIEWASIAN_BASE + "/drama/" + parsed.slug + "/", wantEp, isSeries)
+      .then(function (epUrl) { return viewasianExtract(epUrl); });
+  } else {
+    // Legacy bare slug: run the standard title-search lanes with a faux
+    // TMDB object so every existing lane is reused unchanged.
+    var faux = { title: parsed.slug.replace(/-/g, " "), original: "", year: "" };
+    return withExtractionDeadline([
+      function () { return kissasianLane(faux, isSeries, effSeason, effEpisode); },
+      function () { return viewasianLane(faux, isSeries, effSeason, effEpisode); },
+      function () { return kisskhLane(faux, isSeries, effSeason, effEpisode); }
+    ], GLOBAL_DEADLINE_MS).then(function (results) {
+      var out = [];
+      for (var i = 0; i < results.length; i++) {
+        if (results[i] && results[i].url) out.push(results[i]);
+      }
+      return out.length ? out : null;
+    });
+  }
+  return lane.catch(function () { return null; });
+}
+
 function getStreams(tmdbId, mediaType, season, episode) {
   // Legacy signatures:
   //   getStreams(tmdbId, season, episode)               -> mediaType undefined
@@ -1134,6 +1205,42 @@ function getStreams(tmdbId, mediaType, season, episode) {
   console.log("[AsianHub] === START tmdbId=" + tmdbId + " type=" + mediaType + " S" + season + "E" + episode + " ===");
 
   if (!tmdbId) return Promise.resolve([]);
+
+  // v2.1.0: asian-catalog site-coded ids resolve WITHOUT TMDB.
+  var asianParsed = parseAsianCatalogId(tmdbId);
+  if (asianParsed) {
+    var asianDisplay = asianParsed.slug.replace(/-/g, " ");
+    var asianIsSeries = mediaType === "tv" || mediaType === "series" ||
+      !!(season && episode) || !!(asianParsed.season && asianParsed.episode);
+    var asianMeta = {
+      isSeries: asianIsSeries,
+      season: season || asianParsed.season,
+      episode: episode || asianParsed.episode,
+      episodeTitle: ""
+    };
+    var asianDisplayTitle = asianIsSeries
+      ? asianDisplay + " S" + asianMeta.season + "E" + asianMeta.episode
+      : asianDisplay;
+    return asianCatalogLane(asianParsed, mediaType, season, episode).then(function (results) {
+      var streams = [];
+      var seen = {};
+      var list;
+      if (!results) list = [];
+      else if (Object.prototype.toString.call(results) === "[object Array]") list = results;
+      else list = [results];
+      for (var i = 0; i < list.length; i++) {
+        var r = list[i];
+        if (!r || !r.url || seen[r.url]) continue;
+        seen[r.url] = true;
+        streams.push(buildStream(asianDisplayTitle, asianMeta, r));
+      }
+      console.log("[AsianHub] catalog-id path returning " + streams.length + " stream(s)");
+      return streams;
+    }).catch(function (err) {
+      console.error("[AsianHub] catalog-id path error:", (err && err.message) || err);
+      return [];
+    });
+  }
 
   var forceTv = mediaType === "tv" || (!!(season && episode) && !mediaType);
 

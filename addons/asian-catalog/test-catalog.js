@@ -286,6 +286,98 @@ function tmdbDiscoverTv(sort, page) {
 
 function makeRouter() {
   const calls = [];
+  // --- /stream+meta upstream fixtures (v3.2.0) ---
+
+  // Byse playback payload: real AES-256-GCM via node crypto, key split into
+  // key_parts[v-1] + parts[30-v] (b64url halves), 16-byte tag appended (the
+  // decryptor skips it). Mirrors the wire format captured live in Task 4.
+  const BYSE_KEY = require('crypto').randomBytes(32);
+  const BYSE_IV = require('crypto').randomBytes(12);
+  const BYSE_PLAIN = JSON.stringify({
+    sources: [
+      { url: 'https://edge.justplay.test/hls/qot/master.m3u8', height: 1080, label: '1080p', mime_type: 'application/vnd.apple.mpegurl' },
+      { url: 'https://edge.justplay.test/hls/qot/low.m3u8', height: 480, label: '480p', mime_type: 'application/vnd.apple.mpegurl' }
+    ]
+  });
+  const byseB64url = (buf) => Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const BYSE_PARTS = [];
+  for (let i = 0; i < 30; i++) BYSE_PARTS.push(byseB64url(require('crypto').randomBytes(16)));
+  BYSE_PARTS[6] = byseB64url(BYSE_KEY.slice(0, 16));   // version 7 -> part[6]
+  BYSE_PARTS[23] = byseB64url(BYSE_KEY.slice(16, 32)); // and part[30-7]
+  // Real GCM encrypts the first block with counter inc32(J0) = IV||0x00000002.
+  // aes-256-ctr with that exact initial counter block produces the identical
+  // ciphertext stream the plugin decryptor recovers (it skips the 16-byte
+  // auth tag, so the trailing tag bytes are dummy filler here).
+  const byseCtr = require('crypto').createCipheriv('aes-256-ctr', BYSE_KEY,
+    Buffer.concat([BYSE_IV, Buffer.from([0, 0, 0, 2])]));
+  const BYSE_PAYLOAD = Buffer.concat([
+    byseCtr.update(BYSE_PLAIN, 'utf8'), byseCtr.final(), require('crypto').randomBytes(16)
+  ]);
+  const BYSE_PLAYBACK = {
+    algorithm: 'AES-256-GCM', version: 7,
+    iv: byseB64url(BYSE_IV), payload: BYSE_PAYLOAD.toString('base64'),
+    key_parts: BYSE_PARTS, expires_at: '2026-12-31T00:00:00Z'
+  };
+  let byseTokenSeen = null;
+  let byseSolutionSeen = null;
+
+  const ksSeriesPageHtml = [
+    '<html><head>',
+    '<title>Queen of Tears - KissAsian.test</title>',
+    '<meta property="og:image" content="' + KS + '/wp-content/uploads/qot.jpg">',
+    '<meta property="og:description" content="A married couple in crisis.">',
+    '</head><body><h1>Queen of Tears</h1>',
+    `<a href="${KS}/queen-of-tears-episode-1/">Episode 1</a>`,
+    `<a href="${KS}/queen-of-tears-episode-2/">Episode 2</a>`,
+    `<a href="${KS}/queen-of-tears-episode-3/">Episode 3</a>`,
+    `<a href="${KS}/other-show-episode-1/">Unrelated</a>`,
+    '</body></html>'
+  ].join('\n');
+  const ksEpisodePageHtml = (n) => [
+    '<html><head><title>Queen of Tears Episode ' + n + '</title></head><body>',
+    '<iframe src="https://justplay.cam/e/qot-e' + n + '" allowfullscreen></iframe>',
+    '</body></html>'
+  ].join('\n');
+
+  // One show per drama page (matches the real site): crash episodes only.
+  const vaDramaPageHtml = [
+    '<html><head>',
+    '<title>Crash Landing on You (2019) - ViewAsian.test</title>',
+    '<meta property="og:image" content="' + VA + '/wp-content/uploads/cloy.jpg">',
+    '<meta property="og:description" content="Paragliding accident.">',
+    '</head><body><h1>Crash Landing on You (2019)</h1>',
+    `<a href="${VA}/crash-landing-on-you-2019-episode-1-english-sub/">Ep1</a>`,
+    `<a href="${VA}/crash-landing-on-you-2019-episode-2-english-sub/">Ep2</a>`,
+    `<a href="${VA}/crash-landing-on-you-2019-episode-3-english-sub-123/">Ep3</a>`,
+    '</body></html>'
+  ].join('\n');
+  const vaDramaN9PageHtml = [
+    '<html><head><title>No. 9 Hunter (2026) - ViewAsian.test</title></head><body>',
+    `<a href="${VA}/no-9-hunter-2026-episode-1-english-sub/">N9 Ep1</a>`,
+    `<a href="${VA}/no-9-hunter-2026-episode-2-english-sub/">N9 Ep2</a>`,
+    '</body></html>'
+  ].join('\n');
+  const vaEpisodePageHtml = `<html><body><iframe src="https://kisskh.space/crash-landing-on-you-2019-ep3"></iframe></body></html>`;
+  const vaPlayerPageHtml = `<html><body><iframe src="https://vidmoly-test.example/embed-qot9x.html"></iframe></body></html>`;
+  const vaEmbedPageHtml = `<html><body>var file = "https://cdn.vidmoly-test.example/hls/qot/master.m3u8?tok=1";</body></html>`;
+
+  const phMoviePageHtml = [
+    '<html><head><title>Mixed Signals (2025)</title>',
+    '<meta property="og:image" content="' + PINOY + '/wp-content/uploads/ms.jpg">',
+    '<meta property="og:description" content="A rom-com.">',
+    '</head><body><h1>Mixed Signals (2025)</h1>',
+    '<ul><li class="dooplay_player_option" data-post="99001" data-type="movie" data-nume="1">',
+    '<span class="title">Server 1</span></li>',
+    '<li class="dooplay_player_option" data-post="99001" data-type="movie" data-nume="2">',
+    '<span class="title">Server Trailer</span></li></ul>',
+    '</body></html>'
+  ].join('\n');
+  const mixdropEmbedHtml = [
+    '<html><body><script>eval(function(p,a,c,k,e,d){while(--){}}(',
+    "'MDCore.wurl=\"1\";',62,2,'xx|https://cdn.mixdrop-test.example/f/vid-777.mp4'",
+    ".split('|'),0,{}))</script></body></html>"
+  ].join('');
+
   async function router(url, opts) {
     calls.push(String(url));
     const u = String(url);
@@ -296,14 +388,49 @@ function makeRouter() {
       json: async () => typeof body === 'string' ? JSON.parse(body) : body
     });
 
-    // pinoy archive/search/genre pages (search has ?s= and must be checked first)
+    // justplay.cam Byse embed API (captcha -> PoW verify -> playback)
+    if (u.indexOf('https://justplay.cam/') === 0) {
+      if (u.indexOf('/embed/captcha/verify') !== -1) {
+        let body = {};
+        try { body = JSON.parse(String((opts && opts.body) || '{}')); } catch (e) { body = {}; }
+        byseSolutionSeen = body && body.solution;
+        return respond({ status: 'ok', token: 'tok-123' });
+      }
+      if (u.indexOf('/embed/captcha') !== -1) {
+        return respond({ status: 200, pow_nonce: 'nonce-abc-42', pow_difficulty: 12, pow_token: 'ptok-777' });
+      }
+      if (u.indexOf('/embed/playback') !== -1) {
+        const hdrs = (opts && opts.headers) || {};
+        if (hdrs['X-Captcha-Token'] !== 'tok-123') return respond({ error: 'no token' }, 403);
+        return respond({ playback: BYSE_PLAYBACK });
+      }
+      return respond({ error: 'unknown justplay route' }, 404);
+    }
+    if (byseSolutionSeen && !byseTokenSeen) byseTokenSeen = true;
+
+    // viewasian player hop (kisskh.space) + vidmoly embed + cdn playlist
+    if (u.indexOf('https://kisskh.space/') === 0) return respond(vaPlayerPageHtml);
+    if (u.indexOf('https://vidmoly-test.example/') === 0) return respond(vaEmbedPageHtml);
+    if (u.indexOf('https://cdn.vidmoly-test.example/') === 0) {
+      return respond('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1920x1080\n1080p.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x480\n480p.m3u8');
+    }
+    if (u.indexOf('https://mixdrop-test.example/') === 0) return respond(mixdropEmbedHtml);
+
+    // pinoy (Dooplay) — catalog pages + direct item pages + dooplayer API
     if (u.indexOf(PINOY) === 0) {
+      const pathOnly = u.split('?')[0];
+      if (/\/wp-json\/dooplayer\/v2\/99001\/movie\/1$/.test(pathOnly)) {
+        return respond([{ embed_url: 'https://mixdrop-test.example/e/vid777' }]);
+      }
+      if (/\/wp-json\/dooplayer\/v2\/99001\/movie\/2$/.test(pathOnly)) {
+        return respond([{ embed_url: 'https://youtube-trailer.example/watch?v=x' }]);
+      }
+      if (/\/movies\/mixed-signals\/?$/.test(pathOnly)) return respond(phMoviePageHtml);
       let page = 1;
       const mp = u.match(/\/page\/(\d+)/);
       if (mp) page = parseInt(mp[1], 10);
       const mq = u.match(/[?&]s=([^&]*)/);
       if (mq) return respond(pinoySearchHtml(page, decodeURIComponent(mq[1])));
-      const pathOnly = u.split('?')[0];
       if (/\/genre\/([^/]+)/.test(pathOnly)) {
         const genre = pathOnly.match(/\/genre\/([^/]+)/)[1];
         if (genre === 'tagalog-dubbed' && page === 1) {
@@ -317,9 +444,12 @@ function makeRouter() {
       return respond('<html><body>404</body></html>', 404);
     }
 
-    // kissasian (dramastream HTML)
+    // kissasian — catalog pages + series/episode pages for /stream+/meta
     if (u.indexOf(KS) === 0) {
       const pathOnly = u.split('?')[0];
+      if (/\/series\/queen-of-tears\/?$/.test(pathOnly)) return respond(ksSeriesPageHtml);
+      const me = pathOnly.match(/\/(queen-of-tears-episode-(\d+))\/?$/);
+      if (me) return respond(ksEpisodePageHtml(parseInt(me[2], 10)));
       if (/\/genres\/romance\/?$/.test(pathOnly)) return respond(KS_GENRE_ROMANCE_HTML);
       if (/\/genres\//.test(pathOnly)) return respond(KS_GENRE_OTHER_HTML);
       if (/\/genres\/romance\/page\/2/.test(pathOnly)) return respond('<html>404</html>', 404);
@@ -330,9 +460,14 @@ function makeRouter() {
       return respond(KS_PAGE[String(page)] || '', page <= 2 ? 200 : 404);
     }
 
-    // viewasian (viewasian theme HTML)
+    // viewasian — catalog pages + drama/episode pages for /stream+/meta
     if (u.indexOf(VA) === 0) {
       const pathOnly = u.split('?')[0];
+      if (/\/drama\/crash-landing-on-you-2019\/?$/.test(pathOnly)) return respond(vaDramaPageHtml);
+      if (/\/drama\/no-9-hunter-2026\/?$/.test(pathOnly)) return respond(vaDramaN9PageHtml);
+      if (/\/crash-landing-on-you-2019-episode-3/.test(pathOnly)) return respond(vaEpisodePageHtml);
+      if (/\/crash-landing-on-you-2019-episode-\d+/.test(pathOnly)) return respond('<html>no iframe</html>');
+      if (/\/no-9-hunter-2026-episode-\d+/.test(pathOnly)) return respond(vaEpisodePageHtml);
       const mq = u.match(/[?&]s=([^&]*)/);
       if (mq) {
         const q = decodeURIComponent(mq[1]).toLowerCase();
@@ -346,8 +481,17 @@ function makeRouter() {
       return respond(VA_PAGE[String(page)] || '', page <= 2 ? 200 : 404);
     }
 
-    // TMDB
+    // TMDB — search/discover (existing) + detail lookups for /stream
     if (u.indexOf('https://api.themoviedb.org/3/') === 0) {
+      const detail = u.match(/\/3\/(movie|tv)\/(\d+)\?/);
+      if (detail) {
+        if (detail[2] === '876543') {
+          return respond(detail[1] === 'tv'
+            ? { name: 'Queen of Tears', original_name: 'Queen of Tears', first_air_date: '2024-03-09', original_language: 'ko', overview: '' }
+            : { title: 'Mixed Signals', original_title: 'Mixed Signals', release_date: '2025-01-01', original_language: 'tl', overview: '' });
+        }
+        return respond({ error: 'not found' }, 404);
+      }
       if (u.indexOf('/search/') !== -1) {
         const kind = u.indexOf('/search/tv') !== -1 ? 'tv' : 'movie';
         const raw = decodeURIComponent((u.match(/[?&]query=([^&]*)/) || [])[1] || '');
@@ -367,6 +511,8 @@ function makeRouter() {
     return respond({ error: 'unexpected url ' + u }, 404);
   }
   router.calls = calls;
+  router.byseSolutionSeen = () => byseSolutionSeen;
+  router.byseTokenSeen = () => byseTokenSeen;
   return router;
 }
 
@@ -404,8 +550,8 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     const cfg = Core.makeConfig({});
     const man = Core.manifest(cfg);
     check('addon id', man.id === 'community.asian.catalog', man.id);
-    check('version 3.1.0', man.version === '3.1.0', man.version);
-    check('resources catalog-only', JSON.stringify(man.resources) === '["catalog"]');
+    check('version 3.2.0', man.version === '3.2.0', man.version);
+    check('resources declare catalog+meta+stream', JSON.stringify((man.resources || []).map(r => typeof r === 'string' ? r : r.name)) === JSON.stringify(['catalog', 'meta', 'stream']), man.resources);
     check('idPrefixes tmdb+asian', JSON.stringify(man.idPrefixes) === '["tmdb:","asian:"]', man.idPrefixes);
     check('14 catalogs', man.catalogs.length === 14, man.catalogs.length);
     const ids = man.catalogs.map(c => c.id);
@@ -524,7 +670,7 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     const r = await getJson(Core.handle, env, '/catalog/series/asian-series/search=queen of tears.json');
     check('KS search finds Queen of Tears', r.body.metas.length >= 1 && r.body.metas[0].name === 'Queen of Tears' && r.body.metas[0].id === 'tmdb:88002', r.body.metas.map(m => m.name + '/' + m.id));
     check('search called with ?s= param', env.__router.calls.some(u => u.indexOf('s=queen%20of%20tears') !== -1 || u.indexOf('s=queen+of%20tears') !== -1), env.__router.calls.filter(u => u.indexOf('s=') !== -1));
-    check('unmatched search rows stay visible as asian:', r.body.metas.some(m => m.id === 'asian:queen-seon-duk'), r.body.metas.map(m => m.id));
+    check('unmatched search rows stay visible as site-coded asian: ids', r.body.metas.some(m => m.id === 'asian:ks-queen-seon-duk'), r.body.metas.map(m => m.id));
 
     Core.resetCaches();
     const envG = makeEnv();
@@ -664,7 +810,7 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     check('four sources probed', Object.keys(h.body.sources).join(',') === 'pinoymovieshub,kissasian,viewasian,tmdb');
     check('all sources ok with ms+items', Object.keys(h.body.sources).every(k => h.body.sources[k].ok && typeof h.body.sources[k].ms === 'number'));
     check('healthy hint present', h.body.hints.some(x => /All 4 sources healthy/.test(x)), h.body.hints);
-    check('health echoes version', h.body.version === '3.1.0' && h.body.addon === 'community.asian.catalog');
+    check('health echoes version', h.body.version === '3.2.0' && h.body.addon === 'community.asian.catalog');
 
     // same-error-everywhere -> runtime bug hint (not IP blocking)
     Core.resetCaches();
@@ -792,6 +938,132 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     check('va poster from data-original', vaRows.every(r => r.poster.indexOf(VA) === 0), vaRows.map(r => r.poster));
     const vaSearchRows = Core.vaParseListPage(cfg, VA_SEARCH_HTML);
     check('va /drama/ search rows accepted', vaSearchRows.length === 2 && vaSearchRows[0].slug === 'crash-landing-on-you-2019', vaSearchRows.map(r => r.slug));
+  }
+
+  // ============================================================
+  // STREAM + META ENDPOINTS (v3.2.0 catalog <-> plugin parity)
+  // ============================================================
+
+  section('manifest: meta + stream resources (playable catalog)');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const m = Core.manifest(Core.makeConfig(env));
+    const byName = {};
+    m.resources.forEach(r => { byName[r.name] = r; });
+    check('resources include catalog+meta+stream', !!byName.catalog && !!byName.meta && !!byName.stream, m.resources);
+    check('stream resource idPrefixes asian:+tmdb:', byName.stream && JSON.stringify(byName.stream.idPrefixes) === JSON.stringify(['asian:', 'tmdb:']), byName.stream);
+    check('meta resource idPrefixes asian:', byName.meta && JSON.stringify(byName.meta.idPrefixes) === JSON.stringify(['asian:']), byName.meta);
+    check('stream resource types movie+series', byName.stream && byName.stream.types.indexOf('movie') !== -1 && byName.stream.types.indexOf('series') !== -1);
+  }
+
+  section('unit: sxParseId (Nuvio id conventions)');
+  {
+    const a = Core.sxParseId('asian:ks-queen-of-tears:1:5');
+    check('coded id + episode suffix', a.kind === 'asian' && a.site === 'ks' && a.slug === 'queen-of-tears' && a.season === 1 && a.episode === 5, a);
+    const b = Core.sxParseId('tmdb:872334:1:5');
+    check('tmdb id + episode suffix', b.kind === 'tmdb' && b.tmdbId === '872334' && b.season === 1 && b.episode === 5, b);
+    const c = Core.sxParseId('tmdb:872334');
+    check('bare tmdb id untouched', c.kind === 'tmdb' && c.tmdbId === '872334' && c.season === 0 && c.episode === 0, c);
+    const d = Core.sxParseId('asian:va-old-legacy-row');
+    check('legacy bare slug parsed', d.kind === 'asian' && d.slug === 'old-legacy-row', d);
+    const e = Core.sxParseId('asian:ph-some-movie');
+    check('ph coded id', e.kind === 'asian' && e.site === 'ph' && e.slug === 'some-movie', e);
+  }
+
+  section('GET /meta — asian: ids (episode videos make series playable)');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/meta/series/asian:ks-queen-of-tears.json');
+    check('meta 200', r.status === 200, r.text.slice(0, 120));
+    check('meta id echoes asian: prefix', r.body.meta && r.body.meta.id === 'asian:ks-queen-of-tears', r.body.meta && r.body.meta.id);
+    check('meta name scraped from page', r.body.meta && r.body.meta.name === 'Queen of Tears', r.body.meta && r.body.meta.name);
+    check('meta poster + description from og tags', !!r.body.meta.poster && !!r.body.meta.description, r.body.meta);
+    const vids = (r.body.meta && r.body.meta.videos) || [];
+    check('meta videos: 3 episodes, strict slug match', vids.length === 3, vids.map(v => v.id));
+    check('episode video ids follow <metaId>:s:e', vids.length > 0 && vids[0].id === 'asian:ks-queen-of-tears:1:1' && vids[2].id === 'asian:ks-queen-of-tears:1:3', vids.map(v => v.id));
+    check('episode videos sorted', vids.length > 0 && vids[0].episode === 1 && vids[1].episode === 2);
+    const r2 = await getJson(Core.handle, env, '/meta/series/tmdb:876543.json');
+    check('meta for tmdb: ids -> 404 (apps resolve natively)', r2.status === 404, r2.status);
+  }
+
+  section('GET /stream — asian:ks (Byse PoW + AES chain, server-side)');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/stream/series/asian:ks-queen-of-tears:1:2.json');
+    check('ks stream 200', r.status === 200, r.text.slice(0, 160));
+    const st = (r.body.streams || [])[0] || {};
+    check('ks stream url from Byse playback (best source)', st.url === 'https://edge.justplay.test/hls/qot/master.m3u8', st.url);
+    check('ks stream quality 1080p', st.quality === '1080p', st.quality);
+    check('ks stream shape (name/title/description)', st.name === 'Asian Catalog' && !!st.title && !!st.description, st);
+    check('ks PoW solution verified against site mixer', (() => {
+      const sol = env.__router.byseSolutionSeen();
+      if (!sol) return false;
+      const d = Core.byseHashDigest((function bytes(s) { const o = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) o[i] = s.charCodeAt(i) & 255; return o; })('nonce-abc-42:' + sol));
+      return Core.byseLeadingZeroBits(d) >= 12;
+    })(), env.__router.byseSolutionSeen());
+    check('captcha token forwarded to playback POST', env.__router.calls.some(u => u.indexOf('/embed/playback') !== -1));
+  }
+
+  section('GET /stream — asian:va (3-hop embed chain, server-side)');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/stream/series/asian:va-crash-landing-on-you-2019:1:3.json');
+    check('va stream 200', r.status === 200, r.text.slice(0, 160));
+    const st = (r.body.streams || [])[0] || {};
+    check('va resolves vidmoly m3u8 to best variant', st.url === 'https://cdn.vidmoly-test.example/hls/qot/1080p.m3u8', st.url);
+    check('va stream carries proxyHeaders (Referer)', st.behaviorHints && st.behaviorHints.proxyHeaders && st.behaviorHints.proxyHeaders.request && !!st.behaviorHints.proxyHeaders.request.Referer, st.behaviorHints);
+    check('va stream notWebReady', st.behaviorHints && st.behaviorHints.notWebReady === true);
+    check('va stream labeled ViewAsian', st.title && st.title.indexOf('ViewAsian') === 0, st.title);
+  }
+
+  section('GET /stream — asian:ph (Dooplay -> dooplayer -> mixdrop unpack)');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/stream/movie/asian:ph-mixed-signals.json');
+    check('ph stream 200', r.status === 200, r.text.slice(0, 160));
+    const st = (r.body.streams || [])[0] || {};
+    check('ph mixdrop unpacked to direct mp4', st.url === 'https://cdn.mixdrop-test.example/f/vid-777.mp4', st.url);
+    check('ph stream carries Referer + UA headers', st.behaviorHints && st.behaviorHints.proxyHeaders && st.behaviorHints.proxyHeaders.request && !!st.behaviorHints.proxyHeaders.request.Referer, st.behaviorHints);
+    check('trailer server skipped', (r.body.streams || []).length === 1, r.body.streams);
+  }
+
+  section('GET /stream — tmdb: ids (server-side title search path)');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/stream/series/tmdb:876543:1:2.json');
+    check('tmdb stream 200', r.status === 200, r.text.slice(0, 200));
+    const st = (r.body.streams || [])[0] || {};
+    check('tmdb title resolved -> KS search -> Byse chain', st.url === 'https://edge.justplay.test/hls/qot/master.m3u8', st.url);
+    check('tmdb stream tagged with display title', st.title && st.title.indexOf('KissAsian') === 0, st.title);
+  }
+
+  section('GET /stream — legacy bare asian: ids (pre-3.2.0 rows)');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/stream/series/asian:no-9-hunter.json');
+    check('legacy id 200', r.status === 200, r.text.slice(0, 160));
+    const st = (r.body.streams || [])[0] || {};
+    check('legacy slug -> title search -> VA chain', st.url === 'https://cdn.vidmoly-test.example/hls/qot/1080p.m3u8', st.url);
+  }
+
+  section('GET /stream — caching + fail-soft');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r1 = await getJson(Core.handle, env, '/stream/series/asian:ks-queen-of-tears:1:2.json');
+    const callsAfterFirst = env.__router.calls.length;
+    const r2 = await getJson(Core.handle, env, '/stream/series/asian:ks-queen-of-tears:1:2.json');
+    check('second identical stream request served from cache', env.__router.calls.length === callsAfterFirst, { first: callsAfterFirst, second: env.__router.calls.length });
+    check('cached reply identical', JSON.stringify(r1.body) === JSON.stringify(r2.body));
+    const rEmpty = await getJson(Core.handle, env, '/stream/series/asian:does-not-exist-anywhere.json');
+    check('unresolvable id -> 200 with empty streams (fail-soft)', rEmpty.status === 200 && Array.isArray(rEmpty.body.streams) && rEmpty.body.streams.length === 0, rEmpty.text.slice(0, 120));
   }
 
   // ============================================================

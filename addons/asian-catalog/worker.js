@@ -9,7 +9,12 @@
  *                      ASIAN_PAGE_LIMIT, ASIAN_MAX_PAGES, ASIAN_KEEP_UNMATCHED
  *
  * v3.1.0: POST /relay — host-allowlisted binary relay used by Nuvio plugins
- * (cinejoy) whose device runtimes cannot POST binary / read binary replies.
+ *         (cinejoy) whose device runtimes cannot POST binary / read binary.
+ * v3.2.0: GET /meta/{type}/{id}.json + /stream/{type}/{id}.json — every
+ *         catalog row now resolves to a playable stream (site-coded
+ *         asian:ks|va|ph-<slug> ids resolve directly from the source page;
+ *         tmdb: ids resolve via title search; legacy bare asian: ids are
+ *         searched across all three sites). Routes live in core.js handle().
  */
 
 import './core.js';
