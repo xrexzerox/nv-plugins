@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "3.2.0",
-  "description": "Canonical Nuvio provider collection with consolidated provider work and restored PinoyHub embed visibility.",
+  "version": "3.3.0",
+  "description": "Canonical Nuvio provider collection. v3.3.0: animotvslash rebuilt for the new site player (plyr/jw base64 -> direct headerless HLS), animepahe direct-first fetch + Jikan fallback, cinemacity CF-hardened + nested season-tree fix.",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -521,8 +521,8 @@
     {
       "id": "animotvslash",
       "name": "ANIMOTVSLASH",
-      "description": "Anime streams from animotvslash.org",
-      "version": "4.0.0",
+      "description": "Anime from animotvslash.org - decodes the self-hosted plyr/jw player configs into direct headerless HLS (Videas/Rumble), quality variants, tryembed legacy fallback",
+      "version": "5.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -542,8 +542,8 @@
     {
       "id": "animepahe",
       "name": "AnimePahe",
-      "description": "AnimePahe Sub/Dub streams",
-      "version": "4.0.0",
+      "description": "AnimePahe Sub/Dub streams - direct-first fetching (dead proxy demoted to fallback), Jikan title-search fallback for MAL mapping, kwik unpack",
+      "version": "5.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -562,8 +562,8 @@
     {
       "id": "cinemacity",
       "name": "CinemaCity",
-      "description": "CinemaCity streams",
-      "version": "4.0.0",
+      "description": "CinemaCity (DLE) streams - Cloudflare-challenge aware retries, nested season/episode tree extraction fixed, mobile identity headers",
+      "version": "4.1.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
