@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "3.5.0",
-  "description": "Canonical Nuvio provider collection. v3.3.0: animotvslash rebuilt for the new site player (plyr/jw base64 -> direct headerless HLS), animepahe direct-first fetch + Jikan fallback, cinemacity CF-hardened + nested season-tree fix.",
+  "version": "3.6.0",
+  "description": "Canonical Nuvio provider collection. v3.6.0: asianhub 1.1.0 restores the Dramacool lane (dramacool.uno VidTube embed now resolves via kisskh.asianc.sr/api/resolve/{cid} — old regex saw nothing on variant-B embeds, series returned no streams); asian-catalog addon 2.3.0 adds the Anime Latest Releases catalog (TMDB airing view, pairs with the AnimePahe plugin) + 4th health probe.",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -837,7 +837,7 @@
       "id": "asianhub",
       "name": "AsianHub",
       "description": "Asian movies & series (Korean/Chinese/Japanese/Thai/Taiwan) from MyAsianTV + Dramacool mirrors, direct HLS extraction with search matching",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",

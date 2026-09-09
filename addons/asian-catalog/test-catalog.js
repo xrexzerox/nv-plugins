@@ -175,7 +175,16 @@ const DC_DB = {
 
 // --- TMDB fixtures ---
 
+// search:tv:frieren — mixed payload proving the anime search filter keeps
+// ONLY ja-original titles tagged Animation (16).
+const TMDB_ANIME_SEARCH = [
+  { id: 910001, name: 'Frieren: Beyond Journey\'s End', original_language: 'ja', first_air_date: '2023-09-29', poster_path: '/fr.jpg', overview: 'Elf mage.', vote_average: 9.0, genre_ids: [16, 10765] },
+  { id: 910002, name: 'Frieren Documentary', original_language: 'ja', first_air_date: '2024-01-01', poster_path: '/frd.jpg', overview: 'Not animation.', vote_average: 6.0, genre_ids: [99] },
+  { id: 910003, name: 'Frieren Live Action', original_language: 'en', first_air_date: '2025-01-01', poster_path: '/frl.jpg', overview: 'Not japanese.', vote_average: 5.0, genre_ids: [16] }
+];
+
 const TMDB_RESULTS = {
+  'search:tv:frieren': TMDB_ANIME_SEARCH,
   'search:movie:queen mantis': [{ id: 99901, title: 'Queen Mantis', original_language: 'ko', release_date: '2025-01-01', poster_path: '/qm.jpg', backdrop_path: '/qmb.jpg', overview: 'A mantis queen.', vote_average: 7.4 }],
   'search:movie:love siargao': [{ id: 99906, title: 'Love Siargao', original_language: 'tl', release_date: '2026-02-14', poster_path: '/ls.jpg', overview: 'Island romance.', vote_average: 6.1 }],
   'search:movie:love ngo': [{ id: 99903, title: 'Love Ngo', original_language: 'tl', release_date: '2026-01-01', poster_path: '/ln.jpg', overview: 'Comedy.', vote_average: 5.5 }],
@@ -224,6 +233,17 @@ function tmdbDiscoverTv(sort, page) {
     { id: 800004, name: 'Mousetrap', original_language: 'zh', first_air_date: '2026-08-28', poster_path: '/mt.jpg', overview: 'Mystery.', vote_average: 6.1 },
     { id: 800005, name: 'Club Friday The Series', original_language: 'th', first_air_date: '2026-08-01', poster_path: '/cfs.jpg', overview: 'Anthology.', vote_average: 5.9 },
     { id: 800006, name: 'Beach Boys', original_language: 'tl', first_air_date: '2026-07-15', poster_path: '/bb.jpg', overview: 'Comedy.', vote_average: 5.2 }
+  ];
+}
+
+// anime-latest discover: only reached with with_genres=16 + ja (server-side
+// filtered), so the fixture is already anime-only — newest first.
+function tmdbDiscoverAnime(page) {
+  if (String(page) !== '1') return [];
+  return [
+    { id: 900001, name: 'Frieren: Beyond Journey\'s End Season 2', original_language: 'ja', first_air_date: '2026-09-05', poster_path: '/fr2.jpg', overview: 'Elf mage.', vote_average: 9.1, genre_ids: [16, 10765] },
+    { id: 900002, name: 'One Piece Egghead', original_language: 'ja', first_air_date: '2026-08-30', poster_path: '/op.jpg', overview: 'Pirates.', vote_average: 8.7, genre_ids: [16, 10759] },
+    { id: 900003, name: 'Blue Lock vs U-20 Japan', original_language: 'ja', first_air_date: '2026-08-23', poster_path: '/bl.jpg', overview: 'Soccer.', vote_average: 8.0, genre_ids: [16, 10768] }
   ];
 }
 
@@ -303,6 +323,13 @@ function makeRouter() {
       }
       if (u.indexOf('/discover/tv') !== -1) {
         const page = (u.match(/[?&]page=(\d+)/) || [])[1];
+        // anime-latest discover is self-identifying via with_genres=16
+        if (u.indexOf('with_genres=16') !== -1) {
+          if (u.indexOf('with_original_language=ja') === -1 || u.indexOf('sort_by=first_air_date.desc') === -1) {
+            return respond({ error: 'anime discover must filter ja + newest first' }, 400);
+          }
+          return respond({ results: tmdbDiscoverAnime(page) });
+        }
         return respond({ results: tmdbDiscoverTv('date', page) });
       }
     }
@@ -346,15 +373,17 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     const cfg = Core.makeConfig({});
     const man = Core.manifest(cfg);
     check('addon id', man.id === 'community.asian.catalog', man.id);
-    check('version 2.2.0', man.version === '2.2.0', man.version);
+    check('version 2.3.0', man.version === '2.3.0', man.version);
     check('resources catalog-only', JSON.stringify(man.resources) === '["catalog"]');
     check('idPrefixes tmdb+asian', JSON.stringify(man.idPrefixes) === '["tmdb:","asian:"]', man.idPrefixes);
-    check('9 catalogs', man.catalogs.length === 9, man.catalogs.length);
+    check('10 catalogs', man.catalogs.length === 10, man.catalogs.length);
     const ids = man.catalogs.map(c => c.id);
     check('unique ids', new Set(ids).size === ids.length);
     check('pinoy group first', ids.slice(0, 4).join(',') === 'pinoy-movies,pinoy-series,pinoy-movies-genre,pinoy-series-genre', ids.slice(0, 4));
     check('dramacool group middle', ids.slice(4, 6).join(',') === 'asian-series,asian-series-genre', ids.slice(4, 6));
-    check('tmdb group last', ids.slice(6).join(',') === 'asian-movies,asian-series-trending,asian-movies-genre', ids.slice(6));
+    check('tmdb group then anime last', ids.slice(6).join(',') === 'asian-movies,asian-series-trending,asian-movies-genre,anime-latest', ids.slice(6));
+    const animeDef = Core.catalogDefinitions().find(d => d.id === 'anime-latest');
+    check('anime-latest def: series/tmdb/searchable', !!animeDef && animeDef.type === 'series' && animeDef.source === 'tmdb' && animeDef.extra.some(e => e.name === 'search'), animeDef);
     const typesOk = man.catalogs.every(c => c.type === 'movie' || c.type === 'series');
     check('all catalogs typed movie/series', typesOk);
     const searchOk = man.catalogs.every(c => {
@@ -506,6 +535,26 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     check('search hit /search/movie endpoint', env.__router.calls.some(u => u.indexOf('/search/movie') !== -1));
   }
 
+  section('anime-latest: TMDB airing view (AnimePahe pairing)');
+  {
+    Core.resetCaches();
+    const env = makeEnv();
+    const r = await getJson(Core.handle, env, '/catalog/series/anime-latest.json');
+    check('HTTP 200 with rows', r.status === 200 && r.body.metas.length === 3, r.body.metas && r.body.metas.length);
+    check('rows are tmdb: ids', r.body.metas.every(m => /^tmdb:\d+$/.test(m.id)), r.body.metas.map(m => m.id));
+    check('newest first (Frieren S2 on top)', r.body.metas[0].name === 'Frieren: Beyond Journey\'s End Season 2', r.body.metas[0].name);
+    check('discover used anime filter (genres=16 + ja + newest)', env.__router.calls.some(u =>
+      u.indexOf('with_genres=16') !== -1 &&
+      u.indexOf('with_original_language=ja') !== -1 &&
+      u.indexOf('sort_by=first_air_date.desc') !== -1 &&
+      u.indexOf('include_null_first_air_dates=false') !== -1), env.__router.calls.filter(u => u.indexOf('discover') !== -1));
+
+    Core.resetCaches();
+    const envS = makeEnv();
+    const rs = await getJson(Core.handle, envS, '/catalog/series/anime-latest/search=frieren.json');
+    check('anime search keeps ONLY ja+Animation (1 row)', rs.body.metas.length === 1 && rs.body.metas[0].id === 'tmdb:910001', rs.body.metas.map(m => m.id + ':' + m.name));
+  }
+
   section('ASIAN_KEEP_UNMATCHED=0 drops fallback rows');
   {
     Core.resetCaches();
@@ -551,10 +600,10 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     const env = makeEnv();
     const h = await getJson(Core.handle, env, '/health');
     check('status up', h.body.status === 'up', h.body.status);
-    check('three sources probed', Object.keys(h.body.sources).join(',') === 'pinoymovieshub,dramacool,tmdb');
+    check('four sources probed', Object.keys(h.body.sources).join(',') === 'pinoymovieshub,dramacool,tmdb,anime');
     check('all sources ok with ms+items', Object.keys(h.body.sources).every(k => h.body.sources[k].ok && typeof h.body.sources[k].ms === 'number'));
-    check('healthy hint present', h.body.hints.some(x => /All 3 sources healthy/.test(x)), h.body.hints);
-    check('health echoes version', h.body.version === '2.2.0' && h.body.addon === 'community.asian.catalog');
+    check('healthy hint present', h.body.hints.some(x => /All 4 sources healthy/.test(x)), h.body.hints);
+    check('health echoes version', h.body.version === '2.3.0' && h.body.addon === 'community.asian.catalog');
 
     // same-error-everywhere -> runtime bug hint (not IP blocking)
     Core.resetCaches();
@@ -573,6 +622,7 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
       : prev(url, opts);
     const hp = await getJson(Core.handle, envP, '/health');
     check('partial outage -> degraded', hp.body.status === 'degraded', hp.body.status);
+    check('partial outage hint says only 3/4 healthy', hp.body.hints.some(x => /only 3\/4 sources healthy/.test(x)), hp.body.hints);
     check('dramacool hint present', hp.body.hints.some(x => /dramacool/.test(x)), hp.body.hints);
   }
 
@@ -593,8 +643,9 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
     // html index renders catalog table
     const resHtml = await Core.handle('/', env);
     const html = await resHtml.text();
-    check('index lists all 9 catalogs', (html.match(/\/catalog\//g) || []).length >= 9);
+    check('index lists all 10 catalogs', (html.match(/\/catalog\//g) || []).length >= 10);
     check('index links /health', html.indexOf('/health') !== -1);
+    check('index mentions anime-latest', html.indexOf('anime-latest') !== -1);
   }
 
   section('unit: title cleaning + scoring');
@@ -631,6 +682,8 @@ function stripYear(s) { return String(s).replace(/\s*\(\d{4}\)/g, ''); }
       ['/catalog/series/asian-series-trending.json', m => m.length >= 10, 'tmdb trending rows'],
       ['/catalog/movie/asian-movies-genre/genre=Action.json', m => m.length > 0, 'tmdb genre rows'],
       ['/catalog/movie/asian-movies/search=parasite.json', m => m.length > 0 && m.every(x => /^tmdb:/.test(x.id)), 'tmdb asian-only search'],
+      ['/catalog/series/anime-latest.json', m => m.length > 0 && m.every(x => /^tmdb:/.test(x.id)), 'anime latest rows'],
+      ['/catalog/series/anime-latest/search=frieren.json', m => m.length > 0 && m.every(x => /^tmdb:/.test(x.id)), 'anime search'],
       ['/health', (m, body) => body.status === 'up', 'health up']
     ];
     for (const [url, cond, name] of checks) {

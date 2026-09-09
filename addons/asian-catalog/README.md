@@ -1,9 +1,9 @@
-# Asian Catalog (community.asian.catalog) — v2.2.0
+# Asian Catalog (community.asian.catalog) — v2.3.0
 
 Stremio-protocol **catalog addon** for Nuvio (NuvioMobile + NuvioTVSmart). Organized
-directory of three sources, every catalog searchable, TMDB-mapped rows for playback.
+directory, every catalog searchable, TMDB-mapped rows for playback.
 
-## Organized directory (9 catalogs, grouped by source)
+## Organized directory (10 catalogs, grouped by source)
 
 | # | Catalog | Type | Source | Extras |
 |---|---------|------|--------|--------|
@@ -16,6 +16,7 @@ directory of three sources, every catalog searchable, TMDB-mapped rows for playb
 | 7 | Asian Movies | movie | TMDB | search, skip |
 | 8 | Asian Series Trending | series | TMDB | search, skip |
 | 9 | Asian Movies by Genre | movie | TMDB | genre chips (17), skip |
+| 10 | Anime Latest Releases | series | TMDB (airing view) | search, skip |
 
 - **Pinoy** rows resolve to `tmdb:` ids (posters + metadata). Unmatched titles stay
   visible as `asian:<slug>` fallback rows (site poster) unless `ASIAN_KEEP_UNMATCHED=0`.
@@ -26,6 +27,24 @@ directory of three sources, every catalog searchable, TMDB-mapped rows for playb
 - **TMDB** catalogs are official directories filtered to Asian original languages
   (`ko|zh|ja|th|tl`): popular Asian movies, newest Asian series, genre browses.
   Search filters TMDB results to those languages only.
+- **Anime Latest Releases** mirrors the animepahe latest-release lineup: newest
+  airing Japanese animation first (`with_genres=16&with_original_language=ja&
+  sort_by=first_air_date.desc`). animepahe.pw DDoS-Guard-blocks datacenter IPs, so
+  the worker reads the lineup from the official TMDB directory instead — every row
+  is a `tmdb:` id and plays through the **AnimePahe** Nuvio plugin. Search in this
+  catalog keeps only Japanese-original titles tagged Animation.
+
+## What changed in v2.3.0
+
+- **New catalog: Anime Latest Releases** (`anime-latest`, series) — newest airing
+  Japanese anime, paired with the AnimePahe playback plugin (see the directory
+  notes above). Health now probes 4 sources (`anime` added).
+- AsianHub provider (providers/asianhub.js) bumped to **1.1.0**: dramacool.uno
+  swapped its embed player to "VidTube" (jwplayer+hls.js). Variant-B embeds only
+  carry `https://kisskh.asianc.sr/api/resolve/{cid}` — no inline m3u8 — so the
+  Dramacool lane silently returned nothing for series episodes. The provider now
+  follows the resolve hop (`{"file":".../index.m3u8"}`) and both lanes are
+  live-verified end-to-end (CLOY/Queen of Tears/Parasite/Squid Game, 2026-09-09).
 
 ## Why v2.2.0 exists (fetching fixes)
 
@@ -64,6 +83,7 @@ Examples:
 /catalog/series/asian-series/search=queen of tears.json
 /catalog/series/asian-series-genre/genre=Korean.json
 /catalog/movie/asian-movies-genre/genre=Action&skip=20.json
+/catalog/series/anime-latest/search=frieren.json
 ```
 
 ## Deploy
@@ -91,7 +111,8 @@ Then add `http://<host>:<port>/manifest.json` in Nuvio.
 
 ## Health checks
 
-`GET /health` probes each source (listing parse / REST / TMDB discover) and returns:
+`GET /health` probes each source (listing parse / REST / TMDB discover / anime
+discover) and returns:
 
 ```json
 {
@@ -114,8 +135,8 @@ Nuvio and add this one; both may coexist temporarily (rows would duplicate).
 ## Development
 
 ```
-node test-catalog.js          # 86 offline tests (mock network)
-LIVE=1 node test-catalog.js   # + 10 live checks against the real sources
+node test-catalog.js          # 106 offline tests (mock network)
+LIVE=1 node test-catalog.js   # + 12 live checks against the real sources
 ```
 
 Rebuild the worker bundle after editing `core.js` / `worker.js`:

@@ -1,8 +1,8 @@
 {
   "id": "community.asian.catalog",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "name": "Asian Catalog",
-  "description": "Organized Asian catalogs: Pinoy movies & series (pinoymovieshub), Asian dramas (dramacool.org.es) and Asian movies/series directories by language (TMDB). Titles resolve to TMDB ids for playback.",
+  "description": "Organized Asian catalogs: Pinoy movies & series (pinoymovieshub), Asian dramas (dramacool.org.es), Asian movies/series directories by language (TMDB) and Anime Latest Releases (pairs with the AnimePahe plugin). Titles resolve to TMDB ids for playback.",
   "logo": "https://pinoymovieshub.win/wp-content/uploads/2025/04/cropped-favicon-11-192x192.png",
   "resources": [
     "catalog"
@@ -242,6 +242,20 @@
             "Thriller",
             "War"
           ]
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "anime-latest",
+      "name": "Anime Latest Releases",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
         },
         {
           "name": "skip"

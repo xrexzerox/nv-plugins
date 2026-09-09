@@ -33,11 +33,13 @@
  *     - NuvioTVSmart (JS): catalogRepository.js — same path-segment extras,
  *       honors per-catalog `pageSize` for skip steps, `{metas:[...]}` shape.
  *
- * ORGANIZED DIRECTORY (9 catalogs, grouped by source in the manifest order):
+ * ORGANIZED DIRECTORY (10 catalogs, grouped by source in the manifest order):
  *   Pinoy Movies Hub ....... pinoy-movies, pinoy-series (+ genre browses)
  *   Dramacool .............. asian-series, asian-series-genre
  *   TMDB Asian directory ... asian-movies, asian-series-trending,
  *                            asian-movies-genre
+ *   Anime .................. anime-latest (newest airing Japanese anime;
+ *                            playback pairs with the AnimePahe plugin)
  *   Every catalog supports search; chips (genre/language) render as extras.
  *
  * PAGINATION MODEL
@@ -58,7 +60,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '2.2.0';
+  var VERSION = '2.3.0';
   var ADDON_ID = 'community.asian.catalog';
   var ADDON_NAME = 'Asian Catalog';
 
@@ -820,7 +822,14 @@
         if (data && Array.isArray(data.results)) {
           for (var i = 0; i < data.results.length; i++) {
             var r = data.results[i];
-            if (ASIAN_LANGS.indexOf(r.original_language) === -1) continue;
+            if (def.id === 'anime-latest') {
+              // keep the catalog anime-only: Japanese originals with the
+              // Animation genre tag on the search result
+              if (r.original_language !== 'ja') continue;
+              if (!r.genre_ids || r.genre_ids.indexOf(16) === -1) continue;
+            } else if (ASIAN_LANGS.indexOf(r.original_language) === -1) {
+              continue;
+            }
             var m = tmdbResultToMeta(cfg, r, type);
             if (m) out.push(m);
           }
@@ -831,7 +840,13 @@
 
     url = base + 'discover/' + kind + '?api_key=' + encodeURIComponent(cfg.tmdbKey) +
       '&' + langFilter + '&include_adult=false&page=' + page;
-    if (def.mode === 'genre' && genreSlug) {
+    if (def.id === 'anime-latest') {
+      // newest airing anime: Animation genre + Japanese originals first-seen
+      // on top. Mirrors the animepahe latest-release lineup (see catalogDefinitions).
+      url = base + 'discover/' + kind + '?api_key=' + encodeURIComponent(cfg.tmdbKey) +
+        '&with_genres=16&with_original_language=ja&include_adult=false' +
+        '&sort_by=' + dateField + '.desc&vote_count.gte=3&include_null_first_air_dates=false&page=' + page;
+    } else if (def.mode === 'genre' && genreSlug) {
       var gid = TMDB_MOVIE_GENRES[genreSlug];
       if (!gid) return Promise.resolve([]);
       url += '&with_genres=' + gid;
@@ -1006,6 +1021,18 @@
         mode: 'genre',
         description: 'Browse Asian movies by genre (official TMDB directory)',
         extra: [{ name: 'genre', options: TMDB_GENRE_CHIPS.slice() }, { name: 'skip' }]
+      },
+      // --- Anime (TMDB airing-now view; playback via the AnimePahe plugin) ---
+      // animepahe.pw itself DDoS-Guard-blocks datacenter IPs (403), so the
+      // worker cannot scrape its latest-release feed server-side. The airing
+      // lineup is mirrored through the official TMDB directory instead
+      // (Japanese animation, newest first): every row is a tmdb: id, so
+      // playback goes straight through the AnimePahe Nuvio plugin.
+      {
+        type: 'series', id: 'anime-latest', name: 'Anime Latest Releases', source: 'tmdb',
+        mode: 'archive',
+        description: 'Newest airing anime (Japanese animation), newest first — pairs with the AnimePahe playback plugin',
+        extra: [{ name: 'search' }, { name: 'skip' }]
       }
     ];
   }
@@ -1015,7 +1042,7 @@
       id: ADDON_ID,
       version: VERSION,
       name: ADDON_NAME,
-      description: 'Organized Asian catalogs: Pinoy movies & series (pinoymovieshub), Asian dramas (dramacool.org.es) and Asian movies/series directories by language (TMDB). Titles resolve to TMDB ids for playback.',
+      description: 'Organized Asian catalogs: Pinoy movies & series (pinoymovieshub), Asian dramas (dramacool.org.es), Asian movies/series directories by language (TMDB) and Anime Latest Releases (pairs with the AnimePahe plugin). Titles resolve to TMDB ids for playback.',
       logo: cfg.pinoySite + PINOY_ICON,
       resources: ['catalog'],
       types: ['movie', 'series'],
@@ -1062,6 +1089,12 @@
         return tmdbPageMetas(cfg, def, 1, {}).then(function (metas) {
           return { ok: metas.length > 0, items: metas.length, error: metas.length ? undefined : 'discover returned 0 rows (check TMDB_API_KEY)' };
         });
+      })],
+      ['anime', timeProbe(function () {
+        var def = { type: 'series', id: 'anime-latest', mode: 'archive' };
+        return tmdbPageMetas(cfg, def, 1, {}).then(function (metas) {
+          return { ok: metas.length > 0, items: metas.length, error: metas.length ? undefined : 'anime discover returned 0 rows (check TMDB_API_KEY)' };
+        });
       })]
     ];
     return Promise.all(probes.map(function (p) {
@@ -1077,6 +1110,7 @@
         if (r.ok) okCount++;
         else errors.push(r.error || 'failed');
       }
+      var sourceCount = probes.length;
       // Heuristic from the v2.1.1 incident: every source failing with the
       // IDENTICAL error is a worker-code bug (e.g. an unbound native fetch),
       // not IP blocking.
@@ -1090,11 +1124,12 @@
         if (!sources.pinoymovieshub.ok) hints.push('pinoymovieshub unreachable from this runtime (site down or IP blocked). Pinoy catalogs may be empty; set PINOY_SITE to an alternate mirror if the site moved.');
         if (!sources.dramacool.ok) hints.push('dramacool.org.es REST unreachable. Asian Series catalogs may be empty; set DRAMACOOL_SITE to an alternate mirror.');
         if (!sources.tmdb.ok) hints.push('TMDB discover failed — check TMDB_API_KEY and outbound access; Asian Movies / Trending catalogs may be empty.');
-        if (okCount > 0 && okCount < 3) hints.push('Partial outage: only ' + okCount + '/3 sources healthy — affected catalogs fall back to serve-stale cache.');
+        if (!sources.anime.ok) hints.push('Anime discover failed — check TMDB_API_KEY; the Anime Latest Releases catalog may be empty.');
+        if (okCount > 0 && okCount < sourceCount) hints.push('Partial outage: only ' + okCount + '/' + sourceCount + ' sources healthy — affected catalogs fall back to serve-stale cache.');
       }
-      if (okCount === 3) hints.push('All 3 sources healthy.');
+      if (okCount === sourceCount) hints.push('All ' + sourceCount + ' sources healthy.');
       return {
-        status: okCount === 3 ? 'up' : (okCount > 0 ? 'degraded' : 'down'),
+        status: okCount === sourceCount ? 'up' : (okCount > 0 ? 'degraded' : 'down'),
         addon: ADDON_ID,
         version: VERSION,
         sources: sources,
@@ -1166,11 +1201,12 @@
       '<meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<style>body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 16px;color:#eee;background:#14141b}a{color:#7ab8ff}table{border-collapse:collapse;width:100%}td,th{border:1px solid #333;padding:8px;text-align:left;font-size:14px}code{color:#9ef}h2{margin-top:28px}</style></head><body>' +
       '<h1>' + ADDON_NAME + ' <small>v' + VERSION + '</small></h1>' +
-      '<p>Stremio-protocol catalog addon for Nuvio — organized directory of three sources:</p>' +
+      '<p>Stremio-protocol catalog addon for Nuvio — organized directory:</p>' +
       '<ul>' +
       '<li><b>Pinoy Movies Hub</b> — <a href="' + cfg.pinoySite + '">' + cfg.pinoySite.replace(/^https:\/\//, '') + '</a> (movies, series, genres, search)</li>' +
       '<li><b>Dramacool</b> — <a href="' + cfg.dcSite + '">' + cfg.dcSite.replace(/^https:\/\//, '') + '</a> REST API (Asian dramas: Korean / Chinese / Japanese / Thai)</li>' +
       '<li><b>TMDB</b> — official Asian-language movie &amp; series directories (Korean, Chinese, Japanese, Thai, Filipino)</li>' +
+      '<li><b>Anime Latest Releases</b> — newest airing Japanese anime (TMDB view); playback pairs with the AnimePahe Nuvio plugin</li>' +
       '</ul>' +
       '<p>Add this manifest URL in Nuvio (Settings &rarr; Addons): <b>' + (cfg.__selfUrl || 'https://your-deployment') + '/manifest.json</b></p>' +
       '<p>Health probe: <a href="/health"><code>/health</code></a> (per-source status, latency, hints)</p>' +
@@ -1178,7 +1214,8 @@
       '<h2>Search examples</h2>' +
       '<p><code>/catalog/movie/pinoy-movies/search=hello love again.json</code><br>' +
       '<code>/catalog/series/asian-series/search=queen of tears.json</code><br>' +
-      '<code>/catalog/movie/asian-movies/search=parasite.json</code> (TMDB, asian-language results only)</p>' +
+      '<code>/catalog/movie/asian-movies/search=parasite.json</code> (TMDB, asian-language results only)<br>' +
+      '<code>/catalog/series/anime-latest/search=frieren.json</code> (anime-only search: Japanese originals tagged Animation)</p>' +
       '<h2>Genre / language chips</h2>' +
       '<p><code>/catalog/series/asian-series-genre/genre=Korean.json</code><br>' +
       '<code>/catalog/movie/asian-movies-genre/genre=Action&amp;skip=20.json</code><br>' +

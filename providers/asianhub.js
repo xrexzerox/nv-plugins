@@ -5,7 +5,18 @@
  *           Hong Kong / Indian / other Asian titles, English subs)
  * Language: ko / zh / ja / th / en
  * Author: xrexzerox
- * Version: 1.0.0
+ * Version: 1.1.0
+ *
+ * v1.1.0 (2026-09-09) — "series not fetching" fix:
+ *   dramacool.uno migrated its embed player to "VidTube" (jwplayer+hls.js).
+ *   Variant A still inlines the direct HLS URL in the embed HTML (old regex
+ *   keeps working), but variant B embeds only carry
+ *     var streamUrl = "https://kisskh.asianc.sr/api/resolve/{cid}"
+ *   which the old regex could not see -> the Dramacool lane silently died
+ *   for every episode served through that variant. Added the resolve hop:
+ *   parse {cid} (streamUrl / settings.cid / data-id), GET the resolve
+ *   endpoint, take {"file": ".../hls/{hash}/index.m3u8"}. Both lanes
+ *   live-verified end-to-end on 2026-09-09.
  *
  * EXTRACTION CHAINS (both verified live end-to-end on 2026-09-09):
  *
@@ -516,6 +527,48 @@ function dramacoolLane(tmdb, isSeries, season, episode) {
   return tryEpisodePage(0);
 }
 
+function dramacoolTagStream(m3u8, referer) {
+  return resolveHls(m3u8, referer, "Dramacool").then(function(r) {
+    if (!r) return null;
+    r.source = "Dramacool";
+    r.host = hostOf(r.url);
+    return r;
+  });
+}
+
+/**
+ * Second-chance hop for the VidTube embed variant: the embed page sometimes
+ * has NO inline m3u8 and instead points the player at a resolve endpoint
+ *   var streamUrl = "https://kisskh.asianc.sr/api/resolve/{cid}"
+ * where {cid} also sits in settings.cid / data-id. Hitting the endpoint
+ * returns {"file":"https://kisskh.asianc.sr/hls/{hash}/index.m3u8", ...}.
+ * Verified live 2026-09-09 (episode pages of dramacool.uno).
+ */
+function dramacoolResolveVariant(html, pageUrl) {
+  var ru = html.match(/(https?:\/\/[^"'\s]+?\/api\/resolve\/\d+)/i);
+  var cidm = null;
+  if (!ru) cidm = html.match(/\bcid\b\s*[:=]\s*["']?(\d+)/i);
+  if (!ru && !cidm) cidm = html.match(/data-id=["'](\d+)["']/i);
+  if (!ru && !cidm) return Promise.resolve(null);
+  var resolveUrl = ru
+    ? ru[1]
+    : "https://kisskh.asianc.sr/api/resolve/" + cidm[1];
+  return fetchText(resolveUrl, {
+    headers: { "Referer": pageUrl },
+    timeoutMs: EMBED_TIMEOUT_MS
+  }).then(function(body) {
+    var fm = body.match(/"file"\s*:\s*"([^"]+)"/i) ||
+             body.match(/(https?:\/\/[^"'\s]+?\.m3u8[^"'\s]*)/i);
+    if (!fm) return null;
+    var m3u8 = fm[1]
+      .replace(/\\u002F/gi, "/")
+      .replace(/\\u003D/gi, "=")
+      .replace(/\\u003d/gi, "=")
+      .replace(/\\\//g, "/");
+    return dramacoolTagStream(m3u8, resolveUrl);
+  }).catch(function() { return null; });
+}
+
 function extractDramacoolEmbeds(embedUrls, pageUrl) {
   var jobs = embedUrls.slice(0, 3).map(function(embedUrl) {
     return fetchText(embedUrl, {
@@ -524,14 +577,12 @@ function extractDramacoolEmbeds(embedUrls, pageUrl) {
     }).then(function(html) {
       var m = html.match(/(https?:\/\/[^"'\s]+?\/hls\/[a-z0-9]+\/index\.m3u8)/i);
       if (!m) m = html.match(/(https?:\/\/[^"'\s]+?\.m3u8[^"'\s]*)/i);
-      if (!m) return null;
-      var m3u8 = m[1].replace(/\\u002F/gi, "/").replace(/\\\//g, "/");
-      return resolveHls(m3u8, embedUrl, "Dramacool").then(function(r) {
-        if (!r) return null;
-        r.source = "Dramacool";
-        r.host = hostOf(r.url);
-        return r;
-      });
+      if (m) {
+        var m3u8 = m[1].replace(/\\u002F/gi, "/").replace(/\\\//g, "/");
+        return dramacoolTagStream(m3u8, embedUrl);
+      }
+      // VidTube variant: stream lives behind the resolve endpoint
+      return dramacoolResolveVariant(html, embedUrl);
     }).catch(function() { return null; });
   });
   return Promise.all(jobs).then(function(results) {
