@@ -1,5 +1,18 @@
 /**
- * Miruro - Nuvio provider (v2.1.0)
+ * Miruro - Nuvio provider (v2.2.0)
+ *
+ * v2.2.0 (2026-09-11) "Miruro not fetching stream result" (after the v2.1.0
+ * runtime fix): the remaining device-side killer was the MAPPING phase.
+ * AniList GraphQL is down again (403 "temporarily disabled", verified live);
+ * v2.0.0 tried it SERIALLY (2 x 8s timeout attempts) before Kitsu/Jikan, and
+ * behind Cloudflare a device can hang on it instead of failing fast - so the
+ * app-level stream timeout fired before MegaPlay ever started. Changes:
+ *   - Mapping jobs now run IN PARALLEL (AniList if alive + Kitsu->Jikan);
+ *     first valid mapping wins (~1-2s typical instead of up to 36s worst).
+ *   - AniList circuit breaker: one failure benches it for 15 minutes.
+ *   - Hard 11s deadline on the whole mapping phase (late results still get
+ *     cached and serve the NEXT episode).
+ *   - MegaPlay/TMDB timeouts trimmed (embed/sources 8s, master 7s, tmdb 7s).
  *
  * v2.1.0 (2026-09-11) "still dont fetches stream": the v2.0.0 code worked in
  * every desktop/Node runtime but returned ZERO rows in Nuvio's mobile JS
@@ -512,7 +525,7 @@ function mpFileId(malId, anilistId, epNumber, lang) {
         "User-Agent": COMMON_UA,
         "Accept": "text/html,*/*",
         "Referer": MEGAPLAY_BASE + "/"
-      }, 10000);
+      }, 8000);
     }).then(function (html) {
       // error / decoy pages carry "Error Code: NNN" and no player div
       if (!html || html.indexOf("Error Code:") !== -1) return attempt();
@@ -542,7 +555,7 @@ function mpSources(fileId) {
       "Accept": "application/json",
       "Referer": MEGAPLAY_BASE + "/",
       "X-Requested-With": "XMLHttpRequest"
-    }, 10000);
+    }, 8000);
   }).then(function (data) {
     if (!data || !data.sources || !data.sources.file ||
         !/^https?:\/\//i.test(String(data.sources.file))) return null;
@@ -606,7 +619,7 @@ function megaplayLanes(animeIds, epNumber, makeRow) {
 
 /** Fetch a master m3u8 and return [{url, quality}] variants (max 4, best first). */
 function hlsVariants(masterUrl, referer) {
-  return fetchText(masterUrl, { "User-Agent": COMMON_UA, "Referer": referer }, 9000)
+  return fetchText(masterUrl, { "User-Agent": COMMON_UA, "Referer": referer }, 7000)
     .then(function (master) {
       if (!master || master.indexOf("#EXTM3U") === -1) return [];
       var lines = master.split(/\r?\n/), out = [];
@@ -635,7 +648,7 @@ function hlsVariants(masterUrl, referer) {
 function tmdbInfo(tmdbId, mediaType) {
   var endpoint = mediaType === "tv" ? "tv" : "movie";
   var url = "https://api.themoviedb.org/3/" + endpoint + "/" + tmdbId + "?api_key=" + TMDB_API_KEY;
-  return fetchJson(url, null, 10000).then(function (data) {
+  return fetchJson(url, null, 7000).then(function (data) {
     if (!data) throw new Error("tmdb unreachable");
     var title = mediaType === "tv" ? (data.name || data.original_name) : (data.title || data.original_title);
     var original = mediaType === "tv" ? (data.original_name || data.name) : (data.original_title || data.title);
@@ -670,7 +683,9 @@ function anilistSearchPost(title, year) {
     }).then(function (res) { return res.json(); });
   }
   return new Promise(function (resolve, reject) {
-    var timer = setTimeout(function () { reject(new Error("anilist timeout")); }, 8000);
+    // v2.2.0: 5s (was 8s) - AniList has been unstable for days; a hung
+    // attempt must not eat the device stream deadline.
+    var timer = setTimeout(function () { reject(new Error("anilist timeout")); }, 5000);
     fetch("https://graphql.anilist.co", {
       method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" }, body: body
     }).then(function (res) {
@@ -678,6 +693,16 @@ function anilistSearchPost(title, year) {
       res.json().then(resolve, reject);
     }, function (e) { clearTimeout(timer); reject(e); });
   });
+}
+
+// v2.2.0: AniList circuit breaker - one failure (403 outage / timeout / CF
+// challenge) benches it for 15 minutes so no device request pays for it again.
+var ANILIST_COOLDOWN_MS = 15 * 60 * 1000;
+var _anilistDown = _muState.anilistDown || (_muState.anilistDown = { until: 0 });
+function anilistAvailable() { return Date.now() >= _anilistDown.until; }
+function markAnilistDown() {
+  _anilistDown.until = Date.now() + ANILIST_COOLDOWN_MS;
+  console.log("[Miruro] AniList benched for 15 min");
 }
 
 function anilistFromPost(data) {
@@ -804,6 +829,16 @@ var ORDINALS = { 2: "2nd", 3: "3rd", 4: "4th", 5: "5th", 6: "6th", 7: "7th", 8: 
  * Returns {anilistId, malId, matched: "season"|"base"|null, via}.
  * Results are cached per (tmdbId, isTv, season) with a 6h TTL.
  */
+/** v2.2.0: hard deadline - resolve to null after ms so a hung phase cannot
+    stall the whole provider (late results still flow into caches). */
+function withDeadline(promise, ms) {
+  if (!hasTimers()) return promise;
+  return Promise.race([promise, new Promise(function (resolve) {
+    var t = setTimeout(function () { resolve(null); }, ms);
+    if (typeof t === "object" && typeof t.unref === "function") t.unref();
+  })]);
+}
+
 function mapTMDBToAnime(tmdbId, isTv, info, season) {
   season = parseInt(season || 1, 10);
   var mapKey = (isTv ? "tv" : "mv") + ":" + tmdbId + ":" + season;
@@ -811,29 +846,41 @@ function mapTMDBToAnime(tmdbId, isTv, info, season) {
   if (hit && Date.now() - hit.ts < MAP_CACHE_TTL) {
     return Promise.resolve(hit.res);
   }
-  return mapTMDBToAnimeUncached(tmdbId, isTv, info, season).then(function (res) {
+  var uncapped = mapTMDBToAnimeUncached(tmdbId, isTv, info, season);
+  // late mappings still get cached for the next episode
+  uncapped.then(function (res) {
     if (res) _mapCache[mapKey] = { ts: Date.now(), res: res };
-    return res;
-  });
+  }).catch(function () {});
+  // v2.2.0: the mapping phase can never hold the provider hostage past 11s
+  return withDeadline(uncapped, 11000).catch(function () { return null; });
 }
 
 function mapTMDBToAnimeUncached(tmdbId, isTv, info, season) {
   season = parseInt(season || 1, 10);
   var base = info.original || info.title;
   if (!isTv || season <= 1) {
-    // S1 / movie: AniList first (gives both ids for pipe lane), Kitsu, Jikan
-    return anilistSearchPost(info.title, info.year)
-      .then(anilistFromPost)
-      .catch(function () { return null; })
-      .then(function (r) {
-        if (r) return r;
-        return anilistSearchPost(info.title, null).then(anilistFromPost).catch(function () { return null; });
+    // v2.2.0: S1 / movie mapping jobs run IN PARALLEL and the first valid
+    // result wins. AniList (only when not benched - it has been 403-down)
+    // races against Kitsu->Jikan. Serial fallbacks used to cost up to 36s
+    // when AniList hangs behind CF, which starved the device deadline.
+    var jobs = [];
+    if (anilistAvailable()) {
+      jobs.push(
+        anilistSearchPost(info.title, info.year).then(anilistFromPost)
+          .catch(function (e) { markAnilistDown(); return null; })
+      );
+    }
+    jobs.push(
+      kitsuSearch(info.title, info.year).then(function (k) {
+        return k || jikanSearch(info.title, info.year);
       })
-      .then(function (r) {
-        if (r) return r;
-        return kitsuSearch(info.title, info.year).then(function (k) { return k || jikanSearch(info.title, info.year); });
-      })
-      .then(function (r) { return r ? { anilistId: r.anilistId, malId: r.malId, via: r.via, matched: "base" } : null; });
+    );
+    return Promise.all(jobs).then(function (rs) {
+      for (var i = 0; i < rs.length; i++) {
+        if (rs[i]) return { anilistId: rs[i].anilistId, malId: rs[i].malId, via: rs[i].via, matched: "base" };
+      }
+      return null;
+    });
   }
   // S2+: try a season-specific entry (Jikan/Kitsu handle "... 2nd Season"
   // titles well; AniList search is too fuzzy for seasons). Keep the matrix
@@ -857,9 +904,13 @@ function mapTMDBToAnimeUncached(tmdbId, isTv, info, season) {
     });
     return chain.then(function (r) {
       if (r) return { anilistId: r.anilistId, malId: r.malId, via: r.via, matched: "season" };
-      // season entry not found -> base entry + absolute episode (caller)
-      return anilistSearchPost(info.title, info.year).then(anilistFromPost).catch(function () { return null; })
-        .then(function (r2) {
+      // season entry not found -> base entry + absolute episode (caller);
+      // AniList attempt only when not benched (v2.2.0)
+      var baseJob = anilistAvailable()
+        ? anilistSearchPost(info.title, info.year).then(anilistFromPost)
+            .catch(function () { markAnilistDown(); return null; })
+        : Promise.resolve(null);
+      return baseJob.then(function (r2) {
           if (r2) return { anilistId: r2.anilistId, malId: r2.malId, via: r2.via, matched: "base" };
           return kitsuSearch(info.title, info.year).then(function (k) {
             return k ? { anilistId: k.anilistId, malId: k.malId, via: k.via, matched: "base" } : null;
