@@ -369,43 +369,11 @@ function parseMeta(raw) {
   }
   if (/multi[\s._-]*audio/i.test(text))
     langs.push("Multi-Audio");
-  else if (/dual[\s._-]*audio|dual/i.test(text) && /hindi|hin/i.test(text))
-    langs.push("Dual-Audio");
   else if (/dual[\s._-]*audio/i.test(text))
     langs.push("Dual-Audio");
-  if (has("hindi", "hin"))
-    langs.push("Hindi");
-  if (has("tamil"))
-    langs.push("Tamil");
-  if (has("telugu"))
-    langs.push("Telugu");
-  if (has("malayalam"))
-    langs.push("Malayalam");
-  if (has("kannada"))
-    langs.push("Kannada");
-  if (has("bengali"))
-    langs.push("Bengali");
-  if (has("punjabi"))
-    langs.push("Punjabi");
-  if (has("korean", "kor"))
-    langs.push("Korean");
-  if (has("japanese", "jpn"))
-    langs.push("Japanese");
-  if (has("chinese", "chn"))
-    langs.push("Chinese");
-  if (has("spanish"))
-    langs.push("Spanish");
-  if (has("french"))
-    langs.push("French");
-  if (has("german"))
-    langs.push("German");
-  if (has("italian"))
-    langs.push("Italian");
-  if (has("russian"))
-    langs.push("Russian");
-  if (has("arabic"))
-    langs.push("Arabic");
-  if (has("english", "eng") && !langs.length)
+  if (/\btagalog\b|\bfilipino\b|\btl\b/i.test(text))
+    langs.push("Tagalog");
+  if (has("english", "eng"))
     langs.push("English");
   if (/esub/i.test(text))
     langs.push("ESub");
@@ -534,8 +502,8 @@ function presentStreams(streams, ctx) {
 
 // src/_shared/subs.js
 var STREMIO_SUBS = [
-  "https://opensubtitles.stremio.homes/en|hi|de|ar|tr|es|ta|te|ru|ko/ai-translated=true|from=all|auto-adjustment=true",
-  'https://subsense.nepiraw.com/n0tcjfba-{"languages":["en","hi","ta","es","ar"],"maxSubtitles":10}'
+  "https://opensubtitles.stremio.homes/en|tl/ai-translated=true|from=all|auto-adjustment=true",
+  'https://subsense.nepiraw.com/n0tcjfba-{"languages":["en","tl"],"maxSubtitles":10}'
 ];
 function settings() {
   try {
@@ -647,6 +615,203 @@ function randomKeyHex() {
     out += hex[Math.floor(Math.random() * 16)];
   return out;
 }
+
+// (scrape moved below: v1.3.0 adds token cache, retries, result cache and a
+//  robust multi-shape dec-hexa parser - see extractHexaSources)
+
+// src/hexa/index.js
+var HEXA_TOKEN_TTL = 45 * 60 * 1000;   // enc-hexa tokens live 60 min; re-mint at 45
+var HEXA_RESULT_TTL = 10 * 60 * 1000;
+var HEXA_G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
+var HEXA_STATE = HEXA_G.__HEXA_STATE__ || (HEXA_G.__HEXA_STATE__ = { token: null, tokenTs: 0, cache: {}, inflight: {} });
+
+// Pure-JS Cap.js PoW solver (ES5) for hexa's cap.hexa.su fallback.
+// Protocol reverse-engineered from @cap.js/widget (cdn.jsdelivr.net/npm/@cap.js/widget):
+//   challenge: POST {base}challenge -> { challenge: { c, s, d }, token }
+//   puzzles:   for i in 1..c: salt = prng(token+i, s), target = prng(token+i+"d", d)
+//   solve:     find nonce N (as string) such that sha256hex(salt + N) starts with target
+//   redeem:    POST {base}redeem {token, solutions:[nonces]} -> { success, token }
+var CAP_BASE = "https://cap.hexa.su/15d2cf0395/";
+
+  /* ---- sha256 (compact ES5, hex output) ---- */
+  var K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+  ];
+  function rotr(x, n) { return (x >>> n) | (x << (32 - n)); }
+  function utf8bytes(str) {
+    var out = [], i, c;
+    for (i = 0; i < str.length; i++) {
+      c = str.charCodeAt(i);
+      if (c < 0x80) out.push(c);
+      else if (c < 0x800) { out.push(0xc0 | (c >> 6), 0x80 | (c & 63)); }
+      else if (c < 0xd800 || c >= 0xe000) { out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63)); }
+      else { i++; c = 0x10000 + (((c & 0x3ff) << 10) | (str.charCodeAt(i) & 0x3ff)); out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63)); }
+    }
+    return out;
+  }
+  function sha256hex(msg) {
+    var bytes = utf8bytes(msg);
+    var bitLen = bytes.length * 8;
+    bytes.push(0x80);
+    while (bytes.length % 64 !== 56) bytes.push(0);
+    // 64-bit big-endian length (high 32 bits assumed 0 for our sizes)
+    bytes.push(0, 0, 0, 0, (bitLen >>> 24) & 255, (bitLen >> 16) & 255, (bitLen >> 8) & 255, bitLen & 255);
+    var H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    var w = new Array(64), i, j;
+    for (i = 0; i < bytes.length; i += 64) {
+      for (j = 0; j < 16; j++) {
+        w[j] = (bytes[i + j * 4] << 24) | (bytes[i + j * 4 + 1] << 16) | (bytes[i + j * 4 + 2] << 8) | bytes[i + j * 4 + 3];
+      }
+      for (j = 16; j < 64; j++) {
+        var s0 = rotr(w[j - 15], 7) ^ rotr(w[j - 15], 18) ^ (w[j - 15] >>> 3);
+        var s1 = rotr(w[j - 2], 17) ^ rotr(w[j - 2], 19) ^ (w[j - 2] >>> 10);
+        w[j] = (w[j - 16] + s0 + w[j - 7] + s1) | 0;
+      }
+      var a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+      for (j = 0; j < 64; j++) {
+        var S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+        var ch = (e & f) ^ (~e & g);
+        var t1 = (h + S1 + ch + K[j] + w[j]) | 0;
+        var S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+        var mj = (a & b) ^ (a & c) ^ (b & c);
+        var t2 = (S0 + mj) | 0;
+        h = g; g = f; f = e; e = (d + t1) | 0;
+        d = c; c = b; b = a; a = (t1 + t2) | 0;
+      }
+      H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
+      H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+    }
+    var hex = "";
+    for (i = 0; i < 8; i++) {
+      hex += ("00000000" + ((H[i] >>> 0).toString(16))).slice(-8);
+    }
+    return hex;
+  }
+
+  /* ---- cap.js PRNG (verbatim semantics from the widget's d()) ---- */
+  function fnv1a(str) {
+    var t = 2166136261, i;
+    for (i = 0; i < str.length; i++) {
+      t ^= str.charCodeAt(i);
+      t += (t << 1) + (t << 4) + (t << 7) + (t << 8) + (t << 24);
+    }
+    return t >>> 0;
+  }
+  function prng(seed, len) {
+    var i = fnv1a(seed), s = "";
+    function r() { i ^= i << 13; i ^= i >>> 17; i ^= i << 5; i >>>= 0; return i; }
+    while (s.length < len) {
+      var h = r().toString(16);
+      s += ("00000000" + h).slice(-8);
+    }
+    return s.slice(0, len);
+  }
+
+  function solvePuzzle(salt, target) {
+    // nonce must stringify so that sha256(salt + String(nonce)) starts with target
+    for (var n = 0; n < 40 * 1000 * 1000; n++) {
+      if (sha256hex(salt + n).indexOf(target) === 0) return n;
+    }
+    return null;
+  }
+
+  function solveNativeCap(fetchFn) {
+    var f = fetchFn || fetch;
+    return f(CAP_BASE + "challenge", { method: "POST", headers: { "Content-Type": "application/json" } })
+      .then(function (r) {
+        if (!r.ok) throw new Error("cap challenge HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (ch) {
+        if (!ch || !ch.challenge || !ch.token) throw new Error("cap challenge malformed");
+        var c = ch.challenge, token = ch.token;
+        var solutions = [], i;
+        for (i = 1; i <= (c.c || 0); i++) {
+          var salt = prng(token + i, c.s);
+          var target = prng(token + i + "d", c.d);
+          var n = solvePuzzle(salt, target);
+          if (n === null) throw new Error("cap puzzle unsolved at " + i);
+          solutions.push(String(n));
+        }
+        return f(CAP_BASE + "redeem", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: token, solutions: solutions })
+        }).then(function (r2) { return r2.json(); }).then(function (red) {
+          if (!red || !red.success || !red.token) throw new Error("cap redeem failed");
+          return red.token;
+        });
+      });
+  }
+
+function mintCapToken() {
+  var now = Date.now();
+  if (HEXA_STATE.token && now - HEXA_STATE.tokenTs < HEXA_TOKEN_TTL) {
+    return Promise.resolve(HEXA_STATE.token);
+  }
+  function mintOnce() {
+    return fetchText(MULTI_DECRYPT_API + "/enc-hexa", { "Accept": "application/json" }, 12000).then(function (t) {
+      var tokenJson = null;
+      try { tokenJson = JSON.parse(t); } catch (e) { tokenJson = null; }
+      var token = (tokenJson && tokenJson.result && tokenJson.result.token) || (tokenJson && tokenJson.token) || "";
+      if (!token) throw new Error("no token in enc-hexa response");
+      return token;
+    });
+  }
+  // primary: enc-dec.app mints the cap token; fallback: solve hexa's own
+  // cap.js proof-of-work natively (pure JS sha256, validated vs node crypto).
+  return mintOnce().catch(function () {
+    return new Promise(function (resolve) {
+      if (typeof setTimeout === "function") setTimeout(resolve, 1500); else resolve();
+    }).then(mintOnce);
+  }).catch(function (e) {
+    console.log("[Streamline][hexa] enc-dec mint failed, trying native cap PoW: " + (e && e.message));
+    return solveNativeCap();
+  }).then(function (token) {
+    HEXA_STATE.token = token;
+    HEXA_STATE.tokenTs = Date.now();
+    return token;
+  });
+}
+
+function hexaCacheKey(tmdbId, isTv, season, episode) {
+  return (isTv ? "tv" : "movie") + ":" + tmdbId + ":" + (season || 1) + ":" + (episode || 1);
+}
+
+/** Extract the sources array from the dec-hexa result. The API evolved a few
+ *  shapes: {sources:[{server,url}]}, {sources:{file|url}}, {servers:{...}}, or
+ *  a raw JSON string. */
+function extractHexaSources(result) {
+  var data = result;
+  if (typeof data === "string") {
+    try { data = JSON.parse(data); } catch (e) { return []; }
+  }
+  if (!data) return [];
+  var raw = data.sources || data.servers || null;
+  if (!raw) return [];
+  var list = [];
+  if (Array.isArray(raw)) {
+    raw.forEach(function (r) {
+      if (r && (r.url || r.file)) list.push({ server: r.server || "Hexa", url: r.url || r.file });
+    });
+  } else if (typeof raw === "object") {
+    Object.keys(raw).forEach(function (k) {
+      var r = raw[k];
+      if (!r) return;
+      if (typeof r === "string") { list.push({ server: k, url: r }); return; }
+      if (typeof r === "object" && (r.url || r.file)) list.push({ server: r.server || k, url: r.url || r.file });
+    });
+  }
+  return list;
+}
+
 function scrape(ctx) {
   return __async(this, null, function* () {
     if (!enabled())
@@ -656,10 +821,7 @@ function scrape(ctx) {
     const isTv = ctx.isTv;
     const target = !isTv ? HEXA_API + "/api/tmdb/movie/" + ctx.tmdbId + "/images" : HEXA_API + "/api/tmdb/tv/" + ctx.tmdbId + "/season/" + ctx.season + "/episode/" + ctx.episode + "/images";
     const key = randomKeyHex();
-    const tokenJson = JSON.parse(
-      yield fetchText(MULTI_DECRYPT_API + "/enc-hexa", {}, 6e3)
-    );
-    const token = tokenJson && tokenJson.result && tokenJson.result.token || tokenJson.token || "";
+    const token = yield mintCapToken();
     if (!token)
       return [];
     const encData = yield fetchText(
@@ -669,19 +831,24 @@ function scrape(ctx) {
         Accept: "text/plain",
         "X-Api-Key": key,
         "X-Fingerprint-Lite": "e9136c41504646444",
+        "X-Cap-Token": token,
         Referer: "https://hexa.su/",
-        "X-Cap-Token": token
+        Origin: "https://hexa.su"
       },
       2e4
     );
+    if (!encData || encData.length < 32)
+      return [];
     const dec = yield postJson(
       MULTI_DECRYPT_API + "/dec-hexa",
       { text: encData, key },
       {},
       15e3
     );
-    const sources = dec && dec.result && dec.result.sources || [];
-    return sources.map(function(src) {
+    if (dec && dec.status && dec.status !== 200)
+      return [];
+    const sources = extractHexaSources(dec && dec.result);
+    return sources.map(function (src) {
       if (!src || !src.url)
         return null;
       const server = src.server || "Hexa";
@@ -701,9 +868,29 @@ function scrape(ctx) {
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     try {
-      const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
-      const out = yield withTimeout(scrape(ctx), 2e4, "hexa");
-      return presentStreams(dedupe(yield withSharedSubs(out, ctx)), ctx);
+      const ckey = hexaCacheKey(tmdbId, mediaType === "tv", season, episode);
+      const hit = HEXA_STATE.cache[ckey];
+      if (hit && Date.now() - hit.ts < HEXA_RESULT_TTL)
+        return hit.streams;
+      if (HEXA_STATE.inflight[ckey])
+        return HEXA_STATE.inflight[ckey];
+      const job = __async(this, null, function* () {
+        try {
+          const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
+          const out = yield withTimeout(scrape(ctx), 35e3, "hexa");
+          const rows = presentStreams(dedupe(yield withSharedSubs(out, ctx)), ctx);
+          if (rows.length)
+            HEXA_STATE.cache[ckey] = { ts: Date.now(), streams: rows };
+          return rows;
+        } catch (e) {
+          console.log("[Streamline][hexa] " + (e && e.message));
+          return [];
+        } finally {
+          delete HEXA_STATE.inflight[ckey];
+        }
+      });
+      HEXA_STATE.inflight[ckey] = job;
+      return yield job;
     } catch (e) {
       console.log("[Streamline][hexa] " + (e && e.message));
       return [];
@@ -716,3 +903,211 @@ function onSettings() {
   });
 }
 module.exports = { getStreams, onSettings };
+
+/* ===== nvio post-filter v1.0 (auto-injected) ============================
+   Rules (per user request 2026-09):
+   1. Language gate: only English / Tagalog (Filipino) audio lanes are kept.
+      Streams explicitly tagged with another audio language (hindi, tamil,
+      spanish, arabic, korean, ...) are dropped unless an allowed language
+      is also present (dual/multi audio) or no language is tagged at all.
+      Subtitle-only tokens (ESub, HindiSub, ...) are ignored by the gate.
+   2. Quality gate: unknown/"Auto" resolutions are probed from the HLS
+      master playlist; everything below 720p, CAM/telesync, and still-
+      unknown rows are dropped. Survivors are labeled 720p/1080p/1440p/4K.
+   3. Dedupe: exact URL, then normalized URL (query stripped, torrent
+      info-hash), then identical name+quality rows. A short-TTL global
+      registry also removes the same URL reported by two different
+      providers (cross-provider duplicates).
+   Opt-out: set SCRAPER_SETTINGS.postFilter = false.
+======================================================================== */
+(function () {
+  var PROVIDER = "hexa";
+  var G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
+  function settings() {
+    try { return (G && G.SCRAPER_SETTINGS) || {}; } catch (e) { return {}; }
+  }
+  function hasTimers() { return typeof setTimeout === "function" && typeof clearTimeout === "function"; }
+
+  /* ---------- quality ---------- */
+  function normQ(q) {
+    var s = String(q == null ? "" : q).toLowerCase();
+    if (!s) return "";
+    if (/8k/.test(s)) return "4K";
+    if (/2160|4k|uhd/.test(s)) return "4K";
+    if (/1440/.test(s)) return "1440p";
+    if (/1080|fhd/.test(s)) return "1080p";
+    if (/720/.test(s)) return "720p";
+    if (/480|360|240|\bsd\b/.test(s)) return "CAM";
+    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/.test(s)) return "CAM";
+    return "";
+  }
+  function qFromText(text) {
+    var s = String(text || "");
+    var m = s.match(/(\d{3,4})\s*p/i);
+    if (m) {
+      var n = parseInt(m[1], 10);
+      if (n >= 2100) return "4K";
+      if (n >= 1300) return "1440p";
+      if (n >= 1000) return "1080p";
+      if (n >= 640) return "720p";
+      return "CAM";
+    }
+    if (/\b8k\b/i.test(s) || /2160|4k|uhd/i.test(s)) return "4K";
+    if (/1440p/i.test(s)) return "1440p";
+    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/i.test(s)) return "CAM";
+    if (/480p|360p|240p|\bsd\b|\bdvdrip\b/i.test(s)) return "CAM";
+    if (/\bhd\b/i.test(s)) return "720p";
+    return "";
+  }
+  var qualCache = G.__NV_QUAL_CACHE__ || (G.__NV_QUAL_CACHE__ = {});
+  function probeM3u8(url, headers) {
+    var now = Date.now();
+    var c = qualCache[url];
+    if (c && now - c.t < (c.q ? 15 * 60 * 1000 : 3 * 60 * 1000)) {
+      return Promise.resolve(c.q);
+    }
+    var opts = { headers: Object.assign({}, headers || {}) };
+    var p = fetch(url, opts).then(function (r) {
+      return r.ok ? r.text() : "";
+    }).then(function (t) {
+      var q = "";
+      if (t && t.indexOf("#EXTM3U") !== -1) {
+        var best = 0, re = /RESOLUTION=(\d+)x(\d+)/gi, m;
+        while ((m = re.exec(t)) !== null) {
+          var h = parseInt(m[2], 10);
+          if (h > best) best = h;
+        }
+        if (best >= 2100) q = "4K";
+        else if (best >= 1300) q = "1440p";
+        else if (best >= 1000) q = "1080p";
+        else if (best >= 640) q = "720p";
+        else if (best > 0) q = "CAM";
+      }
+      qualCache[url] = { t: now, q: q };
+      return q;
+    }).catch(function () { qualCache[url] = { t: now, q: "" }; return ""; });
+    if (hasTimers()) {
+      p = Promise.race([p, new Promise(function (res) {
+        var timer = setTimeout(function () { res(""); }, 6000);
+        if (typeof timer === "object" && typeof timer.unref === "function") timer.unref();
+      })]);
+    }
+    return p;
+  }
+
+  /* ---------- language gate ---------- */
+  var BLOCK_RE = new RegExp(
+    "\\b(hindi|hin|tamil|telugu|malayalam|mallu|kannada|bengali|bangla|punjabi|marathi|bhojpuri|gujarati|" +
+    "odia|assamese|nepali|urdu|sinhala|arabic|ara|farsi|persian|turkish|turkce|espanol|spanish|latino|" +
+    "castellano|french|vostfr|german|deutsch|russian|korean|kor|japanese|jpn|chinese|mandarin|cantonese|" +
+    "thai|vietnamese|indonesian|bahasa|portuguese|brasileiro|italian|polish|ukrainian|hebrew|" +
+    "hungarian|romanian|dutch|flemish|greek|czech|swedish|danish|norwegian|finnish|org)\\b", "i");
+  var ALLOW_RE = /\b(english|eng|tagalog|filipino)\b/i;
+  var SUB_RE = /\b[a-z0-9]{0,12}subs?\b/gi;
+  // NOTE: gate runs on the stream TITLE only (release names / labels).
+  // Provider names (e.g. "MallumV") must not trigger the language gate.
+  function langAllowed(titleText) {
+    var t = String(titleText || "").replace(SUB_RE, " ");
+    if (BLOCK_RE.test(t)) return ALLOW_RE.test(t);
+    return true;
+  }
+
+  /* ---------- dedupe ---------- */
+  function normUrl(u) {
+    var s = String(u || "");
+    if (/^magnet:/i.test(s)) {
+      var m = s.match(/btih:([a-z0-9]+)/i);
+      return "m:" + (m ? m[1].toLowerCase() : s.slice(0, 80));
+    }
+    return s.replace(/[#?].*$/, "").replace(/\/+$/, "");
+  }
+  var SEEN = G.__NV_SEEN_URLS__ || (G.__NV_SEEN_URLS__ = {});
+  // SEEN[nu] = { exp: <ts>, owner: <provider> }
+  // - same URL from a DIFFERENT provider within TTL -> dropped (cross-provider dup)
+  // - same provider re-querying its own URL -> allowed (repeat opens must still
+  //   return rows) and its claim is refreshed
+  function claim(nu, now, owner) {
+    if (!nu) return true;
+    var e = SEEN[nu];
+    if (e && e.exp > now && e.owner !== owner) return false;
+    SEEN[nu] = { exp: now + 120000, owner: owner };
+    return true;
+  }
+
+  /* ---------- main ---------- */
+  function rank(q) {
+    if (q === "4K") return 4;
+    if (q === "1440p") return 3.5;
+    if (q === "1080p") return 3;
+    if (q === "720p") return 2;
+    return 0;
+  }
+  function postProcess(list) {
+    var now = Date.now();
+    var kept = [];
+    var probes = [];
+    var rows = [];
+    (list || []).forEach(function (s, i) {
+      if (!s || !s.url) return;
+      if (!langAllowed(s.title)) return;
+      var text = (s.name || "") + " " + (s.title || "");
+      var isMagnet = /^magnet:/i.test(String(s.url));
+      var q = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText(text);
+      var isHlsLike = /m3u8/i.test(String(s.url)) ||
+        (!/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) && /^https?:/i.test(String(s.url)));
+      if (!q && !isMagnet && isHlsLike) {
+        rows.push({ s: s, i: i });
+        probes.push(probeM3u8(String(s.url), s.headers));
+      } else {
+        rows.push({ s: s, i: i });
+        probes.push(Promise.resolve(q));
+      }
+    });
+    return Promise.all(probes).then(function (qs) {
+      var ranked = [];
+      rows.forEach(function (row, k) {
+        var q = qs[k];
+        if (!q) return; // unknown resolution -> removed
+        if (q === "CAM") return; // cam / sd / sub-720 -> removed
+        row.s.quality = q;
+        ranked.push({ s: row.s, i: row.i, q: q });
+      });
+      // best first so dedupe keeps the strongest duplicate (stable)
+      ranked.sort(function (a, b) {
+        var r = rank(b.q) - rank(a.q);
+        if (r !== 0) return r;
+        return a.i - b.i;
+      });
+      var seenLocal = {}, out = [];
+      ranked.forEach(function (row) {
+        var s = row.s;
+        var nu = normUrl(s.url);
+        if (seenLocal[nu]) return;
+        if (!claim(nu, now, PROVIDER)) return; // already reported by a different provider
+        seenLocal[nu] = 1;
+        out.push(s);
+      });
+      return out.slice(0, 40);
+    }).catch(function () { return (list || []).slice(0, 40); });
+  }
+
+  var __orig = null;
+  try { __orig = module.exports && module.exports.getStreams; } catch (e) { __orig = null; }
+  if (typeof __orig === "function") {
+    module.exports.getStreams = function () {
+      var args = Array.prototype.slice.call(arguments), self = this;
+      function finish(v) {
+        if (settings().postFilter === false) return v;
+        try { return postProcess(Array.isArray(v) ? v : []); }
+        catch (e) { return Array.isArray(v) ? v : []; }
+      }
+      try {
+        var r = __orig.apply(self, args);
+        if (r && typeof r.then === "function") {
+          return r.then(function (v) { return finish(v); }, function () { return []; });
+        }
+        return finish(r);
+      } catch (e) { return Promise.resolve([]); }
+    };
+  }
+})();

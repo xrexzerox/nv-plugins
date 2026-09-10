@@ -19,9 +19,136 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
-const axios = require("axios");
-const cheerio = require("cheerio");
-const { URL } = require("url");
+// v1.1.0: Nuvio runtimes do not bundle npm modules - the old top-level
+// require("axios")/require("cheerio") threw at load time and the whole
+// provider silently died. Real modules are used when present (node/tests);
+// otherwise compact fetch-based shims keep the extractor alive everywhere.
+var axios;
+try { axios = require("axios"); } catch (e) {
+  axios = {
+    get: function (url, cfg) {
+      var opts = { headers: (cfg && cfg.headers) || {}, method: "GET" };
+      return fetch(url, opts).then(function (res) {
+        return res.text().then(function (text) {
+          var data = text;
+          try {
+            var t = String(text).replace(/^\uFEFF/, "").trim();
+            if (t && (t.charAt(0) === "{" || t.charAt(0) === "[")) data = JSON.parse(t);
+          } catch (e2) { /* keep text */ }
+          return { status: res.status, data: data, headers: res.headers };
+        });
+      });
+    }
+  };
+}
+var cheerio;
+try { cheerio = require("cheerio"); } catch (e) {
+  // Mini cheerio: enough selector/attr/text surface for the FMovies-family
+  // pages this provider scrapes (.flw-item grids, a.link-item server lists).
+  cheerio = (function () {
+    function parseAttrs(s) {
+      var attrs = {}, re = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+))/g, m;
+      while ((m = re.exec(s)) !== null) attrs[m[1].toLowerCase()] = m[3] != null ? m[3] : (m[4] != null ? m[4] : m[5]);
+      return attrs;
+    }
+    function makeEl(tag, attrs, parent) {
+      return { __isEl: true, tag: String(tag || "").toLowerCase(), attrs: attrs || {}, children: [], parent: parent || null, text: "" };
+    }
+    function parseHtml(html) {
+      var root = makeEl("#root", {}, null);
+      var stack = [root];
+      var re = /<\/([a-zA-Z][a-zA-Z0-9]*)\s*>|<([a-zA-Z][a-zA-Z0-9]*)((?:\s+[^<>]*?)?)\/?>|([^<]+)/g, m;
+      while ((m = re.exec(html)) !== null) {
+        if (m[1]) { // close tag
+          var cur = stack[stack.length - 1];
+          if (cur.tag === m[1].toLowerCase() && stack.length > 1) stack.pop();
+          continue;
+        }
+        if (m[2]) { // open/self-close tag
+          var el = makeEl(m[2], parseAttrs(m[3] || ""), stack[stack.length - 1]);
+          stack[stack.length - 1].children.push(el);
+          var selfClose = /\/\s*>\s*$/.test(m[0]);
+          if (!selfClose && !/^(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)$/.test(el.tag)) {
+            stack.push(el);
+          }
+          continue;
+        }
+        if (m[4]) { // text node
+          var top = stack[stack.length - 1];
+          if (top.text) top.text += " ";
+          top.text += m[4].replace(/\s+/g, " ");
+        }
+      }
+      return root;
+    }
+    function elText(el) {
+      var out = el.text || "";
+      for (var i = 0; i < el.children.length; i++) out += elText(el.children[i]);
+      return out.replace(/\s+/g, " ").trim();
+    }
+    function matchesSimple(el, tok) {
+      var m = tok.match(/^([a-zA-Z][a-zA-Z0-9-]*)?((?:[.#][a-zA-Z0-9_-]+)*)$/);
+      if (!m) return false;
+      if (m[1] && el.tag !== m[1].toLowerCase()) return false;
+      var classes = m[2] ? m[2].match(/[.#][a-zA-Z0-9_-]+/g) || [] : [];
+      var classList = String(el.attrs.class || el.attrs.Class || "").split(/\s+/);
+      for (var i = 0; i < classes.length; i++) {
+        var t = classes[i];
+        if (t.charAt(0) === ".") { if (classList.indexOf(t.slice(1)) === -1) return false; }
+        else if (t.charAt(0) === "#") { if (el.attrs.id !== t.slice(1)) return false; }
+      }
+      return true;
+    }
+    function matchSelector(el, selector) {
+      // supports "tag.class > child" and "tag .descendant" chains
+      var parts = selector.split(/\s*>\s*|\s+/).filter(Boolean);
+      var seps = selector.match(/\s*>\s*|\s+/g) || [];
+      function walk(node, idx) {
+        if (idx === parts.length) return [node];
+        var out = [];
+        var wantChild = seps[idx] && seps[idx].indexOf(">") !== -1;
+        for (var i = 0; i < node.children.length; i++) {
+          var ch = node.children[i];
+          if (matchesSimple(ch, parts[idx])) {
+            out = out.concat(walk(ch, idx + 1));
+          } else if (!wantChild) {
+            out = out.concat(walk(ch, idx)); // descendant: keep looking deeper
+          }
+        }
+        return out;
+      }
+      // "wantChild" semantics above only skip the matched node itself; deep
+      // descendant search is handled by recursing without consuming the part.
+      return walk(el, 0);
+    }
+    function wrap(list) {
+      return {
+        each: function (fn) { list.forEach(function (el, i) { fn(i, el); }); return this; },
+        attr: function (name) { return list.length ? (list[0].attrs[String(name).toLowerCase()] != null ? list[0].attrs[String(name).toLowerCase()] : undefined) : undefined; },
+        text: function () { return list.map(elText).join(" ").trim(); },
+        find: function (sel) { var out = []; list.forEach(function (el) { out = out.concat(matchSelector(el, sel)); }); return wrap(out); },
+        first: function () { return wrap(list.slice(0, 1)); },
+        length: list.length
+      };
+    }
+    function query(root, selector) {
+      return wrap(matchSelector(root, String(selector).trim()));
+    }
+    return {
+      load: function (html) {
+        var root = parseHtml(String(html || ""));
+        var $ = function (sel) {
+          if (sel && sel.__isEl) return wrap([sel]);
+          return query(root, sel);
+        };
+        return $;
+      }
+    };
+  })();
+}
+var URL_;
+try { URL_ = require("url").URL; } catch (e) { URL_ = (typeof globalThis !== "undefined" && globalThis.URL) || (typeof URL === "function" ? URL : null); }
+const URL = URL_;
 class MyFlixerExtractor {
   constructor() {
     this.mainUrl = "https://watch32.sx";
@@ -394,4 +521,277 @@ Link ${index + 1}:`);
     process.exit(1);
   });
 }
-module.exports = MyFlixerExtractor;
+// v1.1.0 adapter: Nuvio's manifest contract needs a getStreams(tmdbId, ...)
+// function - the file previously exported the bare extractor class (and the
+// npm requires above crashed load), so the provider never produced rows.
+var MYFLIXER_TMDB_KEY = "439c478a771f35c05022f9feabcca01c";
+function myflixerTmdbTitle(tmdbId, mediaType) {
+  var endpoint = mediaType === "tv" ? "tv" : "movie";
+  var url = "https://api.themoviedb.org/3/" + endpoint + "/" + encodeURIComponent(tmdbId) +
+    "?api_key=" + MYFLIXER_TMDB_KEY;
+  return fetch(url, { headers: { Accept: "application/json" } })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      if (!data) return "";
+      return (mediaType === "tv" ? (data.name || data.original_name) : (data.title || data.original_title)) || "";
+    })
+    .catch(function () { return ""; });
+}
+
+if (typeof MyFlixerExtractor !== "undefined") {
+  MyFlixerExtractor.prototype.getStreams = function (tmdbId, mediaType, season, episode) {
+    var self = this;
+    var isTv = mediaType === "tv" || mediaType === "series" || mediaType === "tvshow";
+    return myflixerTmdbTitle(tmdbId, isTv ? "tv" : "movie").then(function (title) {
+      if (!title) return Promise.resolve([]);
+      return self.extractM3u8Links(title, isTv ? (parseInt(episode, 10) || 1) : null, isTv ? (parseInt(season, 10) || 1) : null);
+    }).then(function (links) {
+      var rows = [];
+      (links || []).forEach(function (link) {
+        if (!link || !link.m3u8Url) return;
+        var src = String(link.source || "MyFlixer").charAt(0).toUpperCase() + String(link.source || "MyFlixer").slice(1);
+        var label = title;
+        if (isTv && (season || episode)) {
+          label += " S" + String(season || 1).padStart(2, "0") + "E" + String(episode || 1).padStart(2, "0");
+        }
+        var emitted = false;
+        (link.qualities || []).forEach(function (q) {
+          if (!q || !q.url) return;
+          emitted = true;
+          rows.push({
+            name: "MyFlixer | " + src + " " + (q.quality || "Auto"),
+            title: label + " | " + (q.quality || "Auto") + " | MyFlixer " + src,
+            url: q.url,
+            quality: q.quality || "Auto",
+            headers: link.headers || {}
+          });
+        });
+        if (!emitted) {
+          rows.push({
+            name: "MyFlixer | " + src,
+            title: label + " | Auto | MyFlixer " + src,
+            url: link.m3u8Url,
+            quality: "Auto",
+            headers: link.headers || {}
+          });
+        }
+      });
+      return rows;
+    }).catch(function () { return []; });
+  };
+  module.exports = { getStreams: function (tmdbId, mediaType, season, episode) {
+    try {
+      return Promise.resolve(new MyFlixerExtractor().getStreams(tmdbId, mediaType, season, episode));
+    } catch (e) { return Promise.resolve([]); }
+  }, onSettings: function () { return Promise.resolve([]); } };
+} else {
+  module.exports = MyFlixerExtractor;
+}
+
+/* ===== nvio post-filter v1.0 (auto-injected) ============================
+   Rules (per user request 2026-09):
+   1. Language gate: only English / Tagalog (Filipino) audio lanes are kept.
+      Streams explicitly tagged with another audio language (hindi, tamil,
+      spanish, arabic, korean, ...) are dropped unless an allowed language
+      is also present (dual/multi audio) or no language is tagged at all.
+      Subtitle-only tokens (ESub, HindiSub, ...) are ignored by the gate.
+   2. Quality gate: unknown/"Auto" resolutions are probed from the HLS
+      master playlist; everything below 720p, CAM/telesync, and still-
+      unknown rows are dropped. Survivors are labeled 720p/1080p/1440p/4K.
+   3. Dedupe: exact URL, then normalized URL (query stripped, torrent
+      info-hash), then identical name+quality rows. A short-TTL global
+      registry also removes the same URL reported by two different
+      providers (cross-provider duplicates).
+   Opt-out: set SCRAPER_SETTINGS.postFilter = false.
+======================================================================== */
+(function () {
+  var PROVIDER = "myflixer";
+  var G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
+  function settings() {
+    try { return (G && G.SCRAPER_SETTINGS) || {}; } catch (e) { return {}; }
+  }
+  function hasTimers() { return typeof setTimeout === "function" && typeof clearTimeout === "function"; }
+
+  /* ---------- quality ---------- */
+  function normQ(q) {
+    var s = String(q == null ? "" : q).toLowerCase();
+    if (!s) return "";
+    if (/8k/.test(s)) return "4K";
+    if (/2160|4k|uhd/.test(s)) return "4K";
+    if (/1440/.test(s)) return "1440p";
+    if (/1080|fhd/.test(s)) return "1080p";
+    if (/720/.test(s)) return "720p";
+    if (/480|360|240|\bsd\b/.test(s)) return "CAM";
+    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/.test(s)) return "CAM";
+    return "";
+  }
+  function qFromText(text) {
+    var s = String(text || "");
+    var m = s.match(/(\d{3,4})\s*p/i);
+    if (m) {
+      var n = parseInt(m[1], 10);
+      if (n >= 2100) return "4K";
+      if (n >= 1300) return "1440p";
+      if (n >= 1000) return "1080p";
+      if (n >= 640) return "720p";
+      return "CAM";
+    }
+    if (/\b8k\b/i.test(s) || /2160|4k|uhd/i.test(s)) return "4K";
+    if (/1440p/i.test(s)) return "1440p";
+    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/i.test(s)) return "CAM";
+    if (/480p|360p|240p|\bsd\b|\bdvdrip\b/i.test(s)) return "CAM";
+    if (/\bhd\b/i.test(s)) return "720p";
+    return "";
+  }
+  var qualCache = G.__NV_QUAL_CACHE__ || (G.__NV_QUAL_CACHE__ = {});
+  function probeM3u8(url, headers) {
+    var now = Date.now();
+    var c = qualCache[url];
+    if (c && now - c.t < (c.q ? 15 * 60 * 1000 : 3 * 60 * 1000)) {
+      return Promise.resolve(c.q);
+    }
+    var opts = { headers: Object.assign({}, headers || {}) };
+    var p = fetch(url, opts).then(function (r) {
+      return r.ok ? r.text() : "";
+    }).then(function (t) {
+      var q = "";
+      if (t && t.indexOf("#EXTM3U") !== -1) {
+        var best = 0, re = /RESOLUTION=(\d+)x(\d+)/gi, m;
+        while ((m = re.exec(t)) !== null) {
+          var h = parseInt(m[2], 10);
+          if (h > best) best = h;
+        }
+        if (best >= 2100) q = "4K";
+        else if (best >= 1300) q = "1440p";
+        else if (best >= 1000) q = "1080p";
+        else if (best >= 640) q = "720p";
+        else if (best > 0) q = "CAM";
+      }
+      qualCache[url] = { t: now, q: q };
+      return q;
+    }).catch(function () { qualCache[url] = { t: now, q: "" }; return ""; });
+    if (hasTimers()) {
+      p = Promise.race([p, new Promise(function (res) {
+        var timer = setTimeout(function () { res(""); }, 6000);
+        if (typeof timer === "object" && typeof timer.unref === "function") timer.unref();
+      })]);
+    }
+    return p;
+  }
+
+  /* ---------- language gate ---------- */
+  var BLOCK_RE = new RegExp(
+    "\\b(hindi|hin|tamil|telugu|malayalam|mallu|kannada|bengali|bangla|punjabi|marathi|bhojpuri|gujarati|" +
+    "odia|assamese|nepali|urdu|sinhala|arabic|ara|farsi|persian|turkish|turkce|espanol|spanish|latino|" +
+    "castellano|french|vostfr|german|deutsch|russian|korean|kor|japanese|jpn|chinese|mandarin|cantonese|" +
+    "thai|vietnamese|indonesian|bahasa|portuguese|brasileiro|italian|polish|ukrainian|hebrew|" +
+    "hungarian|romanian|dutch|flemish|greek|czech|swedish|danish|norwegian|finnish|org)\\b", "i");
+  var ALLOW_RE = /\b(english|eng|tagalog|filipino)\b/i;
+  var SUB_RE = /\b[a-z0-9]{0,12}subs?\b/gi;
+  // NOTE: gate runs on the stream TITLE only (release names / labels).
+  // Provider names (e.g. "MallumV") must not trigger the language gate.
+  function langAllowed(titleText) {
+    var t = String(titleText || "").replace(SUB_RE, " ");
+    if (BLOCK_RE.test(t)) return ALLOW_RE.test(t);
+    return true;
+  }
+
+  /* ---------- dedupe ---------- */
+  function normUrl(u) {
+    var s = String(u || "");
+    if (/^magnet:/i.test(s)) {
+      var m = s.match(/btih:([a-z0-9]+)/i);
+      return "m:" + (m ? m[1].toLowerCase() : s.slice(0, 80));
+    }
+    return s.replace(/[#?].*$/, "").replace(/\/+$/, "");
+  }
+  var SEEN = G.__NV_SEEN_URLS__ || (G.__NV_SEEN_URLS__ = {});
+  // SEEN[nu] = { exp: <ts>, owner: <provider> }
+  // - same URL from a DIFFERENT provider within TTL -> dropped (cross-provider dup)
+  // - same provider re-querying its own URL -> allowed (repeat opens must still
+  //   return rows) and its claim is refreshed
+  function claim(nu, now, owner) {
+    if (!nu) return true;
+    var e = SEEN[nu];
+    if (e && e.exp > now && e.owner !== owner) return false;
+    SEEN[nu] = { exp: now + 120000, owner: owner };
+    return true;
+  }
+
+  /* ---------- main ---------- */
+  function rank(q) {
+    if (q === "4K") return 4;
+    if (q === "1440p") return 3.5;
+    if (q === "1080p") return 3;
+    if (q === "720p") return 2;
+    return 0;
+  }
+  function postProcess(list) {
+    var now = Date.now();
+    var kept = [];
+    var probes = [];
+    var rows = [];
+    (list || []).forEach(function (s, i) {
+      if (!s || !s.url) return;
+      if (!langAllowed(s.title)) return;
+      var text = (s.name || "") + " " + (s.title || "");
+      var isMagnet = /^magnet:/i.test(String(s.url));
+      var q = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText(text);
+      var isHlsLike = /m3u8/i.test(String(s.url)) ||
+        (!/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) && /^https?:/i.test(String(s.url)));
+      if (!q && !isMagnet && isHlsLike) {
+        rows.push({ s: s, i: i });
+        probes.push(probeM3u8(String(s.url), s.headers));
+      } else {
+        rows.push({ s: s, i: i });
+        probes.push(Promise.resolve(q));
+      }
+    });
+    return Promise.all(probes).then(function (qs) {
+      var ranked = [];
+      rows.forEach(function (row, k) {
+        var q = qs[k];
+        if (!q) return; // unknown resolution -> removed
+        if (q === "CAM") return; // cam / sd / sub-720 -> removed
+        row.s.quality = q;
+        ranked.push({ s: row.s, i: row.i, q: q });
+      });
+      // best first so dedupe keeps the strongest duplicate (stable)
+      ranked.sort(function (a, b) {
+        var r = rank(b.q) - rank(a.q);
+        if (r !== 0) return r;
+        return a.i - b.i;
+      });
+      var seenLocal = {}, out = [];
+      ranked.forEach(function (row) {
+        var s = row.s;
+        var nu = normUrl(s.url);
+        if (seenLocal[nu]) return;
+        if (!claim(nu, now, PROVIDER)) return; // already reported by a different provider
+        seenLocal[nu] = 1;
+        out.push(s);
+      });
+      return out.slice(0, 40);
+    }).catch(function () { return (list || []).slice(0, 40); });
+  }
+
+  var __orig = null;
+  try { __orig = module.exports && module.exports.getStreams; } catch (e) { __orig = null; }
+  if (typeof __orig === "function") {
+    module.exports.getStreams = function () {
+      var args = Array.prototype.slice.call(arguments), self = this;
+      function finish(v) {
+        if (settings().postFilter === false) return v;
+        try { return postProcess(Array.isArray(v) ? v : []); }
+        catch (e) { return Array.isArray(v) ? v : []; }
+      }
+      try {
+        var r = __orig.apply(self, args);
+        if (r && typeof r.then === "function") {
+          return r.then(function (v) { return finish(v); }, function () { return []; });
+        }
+        return finish(r);
+      } catch (e) { return Promise.resolve([]); }
+    };
+  }
+})();
