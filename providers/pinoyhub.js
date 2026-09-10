@@ -139,7 +139,7 @@
  *    episode) with legacy 3-arg remap kept.
  */
 
-var PROVIDER_NAME = "PinoyMoviesHub";
+var PROVIDER_NAME = "PHUB";
 var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 var BASE_URL = "https://pinoymovieshub.win";
 
@@ -856,7 +856,7 @@ function extractPlayerOptions(html) {
       options.push({ post: post2, type: type2, nume: nume2, label: "" });
     }
   }
-  console.log("[PinoyMoviesHub] Found", options.length, "player option(s)");
+  console.log("[PHUB] Found", options.length, "player option(s)");
   return options;
 }
 
@@ -958,7 +958,7 @@ function extractMixdropDirect(embedUrl) {
       };
     });
   }).catch(function(e) {
-    console.log("[PinoyMoviesHub] mixdrop extract failed:", e.message);
+    console.log("[PHUB] mixdrop extract failed:", e.message);
     return null;
   });
 }
@@ -1066,7 +1066,7 @@ function extractByseDirect(embedUrl) {
       isHls: isHls
     };
   }).catch(function(e) {
-    console.log("[PinoyMoviesHub] byse extract failed:", e.message);
+    console.log("[PHUB] byse extract failed:", e.message);
     return null;
   });
 }
@@ -1162,11 +1162,11 @@ function extractDoodDirect(embedUrl) {
     if (titleMatch) qualityHint = titleMatch[1];
 
     if (doodIsGated(html)) {
-      console.log("[PinoyMoviesHub] dood captcha-gated, skipping (" + host + ")");
+      console.log("[PHUB] dood captcha-gated, skipping (" + host + ")");
       return null;
     }
     if (doodIsDead(html)) {
-      console.log("[PinoyMoviesHub] dood video dead, skipping (" + host + ")");
+      console.log("[PHUB] dood video dead, skipping (" + host + ")");
       return null;
     }
 
@@ -1186,7 +1186,7 @@ function extractDoodDirect(embedUrl) {
       return doodFetchDirect(dlHost, md5Path2, "https://" + dlHost + "/d/" + embedId, qualityHint);
     });
   }).catch(function(e) {
-    console.log("[PinoyMoviesHub] dood extract failed (" + embedUrl + "):", e.message);
+    console.log("[PHUB] dood extract failed (" + embedUrl + "):", e.message);
     return null;
   });
 }
@@ -1298,7 +1298,7 @@ function resolvePageUrlDirect(slug, mediaType, season, episode) {
 function extractStreamsFromPage(page, displayTitle, meta) {
   var html = page && page.html;
   if (!html) {
-    console.log("[PinoyMoviesHub] No PMH page/players found for \"" + displayTitle + "\"");
+    console.log("[PHUB] No PMH page/players found for \"" + displayTitle + "\"");
     return [];
   }
   var options = extractPlayerOptions(html);
@@ -1363,7 +1363,7 @@ function extractStreamsFromPage(page, displayTitle, meta) {
       return 0;
     });
     for (i = 0; i < streams.length; i++) delete streams[i]._hostPriority;
-    console.log("[PinoyMoviesHub] Returning", streams.length, "stream(s)");
+    console.log("[PHUB] Returning", streams.length, "stream(s)");
     return streams;
   });
 }
@@ -1403,7 +1403,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
   if (season !== "") season = String(parseInt(season, 10));
   if (episode !== "") episode = String(parseInt(episode, 10));
 
-  console.log("[PinoyMoviesHub] === START tmdbId=" + tmdbId + " type=" + mt + " S" + season + "E" + episode + " ===");
+  console.log("[PHUB] === START tmdbId=" + tmdbId + " type=" + mt + " S" + season + "E" + episode + " ===");
 
   if (!tmdbId) return Promise.resolve([]);
 
@@ -1412,16 +1412,16 @@ function getStreams(tmdbId, mediaType, season, episode) {
   // the plugin's own TMDB key and continue with the numeric id; the found
   // type pins the movie/tv branch deterministically.
   if (/^tt[0-9]+/i.test(tmdbId)) {
-    console.log("[PinoyMoviesHub] IMDb id " + tmdbId + " -> resolving via TMDB find");
+    console.log("[PHUB] IMDb id " + tmdbId + " -> resolving via TMDB find");
     return resolveImdbToTmdb(tmdbId).then(function(hit) {
       if (!hit) {
-        console.log("[PinoyMoviesHub] IMDb id not found on TMDB -> no streams");
+        console.log("[PHUB] IMDb id not found on TMDB -> no streams");
         return [];
       }
-      console.log("[PinoyMoviesHub] resolved " + tmdbId + " -> tmdb " + hit.tmdbId + " (" + hit.type + ") " + hit.title);
+      console.log("[PHUB] resolved " + tmdbId + " -> tmdb " + hit.tmdbId + " (" + hit.type + ") " + hit.title);
       return getStreamsCore(hit.tmdbId, hit.type, season, episode);
     }).catch(function(err) {
-      console.error("[PinoyMoviesHub] imdb resolve error:", (err && err.message) || err);
+      console.error("[PHUB] imdb resolve error:", (err && err.message) || err);
       return [];
     });
   }
@@ -1442,14 +1442,14 @@ function getStreamsCore(tmdbId, mt, season, episode) {
   var catalogId = parseAsianCatalogId(tmdbId);
   if (catalogId) {
     if (catalogId.source === "ks" || catalogId.source === "va") {
-      console.log("[PinoyMoviesHub] asian:" + catalogId.source + "- id -> handled by AsianHub plugin, skipping");
+      console.log("[PHUB] asian:" + catalogId.source + "- id -> handled by AsianHub plugin, skipping");
       return Promise.resolve([]);
     }
     // v5.7.0: kh- (KissKH lane of AsianHub) and an- (AnimeTVSlash plugin)
     // rows are not this plugin's content - skipping avoids false-matching
     // an unrelated pinoy title for drama/anime ids.
     if (catalogId.source === "kh" || catalogId.source === "an") {
-      console.log("[PinoyMoviesHub] asian:" + catalogId.source + "- id -> handled by another plugin, skipping");
+      console.log("[PHUB] asian:" + catalogId.source + "- id -> handled by another plugin, skipping");
       return Promise.resolve([]);
     }
     var catIsSeries = mt === "tv" || !!(season && episode);
@@ -1459,7 +1459,7 @@ function getStreamsCore(tmdbId, mt, season, episode) {
     var catDisplay = catIsSeries
       ? catalogId.title + " S" + season + "E" + episode
       : catalogId.title;
-    console.log("[PinoyMoviesHub] catalog fallback id -> title=\"" + catalogId.title + "\" type=" + catType + " source=" + (catalogId.source || "generic"));
+    console.log("[PHUB] catalog fallback id -> title=\"" + catalogId.title + "\" type=" + catType + " source=" + (catalogId.source || "generic"));
     if (catIsSeries && (!season || !episode)) {
       // v5.6.0: the app CAN pass undefined season/episode for shows
       // (show-level play, local-id catalog paths — all nullable Int? with
@@ -1467,7 +1467,7 @@ function getStreamsCore(tmdbId, mt, season, episode) {
       // scraper test runner does, instead of returning an empty row.
       season = season || "1";
       episode = episode || "1";
-      console.log("[PinoyMoviesHub] no season/episode from app -> defaulting S1E1");
+      console.log("[PHUB] no season/episode from app -> defaulting S1E1");
       catMeta.season = season;
       catMeta.episode = episode;
       catDisplay = catalogId.title + " S" + season + "E" + episode;
@@ -1475,15 +1475,15 @@ function getStreamsCore(tmdbId, mt, season, episode) {
     var directPageP = resolvePageUrlDirect(catalogId.slug, catType, season, episode);
     return directPageP.then(function(page) {
       if (page && page.html) {
-        console.log("[PinoyMoviesHub] direct pmh- hit -> " + page.url);
+        console.log("[PHUB] direct pmh- hit -> " + page.url);
         return extractStreamsFromPage(page, catDisplay, catMeta);
       }
-      console.log("[PinoyMoviesHub] direct pmh- miss -> search-based resolution");
+      console.log("[PHUB] direct pmh- miss -> search-based resolution");
       return resolvePageUrl(catType, catPseudo, season, episode).then(function(page2) {
         return extractStreamsFromPage(page2, catDisplay, catMeta);
       });
     }).catch(function(err) {
-      console.error("[PinoyMoviesHub] catalog fallback error:", (err && err.message) || err);
+      console.error("[PHUB] catalog fallback error:", (err && err.message) || err);
       return [];
     });
   }
@@ -1498,18 +1498,18 @@ function getStreamsCore(tmdbId, mt, season, episode) {
 
   return tmdbPromise.then(function(tmdb) {
     if (!tmdb || !tmdb.type || !tmdb.title) {
-      console.log("[PinoyMoviesHub] Could not detect media for TMDB ID:", tmdbId);
+      console.log("[PHUB] Could not detect media for TMDB ID:", tmdbId);
       return [];
     }
     var type = tmdb.type;
-    console.log("[PinoyMoviesHub] type=" + type + " | title=" + tmdb.title + " | year=" + tmdb.year);
+    console.log("[PHUB] type=" + type + " | title=" + tmdb.title + " | year=" + tmdb.year);
 
     if (type === "tv" && (!season || !episode)) {
       // v5.6.0: default missing S/E to S1E1 (nullable Int? app contract) —
       // an empty row helped nobody; S1E1 is what the app itself probes.
       season = season || "1";
       episode = episode || "1";
-      console.log("[PinoyMoviesHub] no season/episode from app -> defaulting S1E1");
+      console.log("[PHUB] no season/episode from app -> defaulting S1E1");
     }
 
     var epPromise = type === "tv"
@@ -1532,7 +1532,7 @@ function getStreamsCore(tmdbId, mt, season, episode) {
       });
     });
   }).catch(function(err) {
-    console.error("[PinoyMoviesHub] error:", (err && err.message) || err);
+    console.error("[PHUB] error:", (err && err.message) || err);
     return [];
   });
 }
