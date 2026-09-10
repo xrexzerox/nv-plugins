@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "4.6.0",
-  "description": "Canonical Nuvio provider collection. v4.0.0 BFS wave (bestfreestreaming.org review, review-not-merge honored): NEW site-anchored scrapers zoechip/himovies/moviesjoy/hdtoday (FMovies-family platform, shared id space, per-episode server chain -> vixsrc.to + vidsrcme.ru + primesrc.me backends), movish (TMDB-keyed player-sources API, direct dlproxy mp4s) and vixsrc (direct token-HLS lanes for any TMDB id); netmirror 5.0.0 (English + Tagalog/Filipino caption priority, Tagalog-dub audio lanes from fallback HLS, subtitle filter setting); cinemacity 5.0.0 (English first + Tagalog/Filipino dub detection, Italian demoted); torrents 1.3.0 + tagalogtorrents 1.3.0 (torrents without seeders are never surfaced).",
+  "version": "4.7.0",
+  "description": "Canonical Nuvio provider collection. v4.7.0: miruro 2.3.0 maps deterministically off the TMDB id itself via ani.zip themoviedb_id (mal+anilist in one CDN request, verified on Frieren/Suzume/One Piece/Shippuden/Solo Leveling/Demon Slayer); Kitsu/Jikan/AniList title search demoted to fallback and skipped when ani.zip wins. v4.0.0 BFS wave (bestfreestreaming.org review, review-not-merge honored): NEW site-anchored scrapers zoechip/himovies/moviesjoy/hdtoday (FMovies-family platform, shared id space, per-episode server chain -> vixsrc.to + vidsrcme.ru + primesrc.me backends), movish (TMDB-keyed player-sources API, direct dlproxy mp4s) and vixsrc (direct token-HLS lanes for any TMDB id); netmirror 5.0.0 (English + Tagalog/Filipino caption priority, Tagalog-dub audio lanes from fallback HLS, subtitle filter setting); cinemacity 5.0.0 (English first + Tagalog/Filipino dub detection, Italian demoted); torrents 1.3.0 + tagalogtorrents 1.3.0 (torrents without seeders are never surfaced).",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -1008,8 +1008,8 @@
     {
       "id": "miruro",
       "name": "Miruro",
-      "description": "Anime from miruro.tv: MegaPlay file resolution (embed -> file-id -> getSourcesNew m3u8, sub+dub in parallel) plus the site secure pipe (4-mirror ring) on device; season-aware TMDB->Kitsu/Jikan/MAL mapping with AniList circuit-breaker (it is 403-down upstream) and an 11s mapping deadline; Hermes-safe runtime (no unescape/Buffer); English+Tagalog subs only. v2.2.0: parallel mapping + AniList benching so the app-level stream timeout can no longer fire before MegaPlay starts.",
-      "version": "2.2.0",
+      "description": "Anime from miruro.tv: MegaPlay file resolution (embed -> file-id -> getSourcesNew m3u8, sub+dub in parallel) plus the site secure pipe (4-mirror ring) on device; v2.3.0 'use tmdb': deterministic TMDB-keyed mapping via ani.zip themoviedb_id (mal+anilist in one request) - title-search fallback (Kitsu/Jikan/AniList with circuit breaker) only when ani.zip lacks the id; season-aware S2+ entries; Hermes-safe runtime (no unescape/Buffer); English+Tagalog subs only.",
+      "version": "2.3.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",

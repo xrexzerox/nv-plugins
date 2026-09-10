@@ -28,6 +28,18 @@
  *   - MegaPlay sub+dub file lookups run in parallel (paced queue still
  *     spaces the HTTP calls) to halve wall-clock on device connections.
  *
+ * v2.3.0 (2026-09-11) "please use tmdb for miruro": the TMDB -> anime id
+ * mapping is now DETERMINISTIC and driven by the TMDB id itself via ani.zip
+ * (api.ani.zip/mappings?themoviedb_id={tmdbId} returns mal_id + anilist_id
+ * for exactly the id Nuvio passes). Verified 2026-09-11: Frieren 209867 ->
+ * mal 52991 / al 154587, Suzume 916224 -> 50594/142770, One Piece 37854 ->
+ * 21/21, Shippuden 31910 -> 1735/1735, Solo Leveling 127532 -> 52299,
+ * Jujutsu Kaisen 95479 -> 40748. The old Kitsu/Jikan/AniList title-search
+ * cluster only starts when ani.zip has no entry for the id (Demon Slayer
+ * 85494, Spy x Family...) and is skipped ENTIRELY when the ani.zip lookup
+ * wins - so the typical episode now maps in one CDN-fast request, and the
+ * flaky AniList API is only touched as a last resort.
+ *
  * Anime (and anime movies) from miruro.tv - the mirror ring also answers on
  * miruro.to / miruro.ru / miruro.bz. User request 2026-09-11: "create scraper
  * for https://www.miruro.tv/"; 2026-09-11 follow-up: "not fetching anime
@@ -86,6 +98,8 @@ var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 var MEGAPLAY_BASE = "https://megaplay.buzz";
 var KITSU_BASE = "https://kitsu.io/api/edge";
 var JIKAN_BASE = "https://api.jikan.moe/v4";
+// v2.3.0: deterministic TMDB-keyed anime id mapping (mal_id + anilist_id)
+var ANIZIP_BASE = "https://api.ani.zip";
 var MIRURO_ORIGINS = [
   "https://www.miruro.ru",
   "https://www.miruro.to",
@@ -818,6 +832,24 @@ function jikanSearch(query, year) {
     }).catch(function () { return null; });
 }
 
+/** v2.3.0: deterministic TMDB-keyed mapping via ani.zip. One CDN request
+ *  replaces the whole title-search chain whenever ani.zip lists the TMDB id.
+ *  Fail-soft: null on miss/timeout, never rejects. */
+function aniZipFromTmdb(tmdbId) {
+  var url = ANIZIP_BASE + "/mappings?themoviedb_id=" + encodeURIComponent(tmdbId);
+  return mapGap().then(function () {
+    return fetchJson(url, { "User-Agent": COMMON_UA, "Accept": "application/json" }, 8000);
+  }).then(function (data) {
+    if (!data || !data.mappings) return null;
+    var m = data.mappings;
+    var mal = m.mal_id == null ? null : parseInt(m.mal_id, 10);
+    var ali = m.anilist_id == null ? null : parseInt(m.anilist_id, 10);
+    if (!mal && !ali) return null;
+    console.log("[Miruro] ani.zip tmdb " + tmdbId + " -> mal " + mal + " / anilist " + ali);
+    return { malId: mal, anilistId: ali, via: "anizip" };
+  }).catch(function () { return null; });
+}
+
 var ORDINALS = { 2: "2nd", 3: "3rd", 4: "4th", 5: "5th", 6: "6th", 7: "7th", 8: "8th", 9: "9th" };
 
 /**
@@ -858,28 +890,48 @@ function mapTMDBToAnime(tmdbId, isTv, info, season) {
 function mapTMDBToAnimeUncached(tmdbId, isTv, info, season) {
   season = parseInt(season || 1, 10);
   var base = info.original || info.title;
+  // v2.3.0 "use tmdb for miruro": ani.zip is the PRIMARY lane - keyed by the
+  // exact TMDB id Nuvio passes (deterministic, no title fuzzing, works while
+  // AniList is 403-down). The title-search cluster is a FALLBACK that starts
+  // after a 2s grace and is skipped entirely when ani.zip already won.
+  var anizipJob = aniZipFromTmdb(tmdbId);
   if (!isTv || season <= 1) {
-    // v2.2.0: S1 / movie mapping jobs run IN PARALLEL and the first valid
-    // result wins. AniList (only when not benched - it has been 403-down)
-    // races against Kitsu->Jikan. Serial fallbacks used to cost up to 36s
-    // when AniList hangs behind CF, which starved the device deadline.
-    var jobs = [];
-    if (anilistAvailable()) {
-      jobs.push(
-        anilistSearchPost(info.title, info.year).then(anilistFromPost)
-          .catch(function (e) { markAnilistDown(); return null; })
-      );
-    }
-    jobs.push(
-      kitsuSearch(info.title, info.year).then(function (k) {
-        return k || jikanSearch(info.title, info.year);
-      })
-    );
-    return Promise.all(jobs).then(function (rs) {
-      for (var i = 0; i < rs.length; i++) {
-        if (rs[i]) return { anilistId: rs[i].anilistId, malId: rs[i].malId, via: rs[i].via, matched: "base" };
+    return new Promise(function (resolve) {
+      var settled = false, clusterStarted = false;
+      function finish(r) { if (!settled) { settled = true; resolve(r); } }
+      function startCluster() {
+        if (clusterStarted || settled) return; // settled => ani.zip won; no fallback HTTP
+        clusterStarted = true;
+        console.log("[Miruro] ani.zip miss -> title-search fallback (kitsu/jikan/anilist)");
+        var jobs = [];
+        if (anilistAvailable()) {
+          jobs.push(
+            anilistSearchPost(info.title, info.year).then(anilistFromPost)
+              .catch(function (e) { markAnilistDown(); return null; })
+          );
+        }
+        jobs.push(
+          kitsuSearch(info.title, info.year).then(function (k) {
+            return k || jikanSearch(info.title, info.year);
+          })
+        );
+        Promise.all(jobs).then(function (rs) {
+          for (var i = 0; i < rs.length; i++) {
+            if (rs[i]) { finish({ anilistId: rs[i].anilistId, malId: rs[i].malId, via: rs[i].via, matched: "base" }); return; }
+          }
+          finish(null);
+        }).catch(function () { finish(null); });
       }
-      return null;
+      anizipJob.then(function (r) {
+        if (r) finish({ anilistId: r.anilistId, malId: r.malId, via: r.via, matched: "base" });
+        else startCluster(); // miss -> no point waiting out the grace timer
+      }).catch(function () { startCluster(); });
+      if (hasTimers()) {
+        var t = setTimeout(startCluster, 2000);
+        if (typeof t === "object" && typeof t.unref === "function") t.unref();
+      } else {
+        startCluster();
+      }
     });
   }
   // S2+: try a season-specific entry (Jikan/Kitsu handle "... 2nd Season"
@@ -905,17 +957,22 @@ function mapTMDBToAnimeUncached(tmdbId, isTv, info, season) {
     return chain.then(function (r) {
       if (r) return { anilistId: r.anilistId, malId: r.malId, via: r.via, matched: "season" };
       // season entry not found -> base entry + absolute episode (caller);
-      // AniList attempt only when not benched (v2.2.0)
-      var baseJob = anilistAvailable()
-        ? anilistSearchPost(info.title, info.year).then(anilistFromPost)
-            .catch(function () { markAnilistDown(); return null; })
-        : Promise.resolve(null);
-      return baseJob.then(function (r2) {
+      // v2.3.0: the ani.zip base mapping is already in flight (started above)
+      // and usually resolved while the season searches ran - use it first,
+      // then AniList (only when not benched), then Kitsu.
+      return anizipJob.then(function (az) {
+        if (az) return { anilistId: az.anilistId, malId: az.malId, via: az.via, matched: "base" };
+        var baseJob = anilistAvailable()
+          ? anilistSearchPost(info.title, info.year).then(anilistFromPost)
+              .catch(function () { markAnilistDown(); return null; })
+          : Promise.resolve(null);
+        return baseJob.then(function (r2) {
           if (r2) return { anilistId: r2.anilistId, malId: r2.malId, via: r2.via, matched: "base" };
           return kitsuSearch(info.title, info.year).then(function (k) {
             return k ? { anilistId: k.anilistId, malId: k.malId, via: k.via, matched: "base" } : null;
           });
         });
+      });
     });
   });
 }
