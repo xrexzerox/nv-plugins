@@ -1,4 +1,3 @@
-/* Asian Catalog worker bundle v3.2.0 — kissasian.cam + viewasian.lol + TMDB language-matrix/on-the-air rows + POST /relay (cinejoy) + GET /meta & /stream (every catalog row resolves to a stream), built 2026-09-09 */
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -25,9 +24,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// addons/asian-catalog/core.js
+// core.js
 var require_core = __commonJS({
-  "addons/asian-catalog/core.js"(exports) {
+  "core.js"(exports) {
     (function(global) {
       "use strict";
       var VERSION = "3.2.0";
@@ -76,13 +75,11 @@ var require_core = __commonJS({
       var tmdbInflight = /* @__PURE__ */ new Map();
       var CACHE_CAPS = { page: 250, resolved: 4e3, buffers: 80, terms: 20 };
       function cachePrune(map, cap) {
-        if (map.size <= cap)
-          return;
+        if (map.size <= cap) return;
         var it = map.keys();
         while (map.size > cap) {
           var k = it.next();
-          if (k.done)
-            break;
+          if (k.done) break;
           map.delete(k.value);
         }
       }
@@ -117,9 +114,9 @@ var require_core = __commonJS({
           keepUnmatched: env.ASIAN_KEEP_UNMATCHED !== "0",
           // fallback rows visible by default
           fetchFn: fetchRef || null,
-          nowFn: env.__nowFn || function() {
+          nowFn: env.__nowFn || (function() {
             return Date.now();
-          }
+          })
         };
       }
       var ENTITY_MAP = {
@@ -143,12 +140,10 @@ var require_core = __commonJS({
       };
       function decodeEntities(s) {
         return String(s || "").replace(/&(#?\w+);/g, function(m, ent) {
-          if (ENTITY_MAP[ent])
-            return ENTITY_MAP[ent];
+          if (ENTITY_MAP[ent]) return ENTITY_MAP[ent];
           if (ent.charAt(0) === "#") {
             var num = parseInt(ent.substring(1), 10);
-            if (isFinite(num) && num > 0 && num < 65536)
-              return String.fromCharCode(num);
+            if (isFinite(num) && num > 0 && num < 65536) return String.fromCharCode(num);
           }
           return m;
         });
@@ -171,14 +166,10 @@ var require_core = __commonJS({
       }
       function absoluteUrl(cfg, base, u) {
         u = String(u || "").trim();
-        if (!u)
-          return "";
-        if (u.indexOf("//") === 0)
-          return "https:" + u;
-        if (/^https?:\/\//i.test(u))
-          return u;
-        if (u.charAt(0) === "/")
-          return base + u;
+        if (!u) return "";
+        if (u.indexOf("//") === 0) return "https:" + u;
+        if (/^https?:\/\//i.test(u)) return u;
+        if (u.charAt(0) === "/") return base + u;
         return "";
       }
       function isPlaceholderPoster(u) {
@@ -186,8 +177,7 @@ var require_core = __commonJS({
       }
       function cleanPosterUrl(base, u) {
         u = absoluteUrl(null, base, u);
-        if (!u || isPlaceholderPoster(u))
-          return "";
+        if (!u || isPlaceholderPoster(u)) return "";
         return u.replace(/-\d+x\d+(\.\w{3,4})(?:\?.*)?$/, "$1");
       }
       function jsonHeaders(maxAge) {
@@ -229,32 +219,26 @@ var require_core = __commonJS({
         return void 0;
       }
       function fetchText(cfg, url, timeoutMs, headers) {
-        if (!cfg.fetchFn)
-          return Promise.reject(new Error("no fetch available"));
+        if (!cfg.fetchFn) return Promise.reject(new Error("no fetch available"));
         var opts = { method: "GET", redirect: "follow", headers: headers || BASE_HEADERS };
         var sig = timeoutSignal(timeoutMs || 12e3);
-        if (sig)
-          opts.signal = sig;
+        if (sig) opts.signal = sig;
         return Promise.resolve().then(function() {
           return cfg.fetchFn(url, opts);
         }).then(function(res) {
-          if (!res.ok)
-            throw new Error("HTTP " + res.status + " for " + url);
+          if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
           return res.text();
         });
       }
       function fetchJson(cfg, url, timeoutMs) {
-        if (!cfg.fetchFn)
-          return Promise.reject(new Error("no fetch available"));
+        if (!cfg.fetchFn) return Promise.reject(new Error("no fetch available"));
         var opts = { method: "GET", redirect: "follow", headers: JSON_HEADERS };
         var sig = timeoutSignal(timeoutMs || 12e3);
-        if (sig)
-          opts.signal = sig;
+        if (sig) opts.signal = sig;
         return Promise.resolve().then(function() {
           return cfg.fetchFn(url, opts);
         }).then(function(res) {
-          if (!res.ok)
-            throw new Error("HTTP " + res.status + " for " + url);
+          if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
           return res.json();
         });
       }
@@ -284,8 +268,7 @@ var require_core = __commonJS({
           cachePrune(pageCache, CACHE_CAPS.page);
           return items;
         }).catch(function(err) {
-          if (entry && now - entry.ts < PAGE_CACHE_STALE)
-            return entry.items;
+          if (entry && now - entry.ts < PAGE_CACHE_STALE) return entry.items;
           throw err;
         });
       }
@@ -294,8 +277,7 @@ var require_core = __commonJS({
         var i = 0;
         function worker() {
           return Promise.resolve().then(function loop() {
-            if (i >= arr.length)
-              return void 0;
+            if (i >= arr.length) return void 0;
             var idx = i++;
             return Promise.resolve().then(function() {
               return fn(arr[idx], idx);
@@ -306,8 +288,7 @@ var require_core = __commonJS({
           });
         }
         var workers = [];
-        for (var w = 0; w < Math.min(n, arr.length); w++)
-          workers.push(worker());
+        for (var w = 0; w < Math.min(n, arr.length); w++) workers.push(worker());
         return Promise.all(workers).then(function() {
           return out;
         });
@@ -317,11 +298,9 @@ var require_core = __commonJS({
       }
       function tmdbSearch(cfg, kind, query, year) {
         var url = "https://api.themoviedb.org/3/search/" + kind + "?api_key=" + encodeURIComponent(cfg.tmdbKey) + "&query=" + encodeURIComponent(query) + "&include_adult=false&page=1";
-        if (year)
-          url += kind === "movie" ? "&year=" + encodeURIComponent(year) : "&first_air_date_year=" + encodeURIComponent(year);
+        if (year) url += kind === "movie" ? "&year=" + encodeURIComponent(year) : "&first_air_date_year=" + encodeURIComponent(year);
         return fetchJson(cfg, url).then(function(data) {
-          if (!data || !Array.isArray(data.results))
-            return [];
+          if (!data || !Array.isArray(data.results)) return [];
           return data.results.map(function(r) {
             return {
               id: r.id,
@@ -339,38 +318,26 @@ var require_core = __commonJS({
         });
       }
       function titleScore(siteNorm, tmdbNorm) {
-        if (!siteNorm || !tmdbNorm)
-          return 0;
-        if (siteNorm === tmdbNorm)
-          return 3;
-        if (siteNorm.length >= 6 && tmdbNorm.indexOf(siteNorm) === 0)
-          return 2.5;
-        if (tmdbNorm.length >= 6 && siteNorm.indexOf(tmdbNorm) === 0)
-          return 2.5;
-        if (siteNorm.indexOf(tmdbNorm) !== -1 || tmdbNorm.indexOf(siteNorm) !== -1)
-          return 2;
+        if (!siteNorm || !tmdbNorm) return 0;
+        if (siteNorm === tmdbNorm) return 3;
+        if (siteNorm.length >= 6 && tmdbNorm.indexOf(siteNorm) === 0) return 2.5;
+        if (tmdbNorm.length >= 6 && siteNorm.indexOf(tmdbNorm) === 0) return 2.5;
+        if (siteNorm.indexOf(tmdbNorm) !== -1 || tmdbNorm.indexOf(siteNorm) !== -1) return 2;
         var a = siteNorm.split(" ");
         var b = tmdbNorm.split(" ");
         var setB = {};
-        for (var i = 0; i < b.length; i++)
-          setB[b[i]] = true;
+        for (var i = 0; i < b.length; i++) setB[b[i]] = true;
         var inter = 0;
-        for (var j = 0; j < a.length; j++)
-          if (setB[a[j]])
-            inter++;
+        for (var j = 0; j < a.length; j++) if (setB[a[j]]) inter++;
         var cov = inter / Math.max(a.length, b.length);
         return cov >= 0.6 ? 1.5 : 0;
       }
       function yearScore(siteYear, tmdbYear) {
-        if (!siteYear || !tmdbYear)
-          return 0;
+        if (!siteYear || !tmdbYear) return 0;
         var d = Math.abs(parseInt(siteYear, 10) - parseInt(tmdbYear, 10));
-        if (d === 0)
-          return 2;
-        if (d === 1)
-          return 1;
-        if (d === 2)
-          return 0.5;
+        if (d === 0) return 2;
+        if (d === 1) return 1;
+        if (d === 2) return 0.5;
         return -2;
       }
       function pickBestTmdb(candidates, cleanedTitle, siteYear) {
@@ -386,8 +353,7 @@ var require_core = __commonJS({
           var y = yearScore(siteYear, c.year);
           var score = t * 10 + y;
           var acceptable = t >= 2.5 || t >= 2 && y >= 1 || t === 3;
-          if (!acceptable)
-            continue;
+          if (!acceptable) continue;
           if (score > bestScore) {
             bestScore = score;
             best = c;
@@ -397,33 +363,28 @@ var require_core = __commonJS({
       }
       function resolveTmdb(cfg, type, rawTitle, siteYear) {
         var cleaned = cleanTitleForSearch(rawTitle);
-        if (!cleaned)
-          return Promise.resolve(null);
+        if (!cleaned) return Promise.resolve(null);
         var key = type + "|" + normalizeForCompare(cleaned) + "|" + (siteYear || "");
         var now = cfg.nowFn();
         var hit = resolvedCache.get(key);
         if (hit) {
           var ttl = hit.value ? RESOLVED_TTL : RESOLVED_NULL_TTL;
-          if (now - hit.ts < ttl)
-            return Promise.resolve(hit.value);
+          if (now - hit.ts < ttl) return Promise.resolve(hit.value);
           resolvedCache.delete(key);
         }
         var pending = tmdbInflight.get(key);
-        if (pending)
-          return pending;
+        if (pending) return pending;
         var kind = type === "movie" ? "movie" : "tv";
         var attempts = [{ q: cleaned, y: siteYear }, { q: cleaned, y: "" }];
-        pending = function run(idx) {
-          if (idx >= attempts.length)
-            return Promise.resolve(null);
+        pending = (function run(idx) {
+          if (idx >= attempts.length) return Promise.resolve(null);
           var at = attempts[idx];
           return tmdbSearch(cfg, kind, at.q, at.y).then(function(candidates) {
             var best = pickBestTmdb(candidates, cleaned, siteYear);
-            if (best)
-              return best;
+            if (best) return best;
             return run(idx + 1);
           });
-        }(0).then(function(value) {
+        })(0).then(function(value) {
           resolvedCache.set(key, { ts: now, value });
           cachePrune(resolvedCache, CACHE_CAPS.resolved);
           tmdbInflight.delete(key);
@@ -446,19 +407,15 @@ var require_core = __commonJS({
           posterShape: "poster"
         };
         var sitePoster = cleanPosterUrl(cfg.pinoySite, item.poster) || cleanPosterUrl(cfg.kissasianSite, item.poster) || cleanPosterUrl(cfg.viewasianSite, item.poster);
-        if (sitePoster)
-          meta.poster = sitePoster;
-        if (item.description)
-          meta.description = item.description;
-        if (item.year)
-          meta.releaseInfo = String(item.year);
+        if (sitePoster) meta.poster = sitePoster;
+        if (item.description) meta.description = item.description;
+        if (item.year) meta.releaseInfo = String(item.year);
         return meta;
       }
       function toMeta(cfg, item, tmdb) {
         var type = item.type === "series" ? "series" : "movie";
         var name = cleanDisplayName(item.title);
-        if (!name)
-          return null;
+        if (!name) return null;
         var sitePoster = cleanPosterUrl(cfg.pinoySite, item.poster) || cleanPosterUrl(cfg.kissasianSite, item.poster) || cleanPosterUrl(cfg.viewasianSite, item.poster);
         if (tmdb) {
           var meta = {
@@ -469,22 +426,16 @@ var require_core = __commonJS({
             posterShape: "poster"
           };
           var bg = tmdbImg("w780", tmdb.backdrop);
-          if (bg)
-            meta.background = bg;
-          if (tmdb.overview)
-            meta.description = tmdb.overview;
+          if (bg) meta.background = bg;
+          if (tmdb.overview) meta.description = tmdb.overview;
           var rel = item.year || tmdb.year;
-          if (rel)
-            meta.releaseInfo = String(rel);
-          if (tmdb.rating)
-            meta.imdbRating = Math.round(tmdb.rating * 10) / 10;
+          if (rel) meta.releaseInfo = String(rel);
+          if (tmdb.rating) meta.imdbRating = Math.round(tmdb.rating * 10) / 10;
           return meta;
         }
-        if (!cfg.keepUnmatched)
-          return null;
+        if (!cfg.keepUnmatched) return null;
         var fb = fallbackMeta(cfg, "asian", item);
-        if (!fb.description && item.description)
-          fb.description = item.description;
+        if (!fb.description && item.description) fb.description = item.description;
         return fb;
       }
       function resolveBatch(cfg, items) {
@@ -512,50 +463,38 @@ var require_core = __commonJS({
           if (postId.indexOf("featured-") === 0) {
             var fid = postId.substring("featured-".length);
             var fp = cleanPosterUrl(cfg.pinoySite, poster);
-            if (fp)
-              featuredPosters[fid] = fp;
+            if (fp) featuredPosters[fid] = fp;
             continue;
           }
           var link = body.match(/href=["'](https?:\/\/[^"']+)["']/i);
-          if (!link)
-            continue;
+          if (!link) continue;
           var url = decodeEntities(link[1]).replace(/[?#].*$/, "");
-          if (!/\/(?:movies|series)\/[^/]+$/i.test(url))
-            continue;
+          if (!/\/(?:movies|series)\/[^/]+$/i.test(url)) continue;
           var kind = /\/movies\//i.test(url) ? "movie" : /\/series\//i.test(url) ? "series" : "";
-          if (!kind)
-            continue;
+          if (!kind) continue;
           var isSearchItem = /class=["']details["']/.test(body);
           var isArchiveItem = /^\d+$/.test(postId);
-          if (!isSearchItem && !isArchiveItem)
-            continue;
+          if (!isSearchItem && !isArchiveItem) continue;
           var title = "";
           var th = body.match(/<h3[^>]*class=["'][^"']*title[^"']*["'][^>]*>([\s\S]*?)<\/h3>/i);
-          if (th)
-            title = stripTags(th[1]);
+          if (th) title = stripTags(th[1]);
           if (!title) {
             var td = body.match(/<div[^>]*class=["']title["'][^>]*>\s*<a[^>]*>([\s\S]*?)<\/a>/i);
-            if (td)
-              title = stripTags(td[1]);
+            if (td) title = stripTags(td[1]);
           }
           if (!title && img) {
             var alt = attr(img[0], "alt");
-            if (alt)
-              title = stripTags(decodeEntities(alt));
+            if (alt) title = stripTags(decodeEntities(alt));
           }
-          if (!title)
-            continue;
+          if (!title) continue;
           var year = "";
           var ym = body.match(/<span[^>]*>\s*((?:19|20)\d{2})\s*</);
-          if (ym)
-            year = ym[1];
+          if (ym) year = ym[1];
           var desc = "";
           var dm = body.match(/<div[^>]*class=["']contenido["'][^>]*>\s*<p>([\s\S]*?)<\/p>/i);
-          if (dm)
-            desc = stripTags(dm[1]);
+          if (dm) desc = stripTags(dm[1]);
           var slug = url.replace(/\/+$/, "").split("/").pop() || "";
-          if (seen[url])
-            continue;
+          if (seen[url]) continue;
           seen[url] = true;
           items.push({
             source: "ph",
@@ -586,8 +525,7 @@ var require_core = __commonJS({
         return fetchPageCached(cfg, url, pinoyParseUrl).then(function(items) {
           var out = [];
           for (var i = 0; i < items.length; i++) {
-            if (!type || items[i].type === type)
-              out.push(items[i]);
+            if (!type || items[i].type === type) out.push(items[i]);
           }
           return out;
         });
@@ -605,8 +543,7 @@ var require_core = __commonJS({
           url = page === 1 ? cfg.pinoySite + seg + "/" : cfg.pinoySite + seg + "/page/" + page;
         }
         return pinoyPageRaw(cfg, url, def.type).then(function(items) {
-          if (!items.length)
-            return [];
+          if (!items.length) return [];
           return resolveBatch(cfg, items);
         });
       }
@@ -668,8 +605,7 @@ var require_core = __commonJS({
           var body = m[1];
           var isSeriesRow = reSeries.test(body);
           var link = body.match(reHref);
-          if (!link)
-            continue;
+          if (!link) continue;
           var slug = link[1];
           var img = body.match(/<img[^>]*>/i);
           var poster = "";
@@ -678,15 +614,12 @@ var require_core = __commonJS({
           }
           var title = "";
           var tm = body.match(/title="([^"]+)"/i);
-          if (tm)
-            title = stripTags(decodeEntities(tm[1]));
+          if (tm) title = stripTags(decodeEntities(tm[1]));
           if (!title && img) {
             var alt = attr(img[0], "alt") || attr(img[0], "title");
-            if (alt)
-              title = stripTags(decodeEntities(alt));
+            if (alt) title = stripTags(decodeEntities(alt));
           }
-          if (!title)
-            continue;
+          if (!title) continue;
           var epm = slug.match(/^(.*)-episode-\d+$/);
           if (epm) {
             slug = epm[1];
@@ -694,8 +627,7 @@ var require_core = __commonJS({
           } else if (!isSeriesRow) {
             continue;
           }
-          if (seen[slug])
-            continue;
+          if (seen[slug]) continue;
           seen[slug] = true;
           items.push({
             source: "ks",
@@ -735,8 +667,7 @@ var require_core = __commonJS({
           url = page === 1 ? cfg.kissasianSite + "/" : cfg.kissasianSite + "/page/" + page + "/";
         }
         return ksPageRaw(cfg, url).then(function(items) {
-          if (!items.length)
-            return [];
+          if (!items.length) return [];
           return resolveBatch(cfg, items);
         });
       }
@@ -784,27 +715,22 @@ var require_core = __commonJS({
           var slug = m[1];
           var body = m[3];
           var img = body.match(/<img[^>]*>/i);
-          if (!img)
-            continue;
+          if (!img) continue;
           var poster = attr(img[0], "data-original") || attr(img[0], "src");
           var title = attr(img[0], "title") || attr(img[0], "alt");
           if (!title) {
             var at = m[0].match(/<a[^>]*title="([^"]+)"/i);
-            if (at)
-              title = at[1];
+            if (at) title = at[1];
           }
           if (!title) {
             var h2 = body.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
-            if (h2)
-              title = stripTags(h2[1]);
+            if (h2) title = stripTags(h2[1]);
           }
-          if (!title)
-            continue;
+          if (!title) continue;
           title = stripTags(decodeEntities(title));
           var year = "";
           var ym = title.match(/\((19|20)\d{2}\)/);
-          if (ym)
-            year = ym[0].slice(1, -1);
+          if (ym) year = ym[0].slice(1, -1);
           var epm = slug.match(/^(.*?)(?:-episode-\d+|-ep-\d+)(?:-[a-z0-9-]+)?$/);
           if (epm) {
             slug = epm[1];
@@ -815,8 +741,7 @@ var require_core = __commonJS({
           } else if (!isDramaRow) {
             continue;
           }
-          if (seen[slug])
-            continue;
+          if (seen[slug]) continue;
           seen[slug] = true;
           items.push({
             source: "va",
@@ -856,8 +781,7 @@ var require_core = __commonJS({
           url = page === 1 ? cfg.viewasianSite + "/" : cfg.viewasianSite + "/page/" + page + "/";
         }
         return vaPageRaw(cfg, url).then(function(items) {
-          if (!items.length)
-            return [];
+          if (!items.length) return [];
           return resolveBatch(cfg, items);
         });
       }
@@ -904,11 +828,9 @@ var require_core = __commonJS({
       }
       function tmdbResultToMeta(cfg, r, type) {
         var id = r && r.id;
-        if (!id)
-          return null;
+        if (!id) return null;
         var name = r.title || r.name || "";
-        if (!name)
-          return null;
+        if (!name) return null;
         var meta = {
           id: "tmdb:" + id,
           type,
@@ -916,16 +838,12 @@ var require_core = __commonJS({
           poster: tmdbImg("w342", r.poster_path || ""),
           posterShape: "poster"
         };
-        if (!meta.poster)
-          delete meta.poster;
+        if (!meta.poster) delete meta.poster;
         var bg = tmdbImg("w780", r.backdrop_path || "");
-        if (bg)
-          meta.background = bg;
+        if (bg) meta.background = bg;
         var year = String(r.release_date || r.first_air_date || "").split("-")[0] || "";
-        if (year)
-          meta.releaseInfo = year;
-        if (r.overview)
-          meta.description = r.overview;
+        if (year) meta.releaseInfo = year;
+        if (r.overview) meta.description = r.overview;
         if (typeof r.vote_average === "number" && r.vote_average > 0) {
           meta.imdbRating = Math.round(r.vote_average * 10) / 10;
         }
@@ -951,8 +869,7 @@ var require_core = __commonJS({
                   continue;
                 }
                 var m = tmdbResultToMeta(cfg, r, type);
-                if (m)
-                  out.push(m);
+                if (m) out.push(m);
               }
             }
             return out;
@@ -960,8 +877,7 @@ var require_core = __commonJS({
         }
         if (def.mode === "language" && genreSlug) {
           var langCode = ASIAN_LANG_CODES[genreSlug];
-          if (!langCode)
-            return Promise.resolve([]);
+          if (!langCode) return Promise.resolve([]);
           langFilter = "with_original_language=" + langCode;
         }
         url = base + "discover/" + kind + "?api_key=" + encodeURIComponent(cfg.tmdbKey) + "&" + langFilter + "&include_adult=false&page=" + page;
@@ -969,8 +885,7 @@ var require_core = __commonJS({
           url += "&on_the_air=true&vote_count.gte=2&sort_by=popularity.desc";
         } else if (def.mode === "genre" && genreSlug) {
           var gid = TMDB_MOVIE_GENRES[genreSlug];
-          if (!gid)
-            return Promise.resolve([]);
+          if (!gid) return Promise.resolve([]);
           url += "&with_genres=" + gid;
         } else if (def.id === "asian-series-trending") {
           url += "&sort_by=" + dateField + ".desc&vote_count.gte=3";
@@ -982,8 +897,7 @@ var require_core = __commonJS({
           if (data && Array.isArray(data.results)) {
             for (var i = 0; i < data.results.length; i++) {
               var m = tmdbResultToMeta(cfg, data.results[i], type);
-              if (m)
-                out.push(m);
+              if (m) out.push(m);
             }
           }
           return out;
@@ -1009,8 +923,7 @@ var require_core = __commonJS({
       }
       function runBuffered(cfg, stateKey, pageMetasFn, skip, limit) {
         var existing = bufferInflight.get(stateKey);
-        if (existing)
-          return existing;
+        if (existing) return existing;
         var job = Promise.resolve().then(function() {
           var buf = getBuffer(cfg, stateKey);
           function pump(guard) {
@@ -1247,8 +1160,7 @@ var require_core = __commonJS({
         var srcFilter = cfg && cfg.__manifestSources || null;
         var langFilter = cfg && cfg.__manifestLangs || null;
         var catalogs = catalogDefinitions().filter(function(c) {
-          if (srcFilter && srcFilter.indexOf(c.source) === -1)
-            return false;
+          if (srcFilter && srcFilter.indexOf(c.source) === -1) return false;
           return true;
         }).map(function(c) {
           var extra = c.extra;
@@ -1257,8 +1169,7 @@ var require_core = __commonJS({
               var code = ASIAN_LANG_CODES[slugifyGenre(chip)];
               return code && langFilter.indexOf(code) !== -1;
             });
-            if (!trimmed.length)
-              return null;
+            if (!trimmed.length) return null;
             extra = [{ name: "genre", options: trimmed }, { name: "skip" }];
           }
           return {
@@ -1296,8 +1207,7 @@ var require_core = __commonJS({
       var docCache = /* @__PURE__ */ new Map();
       function cacheGetFresh(map, key, ttl, nowFn) {
         var hit = map.get(key);
-        if (!hit)
-          return null;
+        if (!hit) return null;
         if (nowFn() - hit.ts >= ttl) {
           map.delete(key);
           return null;
@@ -1309,8 +1219,7 @@ var require_core = __commonJS({
         var it = map.keys();
         while (map.size > cap) {
           var k = it.next();
-          if (k.done)
-            break;
+          if (k.done) break;
           map.delete(k.value);
         }
       }
@@ -1326,19 +1235,15 @@ var require_core = __commonJS({
         var m = t.match(/(\d{3,4})\s*p/i);
         if (m) {
           var n = parseInt(m[1], 10);
-          if (n >= 144)
-            return n + "p";
+          if (n >= 144) return n + "p";
         }
-        if (/1080|full[\s-]*hd/i.test(t))
-          return "1080p";
-        if (/720|hd[\s-]*cam|hdrip|web[\s-]*dl/i.test(t))
-          return "720p";
+        if (/1080|full[\s-]*hd/i.test(t)) return "1080p";
+        if (/720|hd[\s-]*cam|hdrip|web[\s-]*dl/i.test(t)) return "720p";
         return "";
       }
       function sxDoc(cfg, url, timeoutMs, headers) {
         var hit = cacheGetFresh(docCache, url, DOC_CACHE_TTL, cfg.nowFn);
-        if (hit)
-          return Promise.resolve(hit.value);
+        if (hit) return Promise.resolve(hit.value);
         return fetchText(cfg, url, timeoutMs || 12e3, headers).then(function(html) {
           cachePut(docCache, url, html, 300);
           return html;
@@ -1346,15 +1251,12 @@ var require_core = __commonJS({
       }
       function sxMerge(a, b) {
         var out = {}, k;
-        for (k in a || {})
-          out[k] = a[k];
-        for (k in b || {})
-          out[k] = b[k];
+        for (k in a || {}) out[k] = a[k];
+        for (k in b || {}) out[k] = b[k];
         return out;
       }
       function sxJsonPost(cfg, url, bodyObj, headers, timeoutMs) {
-        if (!cfg.fetchFn)
-          return Promise.reject(new Error("no fetch available"));
+        if (!cfg.fetchFn) return Promise.reject(new Error("no fetch available"));
         var opts = {
           method: "POST",
           headers: sxMerge({
@@ -1365,8 +1267,7 @@ var require_core = __commonJS({
           redirect: "follow"
         };
         var sig = timeoutSignal(timeoutMs || 15e3);
-        if (sig)
-          opts.signal = sig;
+        if (sig) opts.signal = sig;
         return Promise.resolve().then(function() {
           return cfg.fetchFn(url, opts);
         }).then(function(res) {
@@ -1385,8 +1286,7 @@ var require_core = __commonJS({
         var headers = referer ? { "Referer": referer } : {};
         return fetchText(cfg, url, 6e3, headers).then(function(text) {
           if (!text || text.indexOf("#EXTM3U") !== 0) {
-            if (/\.mp4(\?|$)/i.test(url))
-              return { url, quality: "" };
+            if (/\.mp4(\?|$)/i.test(url)) return { url, quality: "" };
             return null;
           }
           if (text.indexOf("#EXT-X-STREAM-INF") !== -1) {
@@ -1422,11 +1322,9 @@ var require_core = __commonJS({
         var acc = 0, bits = 0, i, v;
         for (i = 0; i < t.length; i++) {
           var ch = t.charAt(i);
-          if (ch === "=")
-            break;
+          if (ch === "=") break;
           v = ALPHA.indexOf(ch);
-          if (v < 0)
-            continue;
+          if (v < 0) continue;
           acc = acc << 6 | v;
           bits += 6;
           if (bits >= 8) {
@@ -1458,7 +1356,7 @@ var require_core = __commonJS({
         }
         return out;
       }
-      var AES_SBOX = function() {
+      var AES_SBOX = (function() {
         var box = new Array(256);
         var p = 1, q = 1, t;
         do {
@@ -1467,14 +1365,13 @@ var require_core = __commonJS({
           q = (q ^ q << 1) & 255;
           q = (q ^ q << 2) & 255;
           q = (q ^ q << 4) & 255;
-          if (q & 128)
-            q ^= 9;
+          if (q & 128) q ^= 9;
           t = q ^ (q << 1 | q >>> 7) ^ (q << 2 | q >>> 6) ^ (q << 3 | q >>> 5) ^ (q << 4 | q >>> 4);
           box[p] = (t ^ 99) & 255;
         } while (p !== 1);
         box[0] = 99;
         return box;
-      }();
+      })();
       function aes256ExpandKey(keyBytes) {
         var rcon = [1, 2, 4, 8, 16, 32, 64];
         var w = [];
@@ -1500,8 +1397,7 @@ var require_core = __commonJS({
         var s = new Array(16);
         var out = new Array(16);
         var i, c, r, round, a0, a1, a2, a3, t0, t1, t2, t3, src;
-        for (i = 0; i < 16; i++)
-          s[i] = input[i] ^ w[Math.floor(i / 4)][i % 4];
+        for (i = 0; i < 16; i++) s[i] = input[i] ^ w[Math.floor(i / 4)][i % 4];
         for (round = 1; round < 14; round++) {
           src = s.slice(0);
           for (c = 0; c < 4; c++) {
@@ -1518,8 +1414,7 @@ var require_core = __commonJS({
             s[c * 4 + 2] = (a0 ^ a1 ^ t2 ^ a3 ^ t3) & 255;
             s[c * 4 + 3] = (a0 ^ t0 ^ a1 ^ a2 ^ t3) & 255;
           }
-          for (i = 0; i < 16; i++)
-            s[i] ^= w[4 * round + Math.floor(i / 4)][i % 4];
+          for (i = 0; i < 16; i++) s[i] ^= w[4 * round + Math.floor(i / 4)][i % 4];
         }
         for (c = 0; c < 4; c++) {
           for (r = 0; r < 4; r++) {
@@ -1532,8 +1427,7 @@ var require_core = __commonJS({
         var w = aes256ExpandKey(keyBytes);
         var cb = [];
         var i, j, ks, off = 0, n = dataBytes.length - 16;
-        for (i = 0; i < 12; i++)
-          cb.push(ivBytes[i] & 255);
+        for (i = 0; i < 12; i++) cb.push(ivBytes[i] & 255);
         cb.push(0, 0, 0, 2);
         var out = [];
         while (off < n) {
@@ -1543,35 +1437,29 @@ var require_core = __commonJS({
           }
           for (j = 3; j >= 0; j--) {
             cb[12 + j] = cb[12 + j] + 1 & 255;
-            if (cb[12 + j])
-              break;
+            if (cb[12 + j]) break;
           }
         }
         return out;
       }
       function byseKeyFromParts(playback) {
         var parts = playback.key_parts;
-        if (!parts || !parts.length)
-          return null;
+        if (!parts || !parts.length) return null;
         var version = parseInt(playback.version, 10);
         var picked = [];
         var i, b;
         if (version >= 1 && version <= 20) {
           var i1 = version - 1;
           var i2 = 30 - version;
-          if (parts[i1])
-            picked.push(parts[i1]);
-          if (parts[i2] && i2 !== i1)
-            picked.push(parts[i2]);
-          if (!picked.length)
-            return null;
+          if (parts[i1]) picked.push(parts[i1]);
+          if (parts[i2] && i2 !== i1) picked.push(parts[i2]);
+          if (!picked.length) return null;
         } else {
           picked = parts;
         }
         var bytes = [];
         for (i = 0; i < picked.length; i++) {
-          if (typeof picked[i] !== "string" || !picked[i].length)
-            continue;
+          if (typeof picked[i] !== "string" || !picked[i].length) continue;
           b = b64urlToBytes(picked[i]);
           bytes = bytes.concat(b);
         }
@@ -1592,8 +1480,7 @@ var require_core = __commonJS({
       }
       function byseBytes(str) {
         var out = new Uint8Array(str.length);
-        for (var i = 0; i < str.length; i++)
-          out[i] = str.charCodeAt(i) & 255;
+        for (var i = 0; i < str.length; i++) out[i] = str.charCodeAt(i) & 255;
         return out;
       }
       function byseHashDigest(bytes) {
@@ -1604,8 +1491,7 @@ var require_core = __commonJS({
           s[0] = byseRotl(s[0], 7);
           byseMix(s);
         }
-        for (f = 0; f < 8; f++)
-          byseMix(s);
+        for (f = 0; f < 8; f++) byseMix(s);
         var r = new Uint32Array(512);
         for (a = 0; a < 512; a++) {
           byseMix(s);
@@ -1649,32 +1535,25 @@ var require_core = __commonJS({
         return bits;
       }
       function byseSolvePow(nonceStr, difficulty, maxMs) {
-        if (difficulty <= 0)
-          return "0";
+        if (difficulty <= 0) return "0";
         var prefix = String(nonceStr) + ":";
         var counter = 0;
         var t0 = Date.now();
         var budget = maxMs || SERVER_POW_MAX_MS;
         for (; ; ) {
           var d = byseHashDigest(byseBytes(prefix + counter));
-          if (byseLeadingZeroBits(d) >= difficulty)
-            return String(counter);
+          if (byseLeadingZeroBits(d) >= difficulty) return String(counter);
           counter++;
-          if ((counter & 8191) === 0 && Date.now() - t0 > budget)
-            return null;
-          if (counter > 4e6)
-            return null;
+          if ((counter & 8191) === 0 && Date.now() - t0 > budget) return null;
+          if (counter > 4e6) return null;
         }
       }
       function byseDecryptPlayback(pb) {
-        if (!pb || !pb.payload || !pb.iv || pb.algorithm !== "AES-256-GCM")
-          return null;
+        if (!pb || !pb.payload || !pb.iv || pb.algorithm !== "AES-256-GCM") return null;
         var keyBytes = byseKeyFromParts(pb);
-        if (!keyBytes || keyBytes.length !== 32)
-          return null;
+        if (!keyBytes || keyBytes.length !== 32) return null;
         var plain = aesGcmDecryptNoTag(keyBytes, b64urlToBytes(pb.iv), b64urlToBytes(pb.payload));
-        if (!plain.length)
-          return null;
+        if (!plain.length) return null;
         var info = null;
         try {
           info = JSON.parse(bytesToUtf8(plain));
@@ -1685,16 +1564,14 @@ var require_core = __commonJS({
         var best = null, bestH = -1, i, s, h;
         for (i = 0; i < sources.length; i++) {
           s = sources[i];
-          if (!s || !s.url || String(s.url).indexOf("http") !== 0)
-            continue;
+          if (!s || !s.url || String(s.url).indexOf("http") !== 0) continue;
           h = parseInt(s.height, 10) || 0;
           if (h >= bestH) {
             bestH = h;
             best = s;
           }
         }
-        if (!best)
-          return null;
+        if (!best) return null;
         var q = best.label && best.label !== "x" ? parseInt(best.height, 10) ? best.height + "p" : String(best.label) : parseInt(best.height, 10) ? best.height + "p" : "Auto";
         return { url: String(best.url), quality: q };
       }
@@ -1713,11 +1590,9 @@ var require_core = __commonJS({
           embedHeaders
         ).then(function(ch) {
           var c = ch.data;
-          if (!c || !c.pow_nonce || !c.pow_token || ch.status !== 200)
-            return null;
+          if (!c || !c.pow_nonce || !c.pow_token || ch.status !== 200) return null;
           var solution = byseSolvePow(c.pow_nonce, parseInt(c.pow_difficulty, 10) || 16, SERVER_POW_MAX_MS);
-          if (solution === null)
-            return null;
+          if (solution === null) return null;
           return sxJsonPost(
             cfg,
             JUSTPLAY_BASE + "/api/videos/" + code + "/embed/captcha/verify",
@@ -1725,8 +1600,7 @@ var require_core = __commonJS({
             embedHeaders
           ).then(function(vr) {
             var v = vr.data;
-            if (!v || v.status !== "ok" || !v.token)
-              return null;
+            if (!v || v.status !== "ok" || !v.token) return null;
             var headers = sxMerge(embedHeaders, { "X-Captcha-Token": v.token });
             return sxJsonPost(
               cfg,
@@ -1742,24 +1616,20 @@ var require_core = __commonJS({
         });
       }
       function sxJsonGet(cfg, url, timeoutMs, headers) {
-        if (!cfg.fetchFn)
-          return Promise.reject(new Error("no fetch available"));
+        if (!cfg.fetchFn) return Promise.reject(new Error("no fetch available"));
         var opts = { method: "GET", redirect: "follow", headers: headers || JSON_HEADERS };
         var sig = timeoutSignal(timeoutMs || 12e3);
-        if (sig)
-          opts.signal = sig;
+        if (sig) opts.signal = sig;
         return Promise.resolve().then(function() {
           return cfg.fetchFn(url, opts);
         }).then(function(res) {
-          if (!res.ok)
-            throw new Error("HTTP " + res.status + " for " + url);
+          if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
           return res.json();
         });
       }
       function sxByseDirectResolve(cfg, embedUrl) {
         var codeMatch = embedUrl.match(/\/e\/([a-z0-9]+)/i);
-        if (!codeMatch)
-          return Promise.resolve(null);
+        if (!codeMatch) return Promise.resolve(null);
         var host = sxHostOf(embedUrl);
         var apiUrl = "https://" + host + "/api/videos/" + codeMatch[1];
         return sxJsonGet(cfg, apiUrl, 12e3, {
@@ -1767,16 +1637,14 @@ var require_core = __commonJS({
           "Referer": cfg.pinoySite + "/",
           "Origin": cfg.pinoySite
         }).then(function(data) {
-          if (!data || data.error || !data.playback || data.premium_only)
-            return null;
+          if (!data || data.error || !data.playback || data.premium_only) return null;
           return byseDecryptPlayback(data.playback);
         }).catch(function() {
           return null;
         });
       }
       function ksSearchSeriesUrl(cfg, query) {
-        if (!query)
-          return Promise.resolve(null);
+        if (!query) return Promise.resolve(null);
         var host = String(cfg.kissasianSite).replace(/^https?:\/\//, "");
         var url = cfg.kissasianSite + "/?s=" + encodeURIComponent(query);
         return sxDoc(cfg, url).then(function(html) {
@@ -1786,11 +1654,9 @@ var require_core = __commonJS({
           var m;
           while ((m = re.exec(html)) !== null) {
             var lm = m[1].match(new RegExp('href="https?://' + host + '/series/([a-z0-9-]+)/"', "i"));
-            if (!lm)
-              continue;
+            if (!lm) continue;
             var tm = m[1].match(/title="([^"]+)"/i);
-            if (!tm)
-              continue;
+            if (!tm) continue;
             var score = titleScore(normQ, normalizeForCompare(stripTags(decodeEntities(tm[1]))));
             if (score > bestScore) {
               bestScore = score;
@@ -1811,10 +1677,8 @@ var require_core = __commonJS({
           var re = new RegExp('href="https?://' + host + '/([a-z0-9-]+-episode-(\\d+))/"', "gi");
           var m;
           while ((m = re.exec(html)) !== null) {
-            if (slug && m[1].indexOf(slug + "-episode-") !== 0)
-              continue;
-            if (parseInt(m[2], 10) === wantEp)
-              return cfg.kissasianSite + "/" + m[1] + "/";
+            if (slug && m[1].indexOf(slug + "-episode-") !== 0) continue;
+            if (parseInt(m[2], 10) === wantEp) return cfg.kissasianSite + "/" + m[1] + "/";
           }
           return cfg.kissasianSite + "/" + slug + "-episode-" + wantEp + "/";
         }).catch(function() {
@@ -1822,17 +1686,13 @@ var require_core = __commonJS({
         });
       }
       function ksExtract(cfg, episodeUrl) {
-        if (!episodeUrl)
-          return Promise.resolve(null);
+        if (!episodeUrl) return Promise.resolve(null);
         return sxDoc(cfg, episodeUrl).then(function(html) {
           var m = html.match(/<iframe[^>]*src="https?:\/\/justplay\.cam\/e\/([a-z0-9]+)/i);
-          if (!m)
-            m = html.match(/https?:\/\/justplay\.cam\/e\/([a-z0-9]+)/i);
-          if (!m)
-            return null;
+          if (!m) m = html.match(/https?:\/\/justplay\.cam\/e\/([a-z0-9]+)/i);
+          if (!m) return null;
           return sxByseEmbedResolve(cfg, m[1], episodeUrl).then(function(r) {
-            if (!r)
-              return null;
+            if (!r) return null;
             r.source = "KissAsian";
             return r;
           });
@@ -1841,8 +1701,7 @@ var require_core = __commonJS({
         });
       }
       function vaSearchDramaUrl(cfg, query) {
-        if (!query)
-          return Promise.resolve(null);
+        if (!query) return Promise.resolve(null);
         var host = String(cfg.viewasianSite).replace(/^https?:\/\//, "");
         var url = cfg.viewasianSite + "/?s=" + encodeURIComponent(query);
         return sxDoc(cfg, url).then(function(html) {
@@ -1875,8 +1734,7 @@ var require_core = __commonJS({
           var re = new RegExp('href="https?://' + host + '/([a-z0-9-]+-(?:ep|episode)-(\\d+)(-[a-z0-9-]+)?)/"', "gi");
           var mre = new RegExp('href="https?://' + host + '/([a-z0-9-]+-(?:full-hd-)?movie)/"', "i");
           var mm = html.match(mre);
-          if (mm)
-            moviePath = mm[1];
+          if (mm) moviePath = mm[1];
           var m;
           while ((m = re.exec(html)) !== null) {
             var num = parseInt(m[2], 10);
@@ -1889,26 +1747,21 @@ var require_core = __commonJS({
             }
           }
           if (!isSeries) {
-            if (moviePath)
-              return cfg.viewasianSite + "/" + moviePath + "/";
+            if (moviePath) return cfg.viewasianSite + "/" + moviePath + "/";
             var lo = null, k;
             for (k in links) {
-              if (!lo || links[k].num < lo.num)
-                lo = links[k];
+              if (!lo || links[k].num < lo.num) lo = links[k];
             }
             return lo ? cfg.viewasianSite + "/" + lo.path + "/" : "";
           }
           var bestMain = null, bestAlt = null, k2;
           for (k2 in links) {
             var e = links[k2];
-            if (e.num !== wantEp)
-              continue;
+            if (e.num !== wantEp) continue;
             if (e.sv === 0) {
-              if (!bestMain || e.tailLen < bestMain.tailLen)
-                bestMain = e;
+              if (!bestMain || e.tailLen < bestMain.tailLen) bestMain = e;
             } else {
-              if (!bestAlt || e.sv < bestAlt.sv)
-                bestAlt = e;
+              if (!bestAlt || e.sv < bestAlt.sv) bestAlt = e;
             }
           }
           var picked = bestMain || bestAlt;
@@ -1918,30 +1771,23 @@ var require_core = __commonJS({
         });
       }
       function vaExtract(cfg, episodeUrl) {
-        if (!episodeUrl)
-          return Promise.resolve(null);
+        if (!episodeUrl) return Promise.resolve(null);
         return sxDoc(cfg, episodeUrl).then(function(html) {
           var m = html.match(/<iframe[^>]*src="(https?:\/\/kisskh\.space\/[a-z0-9-]+\/?)"/i);
-          if (!m)
-            m = html.match(/(https?:\/\/kisskh\.space\/[a-z0-9-]+\/?)/i);
-          if (!m)
-            return null;
+          if (!m) m = html.match(/(https?:\/\/kisskh\.space\/[a-z0-9-]+\/?)/i);
+          if (!m) return null;
           var playerUrl = m[1].replace(/\\u002F/gi, "/");
           return sxDoc(cfg, playerUrl, 12e3, { "Referer": cfg.viewasianSite + "/" }).then(function(playerHtml) {
             var em = playerHtml.match(/<iframe[^>]*src="(https?:\/\/[^"]*vidmoly[^"]*\/embed-[a-z0-9]+\.html)"/i);
-            if (!em)
-              em = playerHtml.match(/(https?:\/\/[a-z0-9.-]*vidmoly[a-z0-9.-]*\/embed-[a-z0-9]+\.html)/i);
-            if (!em)
-              return null;
+            if (!em) em = playerHtml.match(/(https?:\/\/[a-z0-9.-]*vidmoly[a-z0-9.-]*\/embed-[a-z0-9]+\.html)/i);
+            if (!em) return null;
             var embedUrl = em[1].replace(/\\u002F/gi, "/");
             return sxDoc(cfg, embedUrl, 12e3, { "Referer": playerUrl }).then(function(embedHtml) {
               var mm2 = embedHtml.match(/(https?:\/\/[^"'\s\\]+\.m3u8[^"'\s\\]*)/i);
-              if (!mm2)
-                return null;
+              if (!mm2) return null;
               var m3u8 = mm2[1].replace(/\\u002F/gi, "/").replace(/\\\//g, "/");
               return sxResolveHls(cfg, m3u8, embedUrl, "ViewAsian").then(function(r) {
-                if (!r)
-                  return null;
+                if (!r) return null;
                 r.source = "ViewAsian";
                 r.headers = { "Referer": embedUrl.substring(0, embedUrl.indexOf("/", 8) + 1) || embedUrl };
                 return r;
@@ -1965,15 +1811,13 @@ var require_core = __commonJS({
         while ((m = liRe.exec(html)) !== null) {
           var tag = m[0];
           var post = phAttr(tag, "data-post") || phAttr(tag, "data-id");
-          if (!post)
-            continue;
+          if (!post) continue;
           var type = phAttr(tag, "data-type") || "movie";
           var nume = phAttr(tag, "data-nume") || phAttr(tag, "data-source") || "1";
           var labelMatch = m[1].match(/<span[^>]*class=['"][^'"]*title[^'"]*['"][^>]*>([^<]*)<\//i);
           var label = labelMatch ? stripTags(labelMatch[1]) : "";
           var key = post + "-" + nume;
-          if (seen[key])
-            continue;
+          if (seen[key]) continue;
           seen[key] = 1;
           options.push({ post, type, nume, label });
         }
@@ -1984,8 +1828,7 @@ var require_core = __commonJS({
             var type2 = phAttr(m[0], "data-type") || "movie";
             var nume2 = phAttr(m[0], "data-nume") || phAttr(m[0], "data-source") || "1";
             var key2 = post2 + "-" + nume2;
-            if (seen[key2])
-              continue;
+            if (seen[key2]) continue;
             seen[key2] = 1;
             options.push({ post: post2, type: type2, nume: nume2, label: "" });
           }
@@ -1998,19 +1841,14 @@ var require_core = __commonJS({
           "X-Requested-With": "XMLHttpRequest",
           "Referer": pageUrl || cfg.pinoySite + "/"
         }).then(function(data) {
-          if (!data)
-            return "";
-          if (Object.prototype.toString.call(data) === "[object Array]")
-            data = data[0];
-          if (!data)
-            return "";
+          if (!data) return "";
+          if (Object.prototype.toString.call(data) === "[object Array]") data = data[0];
+          if (!data) return "";
           var embedUrl = data.embed_url || data.url || data.source || data.link || data.file || data.src;
-          if (!embedUrl && data.data)
-            embedUrl = data.data.embed_url || data.data.url || data.data.source;
+          if (!embedUrl && data.data) embedUrl = data.data.embed_url || data.data.url || data.data.source;
           if (!embedUrl && (data.html || data.iframe)) {
             var m = String(data.html || data.iframe).match(/src=['"]([^'"]+)['"]/i);
-            if (m)
-              embedUrl = m[1];
+            if (m) embedUrl = m[1];
           }
           return embedUrl ? String(embedUrl) : "";
         }).catch(function() {
@@ -2050,14 +1888,12 @@ var require_core = __commonJS({
       }
       function sxUnpackPacker(packed) {
         var m = String(packed).match(/\}\s*\(\s*'((?:\\.|[^'\\])*)'\s*,\s*\d+\s*,\s*(\d+)\s*,\s*'([^']*)'\.split\('\|'\)/);
-        if (!m)
-          return "";
+        if (!m) return "";
         var payload = sxJsUnescape(m[1]);
         var keys = sxJsUnescape(m[3]).split("|");
         var dict = {};
         var i;
-        for (i = 0; i < keys.length; i++)
-          dict[String(i)] = keys[i];
+        for (i = 0; i < keys.length; i++) dict[String(i)] = keys[i];
         return payload.replace(/\b\w+\b/g, function(w) {
           return dict[w] !== void 0 && dict[w] !== "" ? dict[w] : w;
         });
@@ -2067,12 +1903,10 @@ var require_core = __commonJS({
       }
       function isDoodHost(h) {
         var s = String(h || "").toLowerCase();
-        if (/dood|dsvplay|dooo|d000d|ds2play/.test(s))
-          return true;
+        if (/dood|dsvplay|dooo|d000d|ds2play/.test(s)) return true;
         var known = ["playmogo.com", "myvidplay.com", "dsvplay.com", "d000d.com", "dooood.com", "ds2play.com", "ds2play2.com", "doodcdn.io"];
         for (var i = 0; i < known.length; i++) {
-          if (s.indexOf(known[i]) !== -1)
-            return true;
+          if (s.indexOf(known[i]) !== -1) return true;
         }
         return false;
       }
@@ -2088,19 +1922,14 @@ var require_core = __commonJS({
           var unpacked = packedMatch ? sxUnpackPacker(packedMatch[0]) : "";
           var wurl = "";
           var m = unpacked.match(/MDCore\.wurl\s*=\s*["']([^"']*)["']/);
-          if (m)
-            wurl = m[1];
+          if (m) wurl = m[1];
           if (!wurl) {
             m = html.match(/MDCore\.wurl\s*=\s*["']([^"']*)["']/);
-            if (m)
-              wurl = m[1];
+            if (m) wurl = m[1];
           }
-          if (!wurl || wurl === " " || wurl.length < 6)
-            return null;
-          if (wurl.indexOf("//") === 0)
-            wurl = "https:" + wurl;
-          else if (wurl.indexOf("http") !== 0)
-            wurl = "https://" + wurl.replace(/^\/+/, "");
+          if (!wurl || wurl === " " || wurl.length < 6) return null;
+          if (wurl.indexOf("//") === 0) wurl = "https:" + wurl;
+          else if (wurl.indexOf("http") !== 0) wurl = "https://" + wurl.replace(/^\/+/, "");
           var host = sxHostOf(embedUrl);
           return {
             url: wurl,
@@ -2114,47 +1943,37 @@ var require_core = __commonJS({
       }
       function phDoodDirect(cfg, embedUrl) {
         var embedIdMatch = embedUrl.match(/\/e\/([a-z0-9]+)/i) || embedUrl.match(/\/d\/([a-z0-9]+)/i);
-        if (!embedIdMatch)
-          return Promise.resolve(null);
+        if (!embedIdMatch) return Promise.resolve(null);
         var embedId = embedIdMatch[1];
         var qualityHint = "";
         var rnd = "";
-        for (var i = 0; i < 10; i++)
-          rnd += "abcdefghijklmnopqrstuvwxyz0123456789".charAt(Math.floor(Math.random() * 36));
+        for (var i = 0; i < 10; i++) rnd += "abcdefghijklmnopqrstuvwxyz0123456789".charAt(Math.floor(Math.random() * 36));
         return sxDoc(cfg, embedUrl, 12e3, { "Referer": cfg.pinoySite + "/" }).then(function(html) {
           var host = sxHostOf(embedUrl);
           var embedFinalUrl = "https://" + host + "/e/" + embedId;
           var titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
-          if (titleMatch)
-            qualityHint = titleMatch[1];
-          if (/op=validate|turnstile\.render|challenges\.cloudflare\.com\/turnstile/i.test(html))
-            return null;
-          if (/video you are looking for is not found|class="not_found"/i.test(html))
-            return null;
+          if (titleMatch) qualityHint = titleMatch[1];
+          if (/op=validate|turnstile\.render|challenges\.cloudflare\.com\/turnstile/i.test(html)) return null;
+          if (/video you are looking for is not found|class="not_found"/i.test(html)) return null;
           var md5 = null;
           var pm = html.match(/['"]\/(pass_md5\/[a-z0-9]+(?:\/[a-z0-9]+)?)['"]/i);
           if (!pm) {
             var unpacked = sxUnpackPacker(html);
-            if (unpacked)
-              pm = unpacked.match(/['"]\/(pass_md5\/[a-z0-9]+(?:\/[a-z0-9]+)?)['"]/i);
+            if (unpacked) pm = unpacked.match(/['"]\/(pass_md5\/[a-z0-9]+(?:\/[a-z0-9]+)?)['"]/i);
           }
           if (!pm) {
             pm = html.match(/\/pass_md5\/([a-z0-9]+)/i);
-            if (pm)
-              pm = ["x", "pass_md5/" + pm[1]];
+            if (pm) pm = ["x", "pass_md5/" + pm[1]];
           }
-          if (pm)
-            md5 = pm[1];
-          if (!md5)
-            return null;
+          if (pm) md5 = pm[1];
+          if (!md5) return null;
           var passUrl = "https://" + host + "/" + md5;
           return fetchText(cfg, passUrl, 1e4, {
             "Referer": embedFinalUrl,
             "X-Requested-With": "XMLHttpRequest"
           }).then(function(body) {
             var base = String(body).trim();
-            if (base.indexOf("http") !== 0)
-              return null;
+            if (base.indexOf("http") !== 0) return null;
             var token = md5.split("/")[1] || "";
             var expiry = Date.now() + 2 * 60 * 60 * 1e3;
             return {
@@ -2169,8 +1988,7 @@ var require_core = __commonJS({
         });
       }
       function phExtractEmbed(cfg, label, embedUrl, pageUrl) {
-        if (!embedUrl)
-          return Promise.resolve(null);
+        if (!embedUrl) return Promise.resolve(null);
         var host = sxHostOf(embedUrl);
         var job = null;
         if (isByseHost(host)) {
@@ -2182,31 +2000,24 @@ var require_core = __commonJS({
         } else if (isDoodHost(host)) {
           job = phDoodDirect(cfg, embedUrl);
         }
-        if (!job)
-          return Promise.resolve(null);
+        if (!job) return Promise.resolve(null);
         return job.then(function(r) {
-          if (!r)
-            return null;
-          if (label && !r.source)
-            r.source = label;
-          if (r.source === "Byse")
-            delete r.headers;
+          if (!r) return null;
+          if (label && !r.source) r.source = label;
+          if (r.source === "Byse") delete r.headers;
           return r;
         });
       }
       function merge2(a, b) {
         var out = {}, k;
-        for (k in a || {})
-          out[k] = a[k];
-        for (k in b || {})
-          out[k] = b[k];
+        for (k in a || {}) out[k] = a[k];
+        for (k in b || {}) out[k] = b[k];
         return out;
       }
       function phExtractPage(cfg, pageUrl) {
         return sxDoc(cfg, pageUrl).then(function(html) {
           var options = phExtractPlayerOptions(html);
-          if (!options.length)
-            return [];
+          if (!options.length) return [];
           return Promise.all(options.map(function(p) {
             return phDooPlayer(cfg, p, pageUrl).then(function(embedUrl) {
               return phExtractEmbed(cfg, p.label, embedUrl, pageUrl);
@@ -2214,8 +2025,7 @@ var require_core = __commonJS({
           })).then(function(results) {
             var out = [];
             for (var i = 0; i < results.length; i++) {
-              if (results[i] && results[i].url)
-                out.push(results[i]);
+              if (results[i] && results[i].url) out.push(results[i]);
             }
             return out;
           });
@@ -2235,8 +2045,7 @@ var require_core = __commonJS({
       function sxParseId(rawId) {
         var id = String(rawId || "").trim();
         var out = { kind: "unknown", site: "", slug: "", tmdbId: "", season: 0, episode: 0 };
-        if (!id)
-          return out;
+        if (!id) return out;
         var m = id.match(/^((?:tmdb|asian):.+):(\d+):(\d+)$/i);
         if (m) {
           out.season = parseInt(m[2], 10) || 0;
@@ -2280,8 +2089,7 @@ var require_core = __commonJS({
         if (site === "ph") {
           var pageUrl = isSeries ? phEpisodePageUrl(cfg, slug, season || 1, wantEp) : phMoviePageUrl(cfg, slug);
           return phExtractPage(cfg, pageUrl).then(function(results) {
-            if (results.length || !isSeries)
-              return results;
+            if (results.length || !isSeries) return results;
             return phExtractPage(cfg, phSeriesPageUrl(cfg, slug)).catch(function() {
               return [];
             });
@@ -2294,8 +2102,7 @@ var require_core = __commonJS({
         var wantEp = episode || 1;
         var attempts = [];
         attempts.push(ksSearchSeriesUrl(cfg, title).then(function(hit) {
-          if (!hit)
-            return null;
+          if (!hit) return null;
           return ksFindEpisodeUrl(cfg, hit.slug, wantEp).then(function(epUrl) {
             return ksExtract(cfg, epUrl);
           });
@@ -2303,8 +2110,7 @@ var require_core = __commonJS({
           return null;
         }));
         attempts.push(vaSearchDramaUrl(cfg, title).then(function(hit) {
-          if (!hit)
-            return null;
+          if (!hit) return null;
           return vaFindEpisodeUrl(cfg, hit.slug, wantEp, isSeries).then(function(epUrl) {
             return vaExtract(cfg, epUrl);
           });
@@ -2313,8 +2119,7 @@ var require_core = __commonJS({
         }));
         var phSlugs = [sxSlugTitle(title)];
         var ySlug = sxSlugTitle(title + " " + (year || ""));
-        if (year && ySlug !== phSlugs[0])
-          phSlugs.push(ySlug);
+        if (year && ySlug !== phSlugs[0]) phSlugs.push(ySlug);
         attempts.push(Promise.all(phSlugs.map(function(ps) {
           var pageUrl = isSeries ? phEpisodePageUrl(cfg, ps, season || 1, wantEp) : phMoviePageUrl(cfg, ps);
           return phExtractPage(cfg, pageUrl).catch(function() {
@@ -2322,8 +2127,7 @@ var require_core = __commonJS({
           });
         })).then(function(batches) {
           var out = [];
-          for (var i = 0; i < batches.length; i++)
-            out = out.concat(batches[i] || []);
+          for (var i = 0; i < batches.length; i++) out = out.concat(batches[i] || []);
           return out.length ? out : null;
         }).catch(function() {
           return null;
@@ -2332,12 +2136,9 @@ var require_core = __commonJS({
           var out = [];
           for (var i = 0; i < results.length; i++) {
             var r = results[i];
-            if (!r)
-              continue;
-            if (Object.prototype.toString.call(r) === "[object Array]")
-              out = out.concat(r);
-            else
-              out.push(r);
+            if (!r) continue;
+            if (Object.prototype.toString.call(r) === "[object Array]") out = out.concat(r);
+            else out.push(r);
           }
           return out.length ? out : null;
         });
@@ -2348,8 +2149,7 @@ var require_core = __commonJS({
         var i, r;
         for (i = 0; i < results.length; i++) {
           r = results[i];
-          if (!r || !r.url || seen[r.url])
-            continue;
+          if (!r || !r.url || seen[r.url]) continue;
           seen[r.url] = true;
           var label = r.source || "Asian Catalog";
           var q = r.quality || "";
@@ -2371,8 +2171,7 @@ var require_core = __commonJS({
         var kind = type === "movie" ? "movie" : "tv";
         var url = "https://api.themoviedb.org/3/" + kind + "/" + encodeURIComponent(tmdbId) + "?api_key=" + encodeURIComponent(cfg.tmdbKey);
         return sxJsonGet(cfg, url, 1e4).then(function(r) {
-          if (!r || r.success === false)
-            return null;
+          if (!r || r.success === false) return null;
           return {
             title: r.title || r.name || "",
             original: r.original_title || r.original_name || "",
@@ -2391,14 +2190,12 @@ var require_core = __commonJS({
         var displayTitle = "";
         var cacheKey = type + "|" + rawId;
         var hit = cacheGetFresh(streamCache, cacheKey, STREAM_CACHE_TTL, cfg.nowFn);
-        if (hit)
-          return Promise.resolve(json({ streams: hit.value.streams }, 200, 60));
+        if (hit) return Promise.resolve(json({ streams: hit.value.streams }, 200, 60));
         var resolvePromise;
         if (parsed.kind === "asian" && parsed.site) {
           resolvePromise = resolveAsiansite(cfg, parsed.site, parsed.slug, type, wantSeason, wantEp).then(function(results) {
             var arr = results == null ? null : Object.prototype.toString.call(results) === "[object Array]" ? results : [results];
-            if (arr && arr.length)
-              return arr;
+            if (arr && arr.length) return arr;
             var title = parsed.slug.replace(/-/g, " ");
             return resolveByTitle(cfg, title, "", type, wantSeason, wantEp);
           });
@@ -2417,25 +2214,19 @@ var require_core = __commonJS({
             var out = [];
             for (var i = 0; i < batches.length; i++) {
               var b = batches[i];
-              if (!b)
-                continue;
-              if (Object.prototype.toString.call(b) === "[object Array]")
-                out = out.concat(b);
-              else if (b.url)
-                out.push(b);
+              if (!b) continue;
+              if (Object.prototype.toString.call(b) === "[object Array]") out = out.concat(b);
+              else if (b.url) out.push(b);
             }
-            if (out.length)
-              return out;
+            if (out.length) return out;
             return resolveByTitle(cfg, parsed.slug.replace(/-/g, " "), "", type, wantSeason, wantEp);
           });
         } else if (parsed.kind === "tmdb" && parsed.tmdbId) {
           resolvePromise = tmdbInfoForStream(cfg, type, parsed.tmdbId).then(function(info) {
-            if (!info || !info.title)
-              return null;
+            if (!info || !info.title) return null;
             displayTitle = info.title;
             return resolveByTitle(cfg, info.title, info.year, type, wantSeason, wantEp, info.lang).then(function(results) {
-              if (results && results.length)
-                return results;
+              if (results && results.length) return results;
               if (info.original && info.original !== info.title) {
                 return resolveByTitle(cfg, info.original, info.year, type, wantSeason, wantEp, info.lang);
               }
@@ -2459,19 +2250,16 @@ var require_core = __commonJS({
           return sxDoc(cfg, ksSeriesUrl(cfg, slug)).then(function(html) {
             var name = "";
             var tm = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || html.match(/<title[^>]*>([^<]*)<\/title>/i);
-            if (tm)
-              name = stripTags(tm[1]).replace(/\s*[-\u2013\u2014|].*$/, "");
+            if (tm) name = stripTags(tm[1]).replace(/\s*[-\u2013\u2014|].*$/, "");
             var img = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i) || html.match(/content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
             var desc = "";
             var dm = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i) || html.match(/content=["']([^"']+)["'][^>]*property=["']og:description["']/i);
-            if (dm)
-              desc = stripTags(decodeEntities(dm[1]));
+            if (dm) desc = stripTags(decodeEntities(dm[1]));
             var eps = [];
             var re = new RegExp('href="https?://' + ksh + '/([a-z0-9-]+-episode-(\\d+))/"', "gi");
             var m;
             while ((m = re.exec(html)) !== null) {
-              if (slug && m[1].indexOf(slug + "-episode-") !== 0)
-                continue;
+              if (slug && m[1].indexOf(slug + "-episode-") !== 0) continue;
               eps.push({ n: parseInt(m[2], 10), s: 1 });
             }
             return { name, poster: img ? img[1] : "", description: desc, year: "", episodes: eps };
@@ -2482,24 +2270,20 @@ var require_core = __commonJS({
           return sxDoc(cfg, vaDramaUrl(cfg, slug)).then(function(html) {
             var name = "";
             var tm = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || html.match(/<title[^>]*>([^<]*)<\/title>/i);
-            if (tm)
-              name = stripTags(tm[1]).replace(/\s*[-\u2013\u2014|].*$/, "");
+            if (tm) name = stripTags(tm[1]).replace(/\s*[-\u2013\u2014|].*$/, "");
             var img = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i) || html.match(/content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
             var desc = "";
             var dm = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i) || html.match(/content=["']([^"']+)["'][^>]*property=["']og:description["']/i);
-            if (dm)
-              desc = stripTags(decodeEntities(dm[1]));
+            if (dm) desc = stripTags(decodeEntities(dm[1]));
             var year = "";
             var ym = name.match(/\((19|20)\d{2}\)/);
-            if (ym)
-              year = ym[0].slice(1, -1);
+            if (ym) year = ym[0].slice(1, -1);
             var eps = [];
             var re = new RegExp('href="https?://' + vah + '/([a-z0-9-]+-(?:ep|episode)-(\\d+)(-[a-z0-9-]+)?)/"', "gi");
             var m;
             while ((m = re.exec(html)) !== null) {
               var base = m[1].substring(0, m[1].indexOf("-episode-") !== -1 ? m[1].indexOf("-episode-") : m[1].indexOf("-ep-"));
-              if (base !== slug)
-                continue;
+              if (base !== slug) continue;
               eps.push({ n: parseInt(m[2], 10), s: 1 });
             }
             return { name, poster: img ? img[1] : "", description: desc, year, episodes: eps };
@@ -2510,32 +2294,27 @@ var require_core = __commonJS({
             return sxDoc(cfg, phMoviePageUrl(cfg, slug)).then(function(html) {
               var name = "";
               var tm = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || html.match(/<title[^>]*>([^<]*)<\/title>/i);
-              if (tm)
-                name = stripTags(tm[1]);
+              if (tm) name = stripTags(tm[1]);
               var img = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i);
               var desc = "";
               var dm = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
-              if (dm)
-                desc = stripTags(decodeEntities(dm[1]));
+              if (dm) desc = stripTags(decodeEntities(dm[1]));
               return { name, poster: img ? img[1] : "", description: desc, year: "", episodes: [] };
             });
           }
           return sxDoc(cfg, phSeriesPageUrl(cfg, slug)).then(function(html) {
             var name = "";
             var tm = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || html.match(/<title[^>]*>([^<]*)<\/title>/i);
-            if (tm)
-              name = stripTags(tm[1]);
+            if (tm) name = stripTags(tm[1]);
             var img = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i);
             var desc = "";
             var dm = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
-            if (dm)
-              desc = stripTags(decodeEntities(dm[1]));
+            if (dm) desc = stripTags(decodeEntities(dm[1]));
             var eps = [];
             var re = new RegExp('href="https?://[a-z0-9.-]*' + String(cfg.pinoySite).replace(/^https?:\/\//, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "/episodes/([a-z0-9-]+)-(\\d+)x(\\d+)", "gi");
             var m;
             while ((m = re.exec(html)) !== null) {
-              if (m[1].indexOf(slug) !== 0)
-                continue;
+              if (m[1].indexOf(slug) !== 0) continue;
               eps.push({ n: parseInt(m[3], 10), s: parseInt(m[2], 10) });
             }
             return { name, poster: img ? img[1] : "", description: desc, year: "", episodes: eps };
@@ -2555,17 +2334,14 @@ var require_core = __commonJS({
           vaSearchDramaUrl(cfg, slug.replace(/-/g, " "))
         ]).then(function(hits) {
           for (var i = 0; i < hits.length; i++) {
-            if (hits[i])
-              return hits[i];
+            if (hits[i]) return hits[i];
           }
           return null;
         });
         return sitePromise.then(function(resolved) {
-          if (!resolved)
-            return json({ meta: {} }, 404, 30);
+          if (!resolved) return json({ meta: {} }, 404, 30);
           return sxScrapeMetaPage(cfg, resolved.site, resolved.slug, type).then(function(page) {
-            if (!page)
-              return json({ meta: {} }, 404, 30);
+            if (!page) return json({ meta: {} }, 404, 30);
             var metaId = "asian:" + resolved.site + "-" + resolved.slug;
             var meta = {
               id: metaId,
@@ -2573,20 +2349,16 @@ var require_core = __commonJS({
               name: cleanDisplayName(page.name) || slug.replace(/-/g, " "),
               posterShape: "poster"
             };
-            if (page.poster)
-              meta.poster = page.poster;
-            if (page.description)
-              meta.description = page.description;
-            if (page.year)
-              meta.releaseInfo = String(page.year);
+            if (page.poster) meta.poster = page.poster;
+            if (page.description) meta.description = page.description;
+            if (page.year) meta.releaseInfo = String(page.year);
             if (type !== "movie" && page.episodes && page.episodes.length) {
               var seen = {};
               var videos = [];
               for (var i = 0; i < page.episodes.length; i++) {
                 var ep = page.episodes[i];
                 var vid = metaId + ":" + (ep.s || 1) + ":" + ep.n;
-                if (seen[vid])
-                  continue;
+                if (seen[vid]) continue;
                 seen[vid] = 1;
                 videos.push({
                   id: vid,
@@ -2621,12 +2393,10 @@ var require_core = __commonJS({
       function relayB64ToUint8(b64) {
         try {
           var norm = String(b64 || "").replace(/-/g, "+").replace(/_/g, "/").replace(/[^A-Za-z0-9+/=]/g, "");
-          while (norm.length % 4)
-            norm += "=";
+          while (norm.length % 4) norm += "=";
           var bin = atob(norm);
           var u8 = new Uint8Array(bin.length);
-          for (var i = 0; i < bin.length; i++)
-            u8[i] = bin.charCodeAt(i) & 255;
+          for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i) & 255;
           return u8;
         } catch (e) {
           return null;
@@ -2670,23 +2440,18 @@ var require_core = __commonJS({
           var headers = {};
           var hdrs = req && req.headers || {};
           Object.keys(hdrs).forEach(function(k) {
-            if (!/^[a-z0-9-]+$/i.test(k))
-              return;
+            if (!/^[a-z0-9-]+$/i.test(k)) return;
             var lk = k.toLowerCase();
-            if (lk === "host" || lk === "cookie" || lk === "content-length")
-              return;
+            if (lk === "host" || lk === "cookie" || lk === "content-length") return;
             var v = String(hdrs[k]).slice(0, 500);
-            if (v)
-              headers[k] = v;
+            if (v) headers[k] = v;
           });
           var body = null;
           if (method === "POST" && req.bodyB64) {
             body = relayB64ToUint8(req.bodyB64);
-            if (!body)
-              return json({ error: "bad bodyB64" }, 400, 0);
+            if (!body) return json({ error: "bad bodyB64" }, 400, 0);
           }
-          if (!cfg.fetchFn)
-            return json({ error: "no fetch available" }, 500, 0);
+          if (!cfg.fetchFn) return json({ error: "no fetch available" }, 500, 0);
           var ac = null;
           try {
             ac = new AbortController();
@@ -2762,10 +2527,8 @@ var require_core = __commonJS({
             var name = entries[i][0];
             var r = entries[i][1];
             sources[name] = r;
-            if (r.ok)
-              okCount++;
-            else
-              errors.push(r.error || "failed");
+            if (r.ok) okCount++;
+            else errors.push(r.error || "failed");
           }
           var sourceCount = probes.length;
           var runtimeBug = okCount === 0 && errors.length && errors.every(function(e) {
@@ -2777,19 +2540,13 @@ var require_core = __commonJS({
           } else if (runtimeBug) {
             hints.push("All probes fail with the same error (" + errors[0] + ") \u2014 likely a worker-code bug, not IP blocking. Redeploy the current worker-bundle.js (" + ADDON_NAME + " v" + VERSION + ").");
           } else {
-            if (!sources.pinoymovieshub.ok)
-              hints.push("pinoymovieshub unreachable from this runtime (site down or IP blocked). Pinoy catalogs may be empty; set PINOY_SITE to an alternate mirror if the site moved.");
-            if (!sources.kissasian.ok)
-              hints.push("kissasian.cam unreachable from this runtime (site down or IP blocked). KissAsian series catalogs may be empty; set KISSASIAN_SITE to an alternate mirror.");
-            if (!sources.viewasian.ok)
-              hints.push("viewasian.lol unreachable from this runtime (site down or IP blocked). ViewAsian series catalogs may be empty; set VIEWASIAN_SITE to an alternate mirror.");
-            if (!sources.tmdb.ok)
-              hints.push("TMDB discover failed \u2014 check TMDB_API_KEY and outbound access; Asian Movies / Trending catalogs may be empty.");
-            if (okCount > 0 && okCount < sourceCount)
-              hints.push("Partial outage: only " + okCount + "/" + sourceCount + " sources healthy \u2014 affected catalogs fall back to serve-stale cache.");
+            if (!sources.pinoymovieshub.ok) hints.push("pinoymovieshub unreachable from this runtime (site down or IP blocked). Pinoy catalogs may be empty; set PINOY_SITE to an alternate mirror if the site moved.");
+            if (!sources.kissasian.ok) hints.push("kissasian.cam unreachable from this runtime (site down or IP blocked). KissAsian series catalogs may be empty; set KISSASIAN_SITE to an alternate mirror.");
+            if (!sources.viewasian.ok) hints.push("viewasian.lol unreachable from this runtime (site down or IP blocked). ViewAsian series catalogs may be empty; set VIEWASIAN_SITE to an alternate mirror.");
+            if (!sources.tmdb.ok) hints.push("TMDB discover failed \u2014 check TMDB_API_KEY and outbound access; Asian Movies / Trending catalogs may be empty.");
+            if (okCount > 0 && okCount < sourceCount) hints.push("Partial outage: only " + okCount + "/" + sourceCount + " sources healthy \u2014 affected catalogs fall back to serve-stale cache.");
           }
-          if (okCount === sourceCount)
-            hints.push("All " + sourceCount + " sources healthy.");
+          if (okCount === sourceCount) hints.push("All " + sourceCount + " sources healthy.");
           return {
             status: okCount === sourceCount ? "up" : okCount > 0 ? "degraded" : "down",
             addon: ADDON_ID,
@@ -2806,20 +2563,17 @@ var require_core = __commonJS({
           var pairs = seg.split("&");
           for (var i = 0; i < pairs.length; i++) {
             var p = pairs[i];
-            if (!p)
-              continue;
+            if (!p) continue;
             var eq = p.indexOf("=");
             var k = eq === -1 ? p : p.substring(0, eq);
             var v = eq === -1 ? "" : p.substring(eq + 1);
-            if (k)
-              extras[k.toLowerCase()] = v;
+            if (k) extras[k.toLowerCase()] = v;
           }
         }
         if (searchParams) {
           searchParams.forEach(function(v2, k2) {
             var key = String(k2).toLowerCase();
-            if (!(key in extras))
-              extras[key] = v2;
+            if (!(key in extras)) extras[key] = v2;
           });
         }
         return extras;
@@ -2827,32 +2581,27 @@ var require_core = __commonJS({
       function findCatalog(catalogId, type) {
         var defs = catalogDefinitions();
         for (var i = 0; i < defs.length; i++) {
-          if (defs[i].id === catalogId && defs[i].type === type)
-            return defs[i];
+          if (defs[i].id === catalogId && defs[i].type === type) return defs[i];
         }
         return null;
       }
       function pageMetasFor(cfg, def, extras) {
-        if (def.source === "pinoy")
-          return function(page) {
-            return pinoyPageMetas(cfg, def, page, extras);
-          };
-        if (def.source === "kissasian")
-          return function(page) {
-            return ksPageMetas(cfg, def, page, extras);
-          };
-        if (def.source === "viewasian")
-          return function(page) {
-            return vaPageMetas(cfg, def, page, extras);
-          };
+        if (def.source === "pinoy") return function(page) {
+          return pinoyPageMetas(cfg, def, page, extras);
+        };
+        if (def.source === "kissasian") return function(page) {
+          return ksPageMetas(cfg, def, page, extras);
+        };
+        if (def.source === "viewasian") return function(page) {
+          return vaPageMetas(cfg, def, page, extras);
+        };
         return function(page) {
           return tmdbPageMetas(cfg, def, page, extras);
         };
       }
       function getCatalogMetas(cfg, def, extras) {
         var skip = parseInt(extras.skip, 10);
-        if (!isFinite(skip) || skip < 0)
-          skip = 0;
+        if (!isFinite(skip) || skip < 0) skip = 0;
         var limit = cfg.pageLimit;
         var search = String(extras.search || "").trim();
         var genreSlug = slugifyGenre(extras.genre || "");
@@ -2872,8 +2621,7 @@ var require_core = __commonJS({
         var cfg = makeConfig(env || {});
         cfg.__selfUrl = env && env.__selfUrl || "";
         var raw = String(urlString || "/");
-        if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(raw))
-          raw = "https://asian-catalog.local" + (raw.charAt(0) === "/" ? raw : "/" + raw);
+        if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) raw = "https://asian-catalog.local" + (raw.charAt(0) === "/" ? raw : "/" + raw);
         var u;
         try {
           u = new URL(raw);
@@ -2882,8 +2630,7 @@ var require_core = __commonJS({
         }
         function csvParam(name) {
           var v = String(u.searchParams && u.searchParams.get(name) || "").trim();
-          if (!v)
-            return null;
+          if (!v) return null;
           var arr = v.split(",").map(function(s) {
             return s.trim().toLowerCase();
           }).filter(Boolean);
@@ -2989,7 +2736,7 @@ var require_core = __commonJS({
   }
 });
 
-// addons/asian-catalog/worker.js
+// worker.js
 var import_core = __toESM(require_core());
 var Core = globalThis.AsianCatalogCore;
 var worker_default = {
