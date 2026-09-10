@@ -5,11 +5,7 @@ var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __commonJS = (cb, mod) => function __require() {
-  try {
-    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
-  } catch (e) {
-    throw mod = 0, e;
-  }
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
@@ -33,7 +29,7 @@ var require_core = __commonJS({
   "core.js"(exports) {
     (function(global) {
       "use strict";
-      var VERSION = "4.1.0";
+      var VERSION = "5.0.0";
       var ADDON_ID = "community.asian.catalog";
       var ADDON_NAME = "Asian Catalog";
       var PINOY_SITE_DEFAULT = "https://pinoymovieshub.win";
@@ -41,6 +37,12 @@ var require_core = __commonJS({
       var VIEWASIAN_SITE_DEFAULT = "https://viewasian.lol";
       var ANIMO_SITE_DEFAULT = "https://animotvslash.org";
       var KISSKH_HOSTS_DEFAULT = ["https://kisskh.nl", "https://kisskh.ovh", "https://kisskh.co"];
+      var ANIKOTO_API_DEFAULT = "https://anikotoapi.site";
+      var ANIKOTO_PER_PAGE = 50;
+      var ANIKOTO_MAX_PAGES = 10;
+      var JIKAN_API_DEFAULT = "https://api.jikan.moe/v4";
+      var JIKAN_GAP_MS = 380;
+      var META_CACHE_TTL = 30 * 60 * 1e3;
       var DEFAULT_TMDB_KEY = "439c478a771f35c05022f9feabcca01c";
       var PINOY_ICON = "/wp-content/uploads/2025/04/cropped-favicon-11-192x192.png";
       var KS_ICON = "/wp-content/uploads/2024/03/cropped-favicon-1-1-192x192.png";
@@ -70,6 +72,8 @@ var require_core = __commonJS({
       var resolvedCache = /* @__PURE__ */ new Map();
       var buffers = /* @__PURE__ */ new Map();
       var bufferInflight = /* @__PURE__ */ new Map();
+      var metaCache = /* @__PURE__ */ new Map();
+      var _jikanLastReq = 0;
       var tmdbInflight = /* @__PURE__ */ new Map();
       var CACHE_CAPS = { page: 250, resolved: 4e3, buffers: 120 };
       function cachePrune(map, cap) {
@@ -87,6 +91,7 @@ var require_core = __commonJS({
         buffers.clear();
         bufferInflight.clear();
         tmdbInflight.clear();
+        metaCache.clear();
       }
       function makeConfig(env) {
         env = env || {};
@@ -112,15 +117,17 @@ var require_core = __commonJS({
           viewasianSite: String(env.VIEWASIAN_SITE || VIEWASIAN_SITE_DEFAULT).replace(/\/+$/, ""),
           animoSite: String(env.ANIMO_SITE || ANIMO_SITE_DEFAULT).replace(/\/+$/, ""),
           kisskhHosts: khHosts,
+          anikotoApi: String(env.ANIKOTO_API || ANIKOTO_API_DEFAULT).replace(/\/+$/, ""),
+          jikanApi: String(env.JIKAN_API || JIKAN_API_DEFAULT).replace(/\/+$/, ""),
           tmdbKey: String(env.TMDB_API_KEY || DEFAULT_TMDB_KEY),
           pageLimit: Math.min(Math.max(isFinite(limit) && limit > 0 ? limit : PAGE_LIMIT_DEFAULT, 5), 50),
           maxSitePages: isFinite(maxPages) && maxPages > 0 ? maxPages : MAX_SITE_PAGES_DEFAULT,
           keepUnmatched: env.ASIAN_KEEP_UNMATCHED !== "0",
           // fallback rows visible by default
           fetchFn: fetchRef || null,
-          nowFn: env.__nowFn || (function() {
+          nowFn: env.__nowFn || function() {
             return Date.now();
-          })
+          }
         };
       }
       var ENTITY_MAP = {
@@ -390,7 +397,7 @@ var require_core = __commonJS({
         if (pending) return pending;
         var kind = type === "movie" ? "movie" : "tv";
         var attempts = [{ q: cleaned, y: siteYear }, { q: cleaned, y: "" }];
-        pending = (function run(idx) {
+        pending = function run(idx) {
           if (idx >= attempts.length) return Promise.resolve(null);
           var at = attempts[idx];
           return tmdbSearch(cfg, kind, at.q, at.y).then(function(candidates) {
@@ -398,7 +405,7 @@ var require_core = __commonJS({
             if (best) return best;
             return run(idx + 1);
           });
-        })(0).then(function(value) {
+        }(0).then(function(value) {
           resolvedCache.set(key, { ts: now, value });
           cachePrune(resolvedCache, CACHE_CAPS.resolved);
           tmdbInflight.delete(key);
@@ -1060,6 +1067,212 @@ var require_core = __commonJS({
           });
         });
       }
+      function anikotoFetchJson(cfg, path) {
+        return fetchJson(cfg, cfg.anikotoApi + path, 12e3);
+      }
+      function anikotoFeedPage(cfg, page) {
+        var url = cfg.anikotoApi + "/recent-anime?page=" + page + "&per_page=" + ANIKOTO_PER_PAGE;
+        return fetchPageCached(cfg, url, function(c, u) {
+          return fetchJson(c, u, 12e3).then(function(d) {
+            return d && Array.isArray(d.data) ? d.data : [];
+          });
+        });
+      }
+      function anikotoRowToMeta(cfg, row) {
+        var name = cleanDisplayName(row.title || row.titles || row.alternative || row.native);
+        if (!name) return null;
+        var animeId = null;
+        var malId = parseInt(row.mal_id, 10);
+        var aniId = parseInt(row.ani_id, 10);
+        if (isFinite(malId) && malId > 0) animeId = "mal:" + malId;
+        else if (isFinite(aniId) && aniId > 0) animeId = "anilist:" + aniId;
+        else if (row.id) animeId = "anikoto:" + row.id;
+        if (!animeId) return null;
+        var meta = {
+          id: animeId,
+          type: "series",
+          name,
+          poster: /^https?:\/\//i.test(String(row.poster || "")) && !isPlaceholderPoster(row.poster) ? row.poster : void 0,
+          posterShape: "poster",
+          description: stripTags(row.description || "") || void 0,
+          releaseInfo: row.year ? String(row.year) : void 0,
+          status: row.status || void 0
+        };
+        var bg = /^https?:\/\//i.test(String(row.background_image || "")) ? row.background_image : void 0;
+        if (bg) meta.background = bg;
+        var score = parseFloat(row.score);
+        if (isFinite(score) && score > 0 && score <= 10) meta.imdbRating = Math.round(score * 10) / 10;
+        if (Array.isArray(row.terms_by_type && row.terms_by_type.genre)) meta.genres = row.terms_by_type.genre.slice(0, 6);
+        return meta;
+      }
+      function anikotoPageMetas(cfg, def, page, extras) {
+        if (page > ANIKOTO_MAX_PAGES) return Promise.resolve([]);
+        var mode = def.mode || "latest";
+        return anikotoFeedPage(cfg, page).then(function(rows) {
+          var currentYear = (/* @__PURE__ */ new Date()).getFullYear();
+          var out = [];
+          if (mode === "newadded") rows = rows.slice().sort(function(a, b) {
+            return (parseInt(b.id, 10) || 0) - (parseInt(a.id, 10) || 0);
+          });
+          for (var i = 0; i < rows.length; i++) {
+            var r = rows[i];
+            if (mode === "newrelease" && !(parseInt(r.year, 10) === currentYear && r.status === "Currently Airing")) continue;
+            if (mode === "upcoming" && r.status !== "Not yet aired") continue;
+            if (mode === "completed" && r.status !== "Finished Airing") continue;
+            var meta = anikotoRowToMeta(cfg, r);
+            if (meta) out.push(meta);
+          }
+          return out;
+        });
+      }
+      function jikanGap() {
+        var wait = _jikanLastReq + JIKAN_GAP_MS - Date.now();
+        if (wait <= 0) {
+          _jikanLastReq = Date.now();
+          return Promise.resolve();
+        }
+        _jikanLastReq = Date.now() + wait;
+        if (typeof setTimeout !== "function") return Promise.resolve();
+        return new Promise(function(resolve) {
+          setTimeout(resolve, wait);
+        });
+      }
+      function metaCacheGet(cfg, key) {
+        var hit = metaCache.get(key);
+        if (hit && cfg.nowFn() - hit.ts < META_CACHE_TTL) return hit.meta;
+        if (hit) metaCache.delete(key);
+        return null;
+      }
+      function metaCacheSet(cfg, key, meta) {
+        metaCache.set(key, { ts: cfg.nowFn(), meta });
+        cachePrune(metaCache, 300);
+      }
+      function jikanAnimeFull(cfg, malId) {
+        return jikanGap().then(function() {
+          return fetchJson(cfg, cfg.jikanApi + "/anime/" + encodeURIComponent(malId), 12e3);
+        }).then(function(d) {
+          return d && d.data ? d.data : null;
+        });
+      }
+      function jikanEpisodePage(cfg, malId, page) {
+        return jikanGap().then(function() {
+          return fetchJson(cfg, cfg.jikanApi + "/anime/" + encodeURIComponent(malId) + "/episodes?page=" + page, 12e3);
+        }).then(function(d) {
+          return d && d.data && Array.isArray(d.data) ? d.data : [];
+        }).catch(function() {
+          return [];
+        });
+      }
+      function metaForMal(cfg, malId, reqType) {
+        var key = "mal:" + malId;
+        var cached = metaCacheGet(cfg, key);
+        if (cached) return Promise.resolve(cached);
+        return jikanAnimeFull(cfg, malId).then(function(a) {
+          if (!a || !a.title && !a.title_english) return null;
+          var isMovie = String(a.type || "").toLowerCase() === "movie";
+          var poster = a.images && a.images.jpg ? a.images.jpg.large_image_url || a.images.jpg.image_url : void 0;
+          var meta = {
+            id: key,
+            type: "series",
+            name: a.title_english || a.title,
+            poster,
+            posterShape: "poster",
+            description: (a.synopsis || "").replace(/\[Written by MAL Rewrite\]\s*$/i, "").trim() || void 0,
+            releaseInfo: a.year ? String(a.year) : a.aired && a.aired.from ? String(a.aired.from).split("-")[0] : void 0,
+            status: a.status || void 0,
+            runtime: a.duration ? String(a.duration).replace(/^per ep\s*/i, "") : void 0
+          };
+          var score = parseFloat(a.score);
+          if (isFinite(score) && score > 0) meta.imdbRating = score;
+          if (Array.isArray(a.genres) && a.genres.length) meta.genres = a.genres.map(function(g) {
+            return g.name;
+          }).slice(0, 6);
+          var bg = a.trailer && a.trailer.images && a.trailer.images.maximum_image_url;
+          if (bg) meta.background = bg;
+          if (!isMovie) {
+            var pagePromises = [jikanEpisodePage(cfg, malId, 1), jikanEpisodePage(cfg, malId, 2), jikanEpisodePage(cfg, malId, 3)];
+            return Promise.all(pagePromises).then(function(pages) {
+              var videos = [];
+              var n = 0;
+              for (var p = 0; p < pages.length; p++) {
+                for (var i = 0; i < pages[p].length; i++) {
+                  n++;
+                  var ep = pages[p][i] || {};
+                  videos.push({
+                    id: key + ":1:" + n,
+                    title: ep.title || "Episode " + n,
+                    season: 1,
+                    episode: n,
+                    released: ep.aired ? ep.aired : null
+                  });
+                }
+              }
+              if (videos.length) meta.videos = videos;
+              else if (a.episodes) {
+                for (var k = 1; k <= Math.min(parseInt(a.episodes, 10) || 0, 300); k++) {
+                  videos.push({ id: key + ":1:" + k, title: "Episode " + k, season: 1, episode: k, released: null });
+                }
+                meta.videos = videos;
+              }
+              metaCacheSet(cfg, key, meta);
+              return meta;
+            });
+          }
+          metaCacheSet(cfg, key, meta);
+          return meta;
+        });
+      }
+      function metaForAnikoto(cfg, anikotoId) {
+        var key = "anikoto:" + anikotoId;
+        var cached = metaCacheGet(cfg, key);
+        if (cached) return Promise.resolve(cached);
+        return anikotoFetchJson(cfg, "/series/" + encodeURIComponent(anikotoId)).then(function(d) {
+          var data = d && d.data ? d.data : null;
+          var a = data && data.anime ? data.anime : null;
+          if (!a || !a.title) return null;
+          var meta = {
+            id: key,
+            type: "series",
+            name: cleanDisplayName(a.title),
+            poster: /^https?:\/\//i.test(String(a.poster || "")) ? a.poster : void 0,
+            posterShape: "poster",
+            description: stripTags(a.description || "") || void 0,
+            releaseInfo: a.year ? String(a.year) : void 0,
+            status: a.status || void 0
+          };
+          var bg = /^https?:\/\//i.test(String(a.background_image || "")) ? a.background_image : void 0;
+          if (bg) meta.background = bg;
+          var score = parseFloat(a.score);
+          if (isFinite(score) && score > 0 && score <= 10) meta.imdbRating = Math.round(score * 10) / 10;
+          if (Array.isArray(a.terms_by_type && a.terms_by_type.genre)) meta.genres = a.terms_by_type.genre.slice(0, 6);
+          var eps = Array.isArray(data.episodes) ? data.episodes : [];
+          var videos = [];
+          for (var i = 0; i < eps.length; i++) {
+            var ep = eps[i] || {};
+            var num = parseInt(ep.number, 10);
+            if (!isFinite(num) || num <= 0) continue;
+            videos.push({
+              id: key + ":1:" + num,
+              title: ep.title || "Episode " + num,
+              season: 1,
+              episode: num,
+              released: ep.updated_at ? ep.updated_at : null
+            });
+          }
+          if (videos.length) meta.videos = videos;
+          metaCacheSet(cfg, key, meta);
+          return meta;
+        });
+      }
+      function addonMeta(cfg, type, rawId) {
+        var id = String(rawId || "").trim();
+        var mm = id.match(/^(mal|anikoto):(\d+)$/i);
+        if (!mm) return Promise.resolve(null);
+        var prefix = mm[1].toLowerCase();
+        var num = mm[2];
+        if (prefix === "mal") return metaForMal(cfg, num, type);
+        return metaForAnikoto(cfg, num);
+      }
       function bufferStateKey(cfg, kind, ident) {
         return kind + "|" + ident;
       }
@@ -1357,6 +1570,53 @@ var require_core = __commonJS({
             mode: "archive",
             description: "Latest Release \u2014 newest anime updates on animotvslash.org",
             extra: [{ name: "search" }, { name: "skip" }]
+          },
+          // --- Anikoto API (anikotoapi.site) — 5 catalogs (user list 2026-09-11;
+          //     rows carry mal:/anilist:/anikoto: ids the paired plugins use) ---
+          {
+            type: "series",
+            id: "anikoto-latest-episode",
+            name: "Anikoto Latest Episode",
+            source: "anikoto",
+            mode: "latest",
+            description: "Latest Episode \u2014 the daily episode-update feed of the Anikoto/HiAnime library (MegaPlay-backed playback)",
+            extra: [{ name: "skip" }]
+          },
+          {
+            type: "series",
+            id: "anikoto-new-release",
+            name: "Anikoto New Release",
+            source: "anikoto",
+            mode: "newrelease",
+            description: "New Release \u2014 current-year anime currently airing on the Anikoto library",
+            extra: [{ name: "skip" }]
+          },
+          {
+            type: "series",
+            id: "anikoto-new-added",
+            name: "Anikoto New Added",
+            source: "anikoto",
+            mode: "newadded",
+            description: "New Added \u2014 most recently added series on the Anikoto library",
+            extra: [{ name: "skip" }]
+          },
+          {
+            type: "series",
+            id: "anikoto-upcoming",
+            name: "Anikoto Upcoming Anime",
+            source: "anikoto",
+            mode: "upcoming",
+            description: "Upcoming Anime \u2014 not-yet-aired entries on the Anikoto library",
+            extra: [{ name: "skip" }]
+          },
+          {
+            type: "series",
+            id: "anikoto-just-completed",
+            name: "Anikoto Just Completed",
+            source: "anikoto",
+            mode: "completed",
+            description: "Just Completed \u2014 recently finished anime on the Anikoto library",
+            extra: [{ name: "skip" }]
           }
         ];
       }
@@ -1365,11 +1625,11 @@ var require_core = __commonJS({
           id: ADDON_ID,
           version: VERSION,
           name: ADDON_NAME,
-          description: "Asian catalogs mirroring each site's real sections: pinoymovieshub.win (New Releases / Recently Added Movies / Series / Featured / Coming Soon / 17 genre sections), kissasian.cam (Hot Series Update / Latest Release / Recommendation genres), viewasian.lol (Recently Drama, Movie and Kshow), kisskh API (Latest Update / Top K+C-Drama / Hollywood / Anime / Upcoming; auto-rescued from TMDB lists when the API is CF-blocked) and animotvslash.org (Latest Release). Rows carry full TMDB metadata; fallback rows carry source-scoped ids (asian:pmh-/ks-/va-/kh-/an-) the paired plugins resolve straight to the sites' real pages.",
+          description: "Asian catalogs mirroring each site's real sections: pinoymovieshub.win, kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org and the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed). v5.0.0: anime rows carry ANIME ids \u2014 mal:/anilist:/anikoto: \u2014 straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. Other rows carry full TMDB metadata or source-scoped asian: fallback ids.",
           logo: cfg.pinoySite + PINOY_ICON,
-          resources: ["catalog"],
+          resources: ["catalog", "meta"],
           types: ["movie", "series"],
-          idPrefixes: ["tmdb:", "asian:"],
+          idPrefixes: ["tmdb:", "asian:", "mal:", "anikoto:"],
           catalogs: catalogDefinitions().map(function(c) {
             return {
               type: c.type,
@@ -1426,6 +1686,11 @@ var require_core = __commonJS({
               };
             });
           })],
+          ["anikoto", timeProbe(function() {
+            return anikotoFeedPage(cfg, 1).then(function(rows) {
+              return { ok: rows.length > 0, items: rows.length, error: rows.length ? void 0 : "anikoto /recent-anime parsed 0 rows (API changed?)" };
+            });
+          })],
           ["tmdb", timeProbe(function() {
             var url = "https://api.themoviedb.org/3/configuration?api_key=" + encodeURIComponent(cfg.tmdbKey);
             return fetchJson(cfg, url, 12e3).then(function(data) {
@@ -1462,6 +1727,7 @@ var require_core = __commonJS({
             if (!sources.kissasian.ok) hints.push("kissasian.cam unreachable from this runtime (site up but likely blocking this worker's egress \u2014 verified live from residential/other datacenter IPs). KissAsian catalogs fall back to serve-stale cache; device-side playback is unaffected (the plugin runs on the client).");
             if (!sources.viewasian.ok) hints.push("viewasian.lol unreachable from this runtime (site down or IP blocked). ViewAsian catalog may be empty; set VIEWASIAN_SITE to an alternate mirror.");
             if (!sources.animotvslash.ok) hints.push("animotvslash.org unreachable from this runtime (site down or IP blocked). AnimeTVSlash catalog may be empty; set ANIMO_SITE to an alternate mirror.");
+            if (!sources.anikoto.ok) hints.push("anikotoapi.site unreachable from this runtime (API down or rate-limited 60 req/120s). Anikoto catalogs may be empty; device playback via miruro is unaffected (it runs on the client).");
             if (!sources.kisskh.ok) {
               hints.push("kisskh API unreachable AND the TMDB rescue returned 0 rows \u2014 KissKH catalogs are EMPTY. Check TMDB_API_KEY (rescue lists) and KISSKH_HOSTS (comma-separated API mirrors); device playback is unaffected either way.");
             } else if (sources.kisskh.mode === "tmdb-rescue") {
@@ -1525,6 +1791,9 @@ var require_core = __commonJS({
         if (def.source === "kisskh") return function(page) {
           return kisskhPageMetas(cfg, def, page, extras);
         };
+        if (def.source === "anikoto") return function(page) {
+          return anikotoPageMetas(cfg, def, page, extras);
+        };
         return function() {
           return Promise.resolve([]);
         };
@@ -1547,12 +1816,13 @@ var require_core = __commonJS({
           kissasian: "kissasian.cam",
           viewasian: "viewasian.lol",
           animo: "animotvslash.org",
-          kisskh: "kisskh API (nl/ovh/co)"
+          kisskh: "kisskh API (nl/ovh/co)",
+          anikoto: "Anikoto API (anikotoapi.site)"
         };
         var rows = defs.map(function(c) {
           return "<tr><td>" + c.name + "</td><td><code>" + c.type + "</code></td><td>" + (srcLabel[c.source] || c.source) + "</td><td><code>/catalog/" + c.type + "/" + c.id + ".json</code></td></tr>";
         }).join("");
-        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + ADDON_NAME + '</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 16px;color:#eee;background:#14141b}a{color:#7ab8ff}table{border-collapse:collapse;width:100%}td,th{border:1px solid #333;padding:8px;text-align:left;font-size:14px}code{color:#9ef}h2{margin-top:28px}</style></head><body><h1>' + ADDON_NAME + " <small>v" + VERSION + `</small></h1><p>Stremio-protocol catalog addon for Nuvio \u2014 mirrors each site's real sections:</p><ul><li><b>Pinoy Movies Hub</b> \u2014 <a href="` + cfg.pinoySite + '">' + cfg.pinoySite.replace(/^https:\/\//, "") + '</a> (New Releases, Recently Added Movies, Series, Featured, Coming Soon, 17 genre sections)</li><li><b>KissAsian</b> \u2014 <a href="' + cfg.kissasianSite + '">' + cfg.kissasianSite.replace(/^https:\/\//, "") + '</a> (Hot Series Update, Latest Release, Recommendation genres)</li><li><b>ViewAsian</b> \u2014 <a href="' + cfg.viewasianSite + '">' + cfg.viewasianSite.replace(/^https:\/\//, "") + "</a> (Recently Drama, Movie and Kshow)</li><li><b>KissKH</b> \u2014 JSON API via " + cfg.kisskhHosts.join(" / ") + ' (Latest Update, Top K/C-Drama, Hollywood, Anime, Upcoming; auto-rescued from TMDB lists when every mirror is CF-blocked)</li><li><b>AnimeTVSlash</b> \u2014 <a href="' + cfg.animoSite + '">' + cfg.animoSite.replace(/^https:\/\//, "") + "</a> (Latest Release)</li></ul><p>Add this manifest URL in Nuvio (Settings &rarr; Addons): <b>" + (cfg.__selfUrl || "https://your-deployment") + '/manifest.json</b></p><p>Health probe: <a href="/health"><code>/health</code></a> (per-source status, latency, hints)</p><h2>Catalogs</h2><table><tr><th>Name</th><th>Type</th><th>Source</th><th>Endpoint</th></tr>' + rows + "</table><h2>Search examples</h2><p><code>/catalog/movie/pinoy-movies/search=hello love again.json</code><br><code>/catalog/series/asian-series/search=queen of tears.json</code><br><code>/catalog/series/kisskh-latest/search=queen of tears.json</code><br><code>/catalog/series/animo-latest/search=one piece.json</code></p><h2>Genre / section chips</h2><p><code>/catalog/series/asian-series-genre/genre=Romance.json</code><br><code>/catalog/series/pinoy-series-genre/genre=Tagalog Dubbed.json</code><br><code>/catalog/movie/pinoy-movies-genre/genre=Rated R&amp;skip=20.json</code> (site label for /genre/sexy)</p><p>Pair with the <b>PinoyMoviesHub</b>, <b>AsianHub</b> and <b>AnimeTVSlash</b> Nuvio plugins (xrexzerox/nv-plugins) for playable streams.</p></body></html>";
+        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + ADDON_NAME + '</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 16px;color:#eee;background:#14141b}a{color:#7ab8ff}table{border-collapse:collapse;width:100%}td,th{border:1px solid #333;padding:8px;text-align:left;font-size:14px}code{color:#9ef}h2{margin-top:28px}</style></head><body><h1>' + ADDON_NAME + " <small>v" + VERSION + `</small></h1><p>Stremio-protocol catalog addon for Nuvio \u2014 mirrors each site's real sections:</p><ul><li><b>Pinoy Movies Hub</b> \u2014 <a href="` + cfg.pinoySite + '">' + cfg.pinoySite.replace(/^https:\/\//, "") + '</a> (New Releases, Recently Added Movies, Series, Featured, Coming Soon, 17 genre sections)</li><li><b>KissAsian</b> \u2014 <a href="' + cfg.kissasianSite + '">' + cfg.kissasianSite.replace(/^https:\/\//, "") + '</a> (Hot Series Update, Latest Release, Recommendation genres)</li><li><b>ViewAsian</b> \u2014 <a href="' + cfg.viewasianSite + '">' + cfg.viewasianSite.replace(/^https:\/\//, "") + "</a> (Recently Drama, Movie and Kshow)</li><li><b>KissKH</b> \u2014 JSON API via " + cfg.kisskhHosts.join(" / ") + ' (Latest Update, Top K/C-Drama, Hollywood, Anime, Upcoming; auto-rescued from TMDB lists when every mirror is CF-blocked)</li><li><b>AnimeTVSlash</b> \u2014 <a href="' + cfg.animoSite + '">' + cfg.animoSite.replace(/^https:\/\//, "") + '</a> (Latest Release)</li><li><b>Anikoto API</b> \u2014 <a href="' + cfg.anikotoApi + '">' + cfg.anikotoApi.replace(/^https:\/\//, "") + "</a> (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed; rows carry <code>mal:</code>/<code>anilist:</code>/<code>anikoto:</code> ids for the paired miruro plugin)</li></ul><p>Add this manifest URL in Nuvio (Settings &rarr; Addons): <b>" + (cfg.__selfUrl || "https://your-deployment") + '/manifest.json</b></p><p>Health probe: <a href="/health"><code>/health</code></a> (per-source status, latency, hints)</p><h2>Catalogs</h2><table><tr><th>Name</th><th>Type</th><th>Source</th><th>Endpoint</th></tr>' + rows + "</table><h2>Search examples</h2><p><code>/catalog/movie/pinoy-movies/search=hello love again.json</code><br><code>/catalog/series/asian-series/search=queen of tears.json</code><br><code>/catalog/series/kisskh-latest/search=queen of tears.json</code><br><code>/catalog/series/animo-latest/search=one piece.json</code></p><h2>Genre / section chips</h2><p><code>/catalog/series/asian-series-genre/genre=Romance.json</code><br><code>/catalog/series/pinoy-series-genre/genre=Tagalog Dubbed.json</code><br><code>/catalog/movie/pinoy-movies-genre/genre=Rated R&amp;skip=20.json</code> (site label for /genre/sexy)</p><p>Pair with the <b>PinoyMoviesHub</b>, <b>AsianHub</b> and <b>AnimeTVSlash</b> Nuvio plugins (xrexzerox/nv-plugins) for playable streams.</p></body></html>";
       }
       function handle(urlString, env) {
         var cfg = makeConfig(env || {});
@@ -1580,6 +1850,22 @@ var require_core = __commonJS({
           }
           if (path === "/manifest.json") {
             return Promise.resolve(json(manifest(cfg), 200, 300));
+          }
+          var mm = path.match(/^\/meta\/(movie|series|tv)\/([^/]+?)\.json$/i);
+          if (mm) {
+            var mType = mm[1].toLowerCase() === "tv" ? "series" : mm[1].toLowerCase();
+            var mId = "";
+            try {
+              mId = decodeURIComponent(mm[2]);
+            } catch (e2) {
+              mId = mm[2];
+            }
+            return addonMeta(cfg, mType, mId).then(function(meta) {
+              if (!meta) return json({ error: "meta not found for id", id: mId }, 404, 60);
+              return json({ meta }, 200, 300);
+            }).catch(function(err2) {
+              return json({ error: String(err2 && err2.message || err2) }, 502, 0);
+            });
           }
           var m = path.match(/^\/catalog\/(movie|series|tv)\/([a-z0-9-]+)(?:\/([^/]*))?\.json$/i);
           if (!m) {
@@ -1630,6 +1916,12 @@ var require_core = __commonJS({
         vaPageMetas,
         animoPageMetas,
         kisskhPageMetas,
+        // v5.0.0 anikoto + meta test hooks
+        anikotoPageMetas,
+        anikotoRowToMeta,
+        addonMeta,
+        metaForMal,
+        metaForAnikoto,
         // v4.1.0 rescue test hooks
         kisskhRescueState,
         KISSKH_TMDB_RESCUE,

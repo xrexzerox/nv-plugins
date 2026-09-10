@@ -1,8 +1,26 @@
 /**
- * Miruro - Nuvio provider (v2.2.0)
+ * Miruro - Nuvio provider (v2.4.0)
  *
- * v2.2.0 (2026-09-11) "Miruro not fetching stream result" (after the v2.1.0
- * runtime fix): the remaining device-side killer was the MAPPING phase.
+ * v2.4.0 (2026-09-11) "still not fetching ... update the asian-catalog fully
+ * support anlist mal kitsu so that miruro will work": the asian-catalog
+ * addon (v5.0.0) now emits ANIME ids for its Anikoto sections — "mal:{id}",
+ * "anilist:{id}", "anikoto:{id}" — and Nuvio passes unknown-prefix ids to
+ * plugins VERBATIM (verified in NuvioMobile PluginContentIds +
+ * TmdbService.ensureTmdbId). miruro now understands those ids directly and
+ * skips the TMDB-mapping phase entirely for them:
+ *   - "mal:{id}"      -> MegaPlay /stream/mal/{id}/{ep}/{lang} (primary lane)
+ *   - "anilist:{id}"  -> MegaPlay /stream/ani/... + secure pipe lane
+ *   - "kitsu:{id}"    -> Kitsu /anime/{id}?include=mappings -> mal/anilist
+ *   - "anikoto:{id}"  -> Anikoto /series/{id} episode list -> the episode's
+ *                        episode_embed_id drives MegaPlay /stream/s-2/{id}/
+ *                        {lang} DIRECTLY (the exact pairing MegaPlay's own
+ *                        API docs recommend), plus mal/ani lanes from the
+ *                        same response in parallel
+ * Numeric ids keep the v2.3.0 path (ani.zip themoviedb_id deterministic
+ * mapping -> title-search fallback). Catalog-sourced anime now play with
+ * ZERO mapping latency and no dependency on AniList being alive.
+ *
+ * v2.3.0 (2026-09-11) "please use tmdb for miruro": the TMDB -> anime id
  * AniList GraphQL is down again (403 "temporarily disabled", verified live);
  * v2.0.0 tried it SERIALLY (2 x 8s timeout attempts) before Kitsu/Jikan, and
  * behind Cloudflare a device can hang on it instead of failing fast - so the
@@ -100,6 +118,9 @@ var KITSU_BASE = "https://kitsu.io/api/edge";
 var JIKAN_BASE = "https://api.jikan.moe/v4";
 // v2.3.0: deterministic TMDB-keyed anime id mapping (mal_id + anilist_id)
 var ANIZIP_BASE = "https://api.ani.zip";
+// v2.4.0: Anikoto API — the asian-catalog addon's anime sections source.
+// /series/{id} returns the episode list with MegaPlay s-2 embed ids.
+var ANIKOTO_API = "https://anikotoapi.site";
 var MIRURO_ORIGINS = [
   "https://www.miruro.ru",
   "https://www.miruro.to",
@@ -587,6 +608,36 @@ function mpSources(fileId) {
  * same file-id resolution; each language that resolves becomes its own rows
  * (master m3u8 variants labeled by height) with English/Tagalog subtitles.
  */
+// v2.4.0: shared by megaplayLanes (mal/ani routes) and anikotoS2Lanes
+// (s-2 embed-id route) — tracks -> English/Tagalog subs, master m3u8 ->
+// per-variant rows.
+function megaPlayRowsFromSources(src, label, lang, makeRow) {
+  var subs = src.tracks.filter(function (t) {
+    return t && t.file && /^https?:/i.test(String(t.file)) &&
+      /(english|filipino|tagalog)/i.test(String(t.label || t.language || ""));
+  }).slice(0, 6).map(function (t) {
+    var l = String(t.label || t.language || "English");
+    var isTl = /filipino|tagalog/i.test(l);
+    return {
+      url: String(t.file),
+      language: isTl ? "tl" : "en",
+      name: isTl ? "Tagalog / Filipino" : l
+    };
+  });
+  return hlsVariants(src.file, MEGAPLAY_BASE + "/").then(function (variants) {
+    var added = [];
+    if (variants.length) {
+      variants.forEach(function (v) { added.push(makeRow(v.url, "", label, lang, v.height)); });
+    } else {
+      added.push(makeRow(src.file, "", label, lang, 0));
+    }
+    if (subs.length) {
+      added.forEach(function (r) { if (!r.subtitles) r.subtitles = subs; });
+    }
+    return added;
+  });
+}
+
 function megaplayLanes(animeIds, epNumber, makeRow) {
   if (!animeIds || (!animeIds.malId && !animeIds.anilistId)) return Promise.resolve([]);
   var langs = ["sub", "dub"];
@@ -600,35 +651,129 @@ function megaplayLanes(animeIds, epNumber, makeRow) {
           if (!fileId) return;
           return mpSources(fileId).then(function (src) {
             if (!src) return;
-            var lane = lang === "dub" ? "Dub" : "Sub";
             var label = "MegaPlay " + (lang === "dub" ? "Dub" : "Sub");
-            var subs = src.tracks.filter(function (t) {
-              return t && t.file && /^https?:/i.test(String(t.file)) &&
-                /(english|filipino|tagalog)/i.test(String(t.label || t.language || ""));
-            }).slice(0, 6).map(function (t) {
-              var l = String(t.label || t.language || "English");
-              var isTl = /filipino|tagalog/i.test(l);
-              return {
-                url: String(t.file),
-                language: isTl ? "tl" : "en",
-                name: isTl ? "Tagalog / Filipino" : l
-              };
-            });
-            return hlsVariants(src.file, MEGAPLAY_BASE + "/").then(function (variants) {
-              var added = [];
-              if (variants.length) {
-                variants.forEach(function (v) { added.push(makeRow(v.url, "", label, lang, v.height)); });
-              } else {
-                added.push(makeRow(src.file, "", label, lang, 0));
-              }
-              if (subs.length) {
-                added.forEach(function (r) { if (!r.subtitles) r.subtitles = subs; });
-              }
+            return megaPlayRowsFromSources(src, label, lang, makeRow).then(function (added) {
               added.forEach(function (r) { rows.push(r); });
             });
           });
         }).catch(function () {});
   })).then(function () { return rows; });
+}
+
+// ------------------------------------------------ anikoto / catalog ids
+
+// v2.4.0: MegaPlay file-id resolution through the s-2 route, keyed by the
+// Anikoto episode_embed_id (the exact pairing MegaPlay's API docs document).
+function mpFileIdFromEmbedId(embedId, lang) {
+  var cacheKey = "e" + embedId + ":" + lang;
+  var hit = _mpFileCache[cacheKey];
+  if (hit && Date.now() - hit.ts < MP_FILE_CACHE_TTL) {
+    return Promise.resolve(hit.id);
+  }
+  return mpGap().then(function () {
+    return fetchText(MEGAPLAY_BASE + "/stream/s-2/" + encodeURIComponent(embedId) + "/" + lang, {
+      "User-Agent": COMMON_UA,
+      "Accept": "text/html,*/*",
+      "Referer": MEGAPLAY_BASE + "/"
+    }, 8000);
+  }).then(function (html) {
+    if (!html || html.indexOf("Error Code:") !== -1) return null;
+    var m = html.match(/id="megaplay-player"[^>]*data-id="(\d+)"/) ||
+            html.match(/data-id="(\d+)"/) ||
+            html.match(/<title>File (\d+) - MegaPlay/);
+    if (!m) return null;
+    _mpFileCache[cacheKey] = { ts: Date.now(), id: m[1] };
+    return m[1];
+  }).catch(function () { return null; });
+}
+
+function anikotoSeries(anikotoId) {
+  return fetchJson(ANIKOTO_API + "/series/" + encodeURIComponent(anikotoId), {
+    "User-Agent": COMMON_UA, "Accept": "application/json"
+  }, 9000).then(function (d) {
+    return d && d.data ? d.data : null;
+  }).catch(function () { return null; });
+}
+
+// s-2 lanes for one Anikoto episode (sub from episode_embed_id, dub from
+// embed_url.dub when the row carries one).
+function anikotoS2Lanes(ep, makeRow) {
+  var subId = ep.episode_embed_id ? String(ep.episode_embed_id) : "";
+  if (!subId && ep.embed_url && ep.embed_url.sub) {
+    var sm = String(ep.embed_url.sub).match(/\/s-2\/(\d+)\/sub/);
+    if (sm) subId = sm[1];
+  }
+  var dubId = "";
+  if (ep.embed_url && ep.embed_url.dub) {
+    var dm = String(ep.embed_url.dub).match(/\/s-2\/(\d+)\/dub/);
+    if (dm) dubId = dm[1];
+  }
+  var langs = [];
+  if (subId) langs.push({ lang: "sub", embed: subId });
+  if (dubId) langs.push({ lang: "dub", embed: dubId });
+  if (!langs.length) return Promise.resolve([]);
+  return Promise.all(langs.map(function (l) {
+    return mpFileIdFromEmbedId(l.embed, l.lang).then(function (fileId) {
+      if (!fileId) return;
+      return mpSources(fileId).then(function (src) {
+        if (!src) return;
+        var label = "MegaPlay " + (l.lang === "dub" ? "Dub" : "Sub");
+        return megaPlayRowsFromSources(src, label, l.lang, makeRow);
+      });
+    }).catch(function () { return null; });
+  })).then(function (parts) {
+    var rows = [];
+    parts.forEach(function (p) { if (p) rows = rows.concat(p); });
+    return rows;
+  });
+}
+
+// "anikoto:{id}" lane: resolve the series once, then run the s-2 embed-id
+// lanes AND the mal/ani lanes (the series response carries mal_id/ani_id)
+// in parallel; dedupe happens in getStreams.
+function anikotoAllLanes(anikotoId, epNumber, makeRow) {
+  return anikotoSeries(anikotoId).then(function (data) {
+    if (!data) return { rows: [] };
+    var anime = data.anime || {};
+    var malId = parseInt(anime.mal_id, 10);
+    var aniId = parseInt(anime.ani_id, 10);
+    var animeIds = {
+      malId: isFinite(malId) && malId > 0 ? malId : null,
+      anilistId: isFinite(aniId) && aniId > 0 ? aniId : null
+    };
+    var eps = Array.isArray(data.episodes) ? data.episodes : [];
+    var ep = null;
+    for (var i = 0; i < eps.length; i++) {
+      if (parseInt(eps[i] && eps[i].number, 10) === parseInt(epNumber, 10)) { ep = eps[i]; break; }
+    }
+    var s2 = ep ? anikotoS2Lanes(ep, makeRow) : Promise.resolve([]);
+    var mp = (animeIds.malId || animeIds.anilistId)
+      ? megaplayLanes(animeIds, epNumber, makeRow)
+      : Promise.resolve([]);
+    return Promise.all([s2, mp]).then(function (parts) {
+      return { rows: parts[0].concat(parts[1]) };
+    });
+  });
+}
+
+// "kitsu:{id}" -> {malId, anilistId} via the mappings relationship.
+function kitsuById(kitsuId) {
+  var url = KITSU_BASE + "/anime/" + encodeURIComponent(kitsuId) + "?include=mappings";
+  return mapGap().then(function () {
+    return fetchJson(url, { "User-Agent": COMMON_UA, "Accept": "application/vnd.api+json" }, 10000);
+  }).then(function (data) {
+    if (!data || !data.data) return null;
+    var mapIds = {};
+    (data.included || []).forEach(function (inc) {
+      if (inc && inc.type === "mappings" && inc.attributes) {
+        var site = String(inc.attributes.externalSite || "");
+        if (site === "myanimelist/anime") mapIds.mal = inc.attributes.externalId;
+        else if (site === "anilist/anime") mapIds.ali = inc.attributes.externalId;
+      }
+    });
+    if (!mapIds.mal && !mapIds.ali) return null;
+    return { malId: mapIds.mal || null, anilistId: mapIds.ali || null, via: "kitsu-id" };
+  }).catch(function () { return null; });
 }
 
 /** Fetch a master m3u8 and return [{url, quality}] variants (max 4, best first). */
@@ -1039,7 +1184,50 @@ function getStreams(tmdbId, mediaType, season, episode) {
     };
   }
 
-  var run = tmdbInfo(tmdbId, isTv ? "tv" : "movie").then(function (info) {
+  // v2.4.0: catalog-issued anime ids ("mal:52991", "anilist:154587",
+  // "kitsu:46474", "anikoto:8952") arrive VERBATIM from Nuvio (the app only
+  // rewrites tmdb:/tt ids) and skip the TMDB-mapping phase entirely.
+  var pm = tmdbId.match(/^(mal|anilist|kitsu|anikoto):(\d+)$/i);
+  var run;
+  if (pm) {
+    var prefix = pm[1].toLowerCase();
+    var catId = pm[2];
+    console.log("[Miruro] start catalog id " + prefix + ":" + catId +
+      (isTv ? " S" + season + "E" + episode : "") + " -> direct MegaPlay lane");
+    var catEp = episode; // anime numbering is flat (season 1 per the meta addon)
+    if (prefix === "mal") {
+      run = megaplayLanes({ malId: catId, anilistId: null }, catEp, makeRow)
+        .then(function (rows) { return { rows: rows }; });
+    } else if (prefix === "anilist") {
+      run = Promise.all([
+        megaplayLanes({ malId: null, anilistId: catId }, catEp, makeRow),
+        pipeLanes(catId, catEp, makeRow)
+      ]).then(function (parts) { return { rows: parts[0].concat(parts[1]) }; });
+    } else if (prefix === "kitsu") {
+      run = kitsuById(catId).then(function (ids) {
+        if (!ids) return { rows: [] };
+        console.log("[Miruro] kitsu " + catId + " -> mal " + ids.malId + " / anilist " + ids.anilistId);
+        return Promise.all([
+          megaplayLanes(ids, catEp, makeRow),
+          ids.anilistId ? pipeLanes(ids.anilistId, catEp, makeRow) : Promise.resolve([])
+        ]).then(function (parts) { return { rows: parts[0].concat(parts[1]) }; });
+      });
+    } else {
+      run = anikotoAllLanes(catId, catEp, makeRow);
+    }
+    run = run.then(function (out) {
+      var seen = {}, outRows = [];
+      (out && out.rows ? out.rows : []).forEach(function (r) {
+        var nu = String(r.url).replace(/[#?].*$/, "");
+        if (seen[nu]) return;
+        seen[nu] = 1;
+        outRows.push(r);
+      });
+      console.log("[Miruro] returning " + outRows.length + " stream(s)");
+      return outRows;
+    });
+  } else {
+    run = tmdbInfo(tmdbId, isTv ? "tv" : "movie").then(function (info) {
     // mapTMDBToAnime never rejects (null on total mapping outage)
     return mapTMDBToAnime(tmdbId, isTv, info, isTv ? season : 1).then(function (animeIds) {
       if (animeIds) {
@@ -1076,7 +1264,9 @@ function getStreams(tmdbId, mediaType, season, episode) {
         });
       });
     });
-  }).catch(function (error) {
+    });
+  }
+  run = run.catch(function (error) {
     console.log("[Miruro] failed: " + (error && error.message ? error.message : error));
     return [];
   }).then(function (streams) {

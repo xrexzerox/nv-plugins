@@ -1,11 +1,12 @@
 {
   "id": "community.asian.catalog",
-  "version": "4.1.0",
+  "version": "5.0.0",
   "name": "Asian Catalog",
-  "description": "Asian catalogs mirroring each site's real sections: pinoymovieshub.win (New Releases / Recently Added Movies / Series / Featured / Coming Soon / 17 genre sections incl. Rated R & Wattpad Presents), kissasian.cam (Hot Series Update / Latest Release / Recommendation genres Fantasy-Friendship-Law-Romance-Sports), viewasian.lol (Recently Drama, Movie and Kshow), kisskh API (Latest Update / Top K+C-Drama / Hollywood / Anime / Upcoming; auto-rescued from TMDB lists when the API is CF-blocked) and animotvslash.org (Latest Release). Rows carry full TMDB metadata (poster, backdrop, overview, year, rating); fallback rows carry source-scoped ids (asian:pmh-/ks-/va-/kh-/an-) the paired plugins resolve straight to the sites' real pages.",
+  "description": "Asian catalogs mirroring each site's real sections: pinoymovieshub.win, kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org and the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed). v5.0.0: anime rows carry ANIME ids - mal:/anilist:/anikoto: - straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. Other rows carry full TMDB metadata or source-scoped asian: fallback ids.",
   "logo": "https://pinoymovieshub.win/wp-content/uploads/2025/04/cropped-favicon-11-192x192.png",
   "resources": [
-    "catalog"
+    "catalog",
+    "meta"
   ],
   "types": [
     "movie",
@@ -13,7 +14,9 @@
   ],
   "idPrefixes": [
     "tmdb:",
-    "asian:"
+    "asian:",
+    "mal:",
+    "anikoto:"
   ],
   "catalogs": [
     {
@@ -332,6 +335,61 @@
         {
           "name": "search"
         },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "anikoto-latest-episode",
+      "name": "Anikoto Latest Episode",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "anikoto-new-release",
+      "name": "Anikoto New Release",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "anikoto-new-added",
+      "name": "Anikoto New Added",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "anikoto-upcoming",
+      "name": "Anikoto Upcoming Anime",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "anikoto-just-completed",
+      "name": "Anikoto Just Completed",
+      "pageSize": 20,
+      "extra": [
         {
           "name": "skip"
         }
