@@ -1,5 +1,18 @@
 /**
- * NetMirror - Nuvio provider (v5.1.0)
+ * NetMirror - Nuvio provider (v6.0.0)
+ *
+ * v6.0.0: mirror prune + Tagalog dub lane rewrite (2026-09-11).
+ *  - Mirror sweep: net77.cc (403) and net52.cc (CF challenge) are dead;
+ *    only net27.cc still serves the embed API. Dead bases removed so the
+ *    first call no longer wastes two doomed requests.
+ *  - Tagalog dub lane now uses the /api/variants-tmdb/{type}/{id} API:
+ *    variants list dub/detailPath pairs (e.g. Frozen carries "Tagalog dub"),
+ *    and /api/embed-tmdb?...&dub={sid}&dubdp={dp} returns that dub's own
+ *    sources. Replaces the old fallbackHls audio-group scan - the
+ *    /api/loffe extractor behind fallbackHls is broken server-side
+ *    (404 "extract failed: browserType.launch"), so the Auto row it fed
+ *    is gone too.
+ *  - Everything else (throttle, cache, 429 retry, caption sort) unchanged.
  *
  * v5.1.0: rate-limit hardening (upstream started returning HTTP 429).
  *  - Result cache: identical getStreams calls within 10 min reuse the same
@@ -11,32 +24,25 @@
  *  - 429 handling: one retry honoring Retry-After (min 1.5 s, max 8 s)
  *    before moving on to the next mirror.
  *
- * v5.0.0: language lane.
- *  - Captions are now sorted with English + Filipino ("fil" = Tagalog) first
- *    and labeled; optional setting filters captions (all | en+fil | en).
- *  - The fallbackHls master playlist is inspected for AUDIO groups: if a
- *    Filipino/Tagalog audio group exists AND variant playlists reference it,
- *    each such variant is emitted as its own "NetMirror | Tagalog Dub" row.
- *    (NetMirror carries no per-stream language tag otherwise - verified via
- *    live probe 2026-09-10; captions[] are the only lang-bearing surface,
- *    plus HLS audio groups on the fallback master.)
- *
  * API (unchanged since v2):
  *   GET {base}/api/embed-tmdb/{tmdbId}?type={movie|tv}&se={s}&ep={e}
  *   Headers: Referer: {base}/
  *     -> { ok, noSource?, mode, mp4, resolution, streams:[{url,resolution,size}],
  *          captions:[{lang,name,url}], fallbackHls, title, year, ... }
+ *   GET {base}/api/variants-tmdb/{type}/{tmdbId}?se={s}&ep={e}
+ *     -> { ok, variants:[{dubSubjectId, language, detailPath}] }
  *
- * Streams are direct mp4s on NetMirror's CDN (signed). fallbackHls is a
- * same-origin HLS path. Pure ES5 promise chains - QuickJS + Nuvio TV worker
- * safe.
+ * Streams are direct mp4s on NetMirror's CDN (signed, ~8 h TTL). The site's
+ * own player plays them directly and only falls back to its CF-worker proxy
+ * on 403/401/410, so direct URLs are the correct lane for device playback.
+ * Pure ES5 promise chains - QuickJS + Nuvio TV worker safe.
  */
 
 var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
+// v6: mirror sweep 2026-09-11 - net77.cc 403, net52.cc CF challenge; net27.cc
+// is the only base still serving /api/embed-tmdb. Settings override still wins.
 var CANDIDATE_BASES = [
-  "https://net27.cc",
-  "https://net77.cc",
-  "https://net52.cc"
+  "https://net27.cc"
 ];
 
 var COMMON_HEADERS = {
@@ -180,83 +186,99 @@ function captionName(c) {
   return name;
 }
 
-function captionsFor(data) {
+function captionsFor(base, data) {
   if (!Array.isArray(data.captions)) return [];
-  var mode = settings().captionLang || "all";
+  var mode = settings().captionLang || "en+fil";
   var subs = [];
   data.captions.forEach(function (c) {
-    if (!c || !c.url || !/^https?:\/\//i.test(String(c.url))) return;
+    if (!c || !c.url) return;
+    // v6: net27 now returns same-origin proxy paths
+    // ("/api/proxy/video?url=<enc CDN url>") instead of absolute URLs.
+    var u = String(c.url);
+    if (/^\/\//i.test(u)) u = "https:" + u;
+    else if (!/^https?:\/\//i.test(u)) u = base + (u.charAt(0) === "/" ? u : "/" + u);
+    if (!/^https?:\/\//i.test(u)) return;
     var lang = String(c.lang || c.language || "en").toLowerCase();
     if (mode === "en" && lang !== "en") return;
     if (mode === "en+fil" && !(lang === "en" || lang === "fil" || lang === "tl")) return;
-    subs.push({ c: c, prio: captionPriority(c) });
+    subs.push({ c: c, u: u, prio: captionPriority(c) });
   });
   subs.sort(function (a, b) { return a.prio - b.prio; });
   return subs.slice(0, 8).map(function (x) {
-    return { url: String(x.c.url), language: String(x.c.lang || x.c.language || "en"), name: captionName(x.c) };
+    return { url: x.u, language: String(x.c.lang || x.c.language || "en"), name: captionName(x.c) };
   });
 }
 
-// --------------------------------------------------- Tagalog dub audio v5
-
-function isTagalogGroup(attrs) {
-  // #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud1",NAME="Filipino",LANGUAGE="fil"
-  var language = (attrs.match(/LANGUAGE=["']([^"']+)["']/i) || [])[1] || "";
-  var name = (attrs.match(/NAME=["']([^"']+)["']/i) || [])[1] || "";
-  var hay = (language + " " + name).toLowerCase();
-  return /\b(fil|tl|filipino|tagalog|pilipino)\b/.test(hay) ||
-    /tagalog|filipino/.test(hay);
-}
+// --------------------------------------------------- Tagalog dub lane v6
 
 /**
- * Parses the fallback HLS master playlist. Returns Promise<{tagalogUrls:[]}>.
- * Tagalog lanes exist only when an AUDIO group is Filipino/Tagalog AND
- * #EXT-X-STREAM-INF variants reference that group (then the variant playlist
- * URL plays the Tagalog audio directly in any player).
+ * v6: Tagalog dub lanes via the variants API (replaces the v5 fallbackHls
+ * audio-group scan - that endpoint's server-side extractor is broken).
+ *
+ * 1. GET {base}/api/variants-tmdb/{type}/{tmdbId}?se&ep
+ *      -> { ok, variants:[{dubSubjectId, language, detailPath}, ...] }
+ *    Language strings observed live: "Tagalog dub", "Hindi dub", "French dub",
+ *    "Arabic sub", ... (NetMirror is a PH-market app; Tagalog dubs exist for
+ *    many titles - e.g. Frozen).
+ * 2. For each Tagalog/Filipino variant:
+ *    GET {base}/api/embed-tmdb/{tmdbId}?type&se&ep&dub={sid}&dubdp={dp}
+ *      -> that dub's own sources (verified: subjectId switches to the dub's).
+ *
+ * Every call is throttled like the main lane; all failures are fail-soft ([]).
  */
-function tagalogDubLanes(hlsUrl, referer) {
-  if (!hlsUrl) return Promise.resolve([]);
-  return fetchText(hlsUrl, { Referer: referer }, 9000).then(function (master) {
-    if (!master || master.indexOf("#EXT-X-MEDIA") === -1) return [];
-    var groups = {};      // groupId -> isTagalog
-    var re = /#EXT-X-MEDIA:([^|\r\n]+)/gi;
-    var m;
-    while ((m = re.exec(master)) !== null) {
-      var attrs = m[1];
-      if (!/TYPE=["']?AUDIO/i.test(attrs)) continue;
-      var gid = (attrs.match(/GROUP-ID=["']([^"']+)["']/i) || [])[1] || "";
-      if (gid) groups[gid] = isTagalogGroup(attrs);
-    }
-    var tagalogGids = Object.keys(groups).filter(function (g) { return groups[g]; });
-    if (!tagalogGids.length) return [];
-    var wanted = {};
-    tagalogGids.forEach(function (g) { wanted[g] = 1; });
-    var out = [];
-    var lines = master.split(/\r?\n/);
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      if (line.indexOf("#EXT-X-STREAM-INF") !== 0) continue;
-      var audioM = line.match(/AUDIO=["']([^"']+)["']/i);
-      if (!audioM || !wanted[audioM[1]]) continue;
-      var url = "";
-      for (var j = i + 1; j < lines.length; j++) {
-        var t = lines[j].trim();
-        if (t && t.charAt(0) !== "#") { url = t; break; }
-      }
-      var resM = line.match(/RESOLUTION=(\d+)x(\d+)/i);
-      var q = resM ? qualityFromResolution(resM[2]) : "Auto";
-      if (url) {
-        out.push({ url: /^https?:\/\//i.test(url) ? url : hlsUrl.replace(/[^/]*$/, url), quality: q });
-      }
-    }
-    // dedupe by url
-    var seen = {}, uniq = [];
-    out.forEach(function (x) {
-      if (seen[x.url]) return;
-      seen[x.url] = 1;
-      uniq.push(x);
+function isTagalogVariant(langText) {
+  return /tagalog|filipino|pilipino/i.test(String(langText || ""));
+}
+
+function tagalogDubVariants(base, tmdbId, mediaType, season, episode, meta) {
+  var type = mediaType === "tv" ? "tv" : "movie";
+  var vUrl = base + "/api/variants-tmdb/" + type + "/" + encodeURIComponent(tmdbId) +
+    "?se=" + (season || 1) + "&ep=" + (episode || 1);
+  return throttleSlot(RATE_MIN_GAP).then(function () {
+    return fetchJsonRetry(vUrl, { Referer: base + "/" }, 12000);
+  }).then(function (data) {
+    if (!data || !data.ok || !Array.isArray(data.variants)) return [];
+    var dubs = [];
+    data.variants.forEach(function (v) {
+      if (v && v.dubSubjectId && v.detailPath && isTagalogVariant(v.language) &&
+          dubs.length < 2) dubs.push(v);
     });
-    return uniq;
+    if (!dubs.length) return [];
+    var out = [];
+    var title = labelFor(meta);
+    var referer = { Referer: base + "/" };
+    var seen = {};
+    var chain = Promise.resolve();
+    dubs.forEach(function (dub) {
+      chain = chain.then(function () {
+        var dUrl = base + "/api/embed-tmdb/" + encodeURIComponent(tmdbId) +
+          "?type=" + type + "&se=" + (season || 1) + "&ep=" + (episode || 1) +
+          "&dub=" + encodeURIComponent(dub.dubSubjectId) +
+          "&dubdp=" + encodeURIComponent(dub.detailPath);
+        return throttleSlot(RATE_MIN_GAP).then(function () {
+          return fetchJsonRetry(dUrl, { Referer: base + "/" }, 12000);
+        }).then(function (dd) {
+          if (!dd || !dd.ok || dd.noSource) return;
+          var all = [];
+          if (Array.isArray(dd.streams)) all = all.concat(dd.streams);
+          if (dd.mp4) all.push({ url: dd.mp4, resolution: dd.resolution });
+          all.forEach(function (s) {
+            if (!s || !s.url || typeof s.url !== "string") return;
+            if (!/^https?:\/\//i.test(s.url) || seen[s.url]) return;
+            seen[s.url] = 1;
+            var q = qualityFromResolution(s.resolution);
+            out.push({
+              name: "NetMirror | Tagalog Dub",
+              title: title + " | Tagalog Dub (" + q + ")",
+              url: s.url,
+              quality: q,
+              headers: referer
+            });
+          });
+        }).catch(function () {});
+      });
+    });
+    return chain.then(function () { return out; });
   }).catch(function () { return []; });
 }
 
@@ -304,37 +326,17 @@ function fetchFromBase(base, tmdbId, mediaType, season, episode, meta) {
     // Single default mp4 (dedupes against streams[] automatically).
     if (data.mp4) pushStream(data.mp4, qualityFromResolution(data.resolution));
 
-    // Same-origin HLS fallback.
-    var hlsUrl = null;
-    if (data.fallbackHls && typeof data.fallbackHls === "string") {
-      hlsUrl = /^https?:\/\//i.test(data.fallbackHls)
-        ? data.fallbackHls
-        : base + (data.fallbackHls.charAt(0) === "/" ? data.fallbackHls : "/" + data.fallbackHls);
-      pushStream(hlsUrl, "Auto");
-    }
+    // v6: the fallbackHls "Auto" row is gone - /api/loffe (its extractor)
+    // returns 404 "extract failed: browserType.launch" server-side.
 
     // v5: captions sorted en/fil first (+ optional filter).
-    var subs = captionsFor(data);
+    // v6: caption urls are relative proxy paths now - resolved against base.
+    var subs = captionsFor(base, data);
     if (subs.length) {
       streams.forEach(function (s) { s.subtitles = subs; });
     }
 
-    // v5: Tagalog dub audio lanes from the fallback HLS master (best effort).
-    var laneP = hlsUrl ? tagalogDubLanes(hlsUrl, base + "/") : Promise.resolve([]);
-    return laneP.then(function (lanes) {
-      lanes.forEach(function (lane) {
-        if (seen[lane.url]) return;
-        seen[lane.url] = 1;
-        streams.push({
-          name: "NetMirror | Tagalog Dub",
-          title: title + " | Tagalog Dub (" + lane.quality + ")",
-          url: lane.url,
-          quality: lane.quality,
-          headers: referer
-        });
-      });
-      return streams;
-    });
+    return streams;
   }).then(function (streams) {
     if (streams && streams.length) _nmState.goodBase = base;
     return streams;
@@ -377,9 +379,20 @@ function getStreams(tmdbId, mediaType, season, episode) {
       });
     });
     return chain.then(function (streams) {
-      console.log("[NetMirror] returning " + streams.length + " stream(s)");
-      if (streams && streams.length) _nmState.cache[key] = { ts: Date.now(), streams: streams };
-      return streams;
+      // v6: Tagalog dub lane via the variants API (fail-soft, throttled).
+      // Runs even when the main lane found nothing - a dub can exist while
+      // the default audio does not. Cached together with the main rows.
+      var dubBase = (_nmState.goodBase && CANDIDATE_BASES.indexOf(_nmState.goodBase) !== -1)
+        ? _nmState.goodBase
+        : CANDIDATE_BASES[0];
+      return tagalogDubVariants(dubBase, tmdbId, mediaType, season, episode, meta)
+        .then(function (dubs) {
+          var all = streams.concat(dubs);
+          console.log("[NetMirror] returning " + all.length + " stream(s)" +
+            (dubs.length ? " (incl. " + dubs.length + " Tagalog dub)" : ""));
+          if (all.length) _nmState.cache[key] = { ts: Date.now(), streams: all };
+          return all;
+        });
     });
   }).catch(function (error) {
     console.log("[NetMirror] failed: " + (error && error.message ? error.message : error));
@@ -407,7 +420,7 @@ function onSettings() {
       title: "Subtitle language",
       label: "Subtitle language",
       type: "select",
-      default: "all",
+      default: "en+fil",
       options: [
         { value: "all", label: "All languages" },
         { value: "en+fil", label: "English + Tagalog / Filipino" },

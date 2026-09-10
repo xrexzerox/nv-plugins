@@ -179,7 +179,6 @@ function fetchAndParseM3U8(playlistUrl, mediaInfo) {
           title: mediaInfo.title,
           url: playlistUrl,
           quality: "Auto",
-          size: "Unknown",
           headers: VIDLINK_HEADERS,
           provider: "vidlink"
         }];
@@ -192,7 +191,6 @@ function fetchAndParseM3U8(playlistUrl, mediaInfo) {
           title: mediaInfo.title,
           url: stream.url,
           quality,
-          size: "Unknown",
           headers: VIDLINK_HEADERS,
           provider: "vidlink"
         };
@@ -204,7 +202,6 @@ function fetchAndParseM3U8(playlistUrl, mediaInfo) {
         title: mediaInfo.title,
         url: playlistUrl,
         quality: "Auto",
-        size: "Unknown",
         headers: VIDLINK_HEADERS,
         provider: "vidlink"
       }];
@@ -212,7 +209,6 @@ function fetchAndParseM3U8(playlistUrl, mediaInfo) {
   });
 }
 
-// src/vidlink/processor.js
 function extractQuality(streamData) {
   if (!streamData)
     return "Unknown";
@@ -276,7 +272,7 @@ function processVidlinkResponse(data, mediaInfo) {
             title: streamTitle,
             url: qualityData.url,
             quality,
-            size: "Unknown",
+            size: formatVidlinkSize(qualityData.size),
             headers: VIDLINK_HEADERS,
             provider: "vidlink"
           });
@@ -303,7 +299,7 @@ function processVidlinkResponse(data, mediaInfo) {
         title: streamTitle,
         url: data.url,
         quality,
-        size: "Unknown",
+        size: formatVidlinkSize(data.size),
         headers: VIDLINK_HEADERS,
         provider: "vidlink"
       });
@@ -316,7 +312,7 @@ function processVidlinkResponse(data, mediaInfo) {
             title: streamTitle,
             url: stream.url,
             quality,
-            size: stream.size || "Unknown",
+            size: formatVidlinkSize(stream.size),
             headers: VIDLINK_HEADERS,
             provider: "vidlink"
           });
@@ -331,7 +327,7 @@ function processVidlinkResponse(data, mediaInfo) {
             title: streamTitle,
             url: link.url,
             quality,
-            size: link.size || "Unknown",
+            size: formatVidlinkSize(link.size),
             headers: VIDLINK_HEADERS,
             provider: "vidlink"
           });
@@ -350,7 +346,6 @@ function processVidlinkResponse(data, mediaInfo) {
               title: streamTitle,
               url: value,
               quality,
-              size: "Unknown",
               headers: VIDLINK_HEADERS,
               provider: "vidlink"
             });
@@ -371,6 +366,14 @@ function processVidlinkResponse(data, mediaInfo) {
 }
 
 // src/vidlink/index.js
+// v2 (2026-09-11):
+//  - Rows no longer carry size: "Unknown". Nuvio renders the stream row's
+//    subtitle line as "quality • size • language", so that placeholder was
+//    shown to users as a literal "Unknown" (looks like a broken stream).
+//    Real byte sizes from the API are formatted (e.g. "2.25 GB"); anything
+//    unknown is omitted entirely.
+//  - Captions are now emitted as subtitles, English + Filipino/Tagalog only
+//    (sorted first), matching the pack-wide language policy.
 var QUALITY_ORDER = {
   "4K": 5,
   "1440p": 4,
@@ -382,6 +385,53 @@ var QUALITY_ORDER = {
   "Auto": -2,
   "Unknown": -3
 };
+// v2: byte size formatting - replaces the old size: "Unknown" placeholder
+function formatVidlinkSize(sizeValue) {
+  const n = parseInt(sizeValue, 10);
+  if (!n || n <= 0) return null;
+  if (n >= 1024 * 1024 * 1024) return (n / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+  if (n >= 1024 * 1024) return (n / (1024 * 1024)).toFixed(0) + " MB";
+  return (n / 1024).toFixed(0) + " KB";
+}
+// v2: English + Filipino/Tagalog captions only, sorted en first
+function extractVidlinkSubtitles(data) {
+  try {
+    const caps = data && data.stream && Array.isArray(data.stream.captions) ? data.stream.captions : [];
+    const prio = (c) => {
+      const lang = String((c && (c.language || c.lang || c.label)) || "");
+      if (/english/i.test(lang)) return 0;
+      if (/filipino|tagalog|pilipino/i.test(lang)) return 1;
+      return 2;
+    };
+    return caps
+      .filter((c) => c && c.url && /^https?:/i.test(String(c.url)))
+      .filter((c) => prio(c) < 2)
+      .sort((a, b) => prio(a) - prio(b))
+      .slice(0, 8)
+      .map((c) => {
+        const lang = String(c.language || c.lang || c.label || "");
+        const isTl = /filipino|tagalog|pilipino/i.test(lang);
+        return {
+          url: String(c.url),
+          language: isTl ? "tl" : "en",
+          name: isTl ? "Tagalog / Filipino" : String(c.language || "English")
+        };
+      });
+  } catch (error) {
+    return [];
+  }
+}
+
+// v2: central row cleanup - strip every placeholder "Unknown" size (Nuvio
+// prints it in the row subtitle line) and attach en/tl subtitles once.
+function finalizeVidlinkStreams(rows, data) {
+  const subs = extractVidlinkSubtitles(data);
+  return (rows || []).filter((s) => s && s.url && !s._isPlaylist).map((s) => {
+    if (s.size === "Unknown" || s.size == null) delete s.size;
+    if (subs.length && !s.subtitles) s.subtitles = subs;
+    return s;
+  });
+}
 function getStreams(tmdbId, mediaType = "movie", seasonNum = null, episodeNum = null) {
   return __async(this, null, function* () {
     console.log(`[Vidlink] Fetching streams for TMDB ID: ${tmdbId}, Type: ${mediaType}${mediaType === "tv" ? `, S:${seasonNum}E:${episodeNum}` : ""}`);
@@ -420,12 +470,14 @@ function getStreams(tmdbId, mediaType = "movie", seasonNum = null, episodeNum = 
         const parsedStreamArrays = yield Promise.all(playlistPromises);
         const allStreams = directStreams.concat(...parsedStreamArrays);
         allStreams.sort((a, b) => (QUALITY_ORDER[b.quality] || -3) - (QUALITY_ORDER[a.quality] || -3));
-        console.log(`[Vidlink] Successfully processed ${allStreams.length} total streams`);
-        return allStreams;
+        const finalStreams = finalizeVidlinkStreams(allStreams, data);
+        console.log(`[Vidlink] Successfully processed ${finalStreams.length} total streams`);
+        return finalStreams;
       } else {
         directStreams.sort((a, b) => (QUALITY_ORDER[b.quality] || -3) - (QUALITY_ORDER[a.quality] || -3));
-        console.log(`[Vidlink] Successfully processed ${directStreams.length} streams`);
-        return directStreams;
+        const finalStreams = finalizeVidlinkStreams(directStreams, data);
+        console.log(`[Vidlink] Successfully processed ${finalStreams.length} streams`);
+        return finalStreams;
       }
     } catch (error) {
       console.error(`[Vidlink] Error in getStreams: ${error.message}`);

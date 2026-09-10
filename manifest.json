@@ -1,6 +1,6 @@
 {
   "name": "NV Plugins",
-  "version": "4.2.0",
+  "version": "4.3.0",
   "description": "Canonical Nuvio provider collection. v4.0.0 BFS wave (bestfreestreaming.org review, review-not-merge honored): NEW site-anchored scrapers zoechip/himovies/moviesjoy/hdtoday (FMovies-family platform, shared id space, per-episode server chain -> vixsrc.to + vidsrcme.ru + primesrc.me backends), movish (TMDB-keyed player-sources API, direct dlproxy mp4s) and vixsrc (direct token-HLS lanes for any TMDB id); netmirror 5.0.0 (English + Tagalog/Filipino caption priority, Tagalog-dub audio lanes from fallback HLS, subtitle filter setting); cinemacity 5.0.0 (English first + Tagalog/Filipino dub detection, Italian demoted); torrents 1.3.0 + tagalogtorrents 1.3.0 (torrents without seeders are never surfaced).",
   "author": "xrexzerox",
   "scrapers": [
@@ -31,8 +31,8 @@
     {
       "id": "vidlink",
       "name": "Vidlink",
-      "description": "Vidlink streaming with encrypted TMDB ID support (Streamline port of CineStream).",
-      "version": "1.2.0",
+      "description": "Vidlink streaming with encrypted TMDB ID support; v1.3.0 replaces the size:Unknown placeholder (shown as 'Unknown' in Nuvio rows) with real formatted sizes and attaches English+Filipino subtitles.",
+      "version": "1.3.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -796,8 +796,8 @@
     {
       "id": "netmirror",
       "name": "NetMirror",
-      "description": "NetMirror v5.1.0: HTTP 429 hardening - 10 min result cache, in-flight call sharing, >=1200 ms global throttle with 600 ms mirror gaps, sticky best base, one 429-aware retry. Tagalog dub lanes and en/fil caption priority from v5.0.0 unchanged.",
-      "version": "5.1.0",
+      "description": "NetMirror via net27.cc (sole live mirror): 429-hardened embed lane + Tagalog dub lane through /api/variants-tmdb (dub/dubdp sid switching); relative caption proxy URLs resolved to en+fil tracks.",
+      "version": "6.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -1003,6 +1003,30 @@
       "contentLanguage": [
         "en",
         "it"
+      ]
+    },
+    {
+      "id": "miruro",
+      "name": "Miruro",
+      "description": "Anime from miruro.tv: anixo.buzz relay (sub+dub, CF-free) plus the site's secure pipe (4-mirror ring, obfuscated responses) on the device; TMDB->AniList/MAL mapping with title fallback and absolute episode numbering.",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/miruro.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=miruro.tv&sz=128",
+      "contentLanguage": [
+        "en",
+        "tl"
+      ],
+      "categories": [
+        "other"
       ]
     }
   ]
