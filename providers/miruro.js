@@ -1,5 +1,42 @@
 /**
- * Miruro - Nuvio provider (v2.4.0)
+ * Miruro - Nuvio provider (v2.5.0)
+ *
+ * v2.5.0 (2026-09-11) "still not showing streamable link ... unlike
+ * animotvslash works perfectly": the deployed 4.8.0 chain was verified
+ * healthy from the datacenter (megaplay.buzz 60ms, ani.zip 379ms, master
+ * playlists 200), so the zero-rows report is DEVICE-NETWORK-specific - and
+ * three properties made miruro's device result all-or-nothing:
+ *   1. FAIL-CLOSED post-filter: any row whose HLS master probe fails
+ *      (blocked CDN host, slow mobile network, stripped probe header) was
+ *      silently DELETED ("unknown resolution -> removed"). One unreachable
+ *      host at the last hop zeroed the whole provider.
+ *   2. SINGLE CDN HOST: getSourcesNew returns exactly one m3u8 host (e.g.
+ *      megap.shiora.top). Devices behind DNS blocks of that host had no
+ *      alternative - even though MegaPlay itself ships alternates.
+ *   3. NO OVERALL DEADLINE: Promise.all waited for MegaPlay (8s+8s+7s
+ *      sequential hops) AND the pipe lanes together, so one blackholed host
+ *      burned the app-level stream timeout before ANY row rendered. The
+ *      stream cache was also never written, so every retry re-ran the chain.
+ * Fixes:
+ *   - CDN SELF-HEALING: getSourcesNew accepts MegaPlay's own CDN selector
+ *     (?s=tcdn -> megap.norami.top, ?s=bcdn -> megap.shiora.site; verified
+ *     live) and all five MegaPlay CDN hosts serve IDENTICAL paths
+ *     (megap.shiora.top/.site, megap.norami.top, megap.akirax.buzz,
+ *     megap.mikora.top; verified byte-equal variant ladders). The lane now
+ *     rotates hints + host-swaps until the master playlist actually
+ *     downloads on THIS device; whatever host worked is the one put in the
+ *     rows. On healthy networks the first attempt wins: zero extra HTTP.
+ *   - FAIL-OPEN PROBE: the injected post-filter now distinguishes "probe
+ *     request failed" (network problem -> row KEPT, untagged) from "probe
+ *     succeeded but no resolution info" (still dropped). CAM/SD dropping
+ *     and the language gate are unchanged.
+ *   - 10.5s OVERALL DEADLINE with partial-row collection: rows land in a
+ *     collector as each lane finishes; the deadline flushes whatever is
+ *     already collected (e.g. pipe rows) instead of starving under Promise.
+ *     all. Partial/empty results are cached briefly (60s) so retries are
+ *     instant, successes keep the 10min TTL (cache is finally WRITTEN at all).
+ *   - Timeouts trimmed: MegaPlay embed/sources 8s -> 6s, master 7s -> 5s,
+ *     pipe per-origin 12s -> 6s, mapping deadline 11s -> 8s.
  *
  * v2.4.0 (2026-09-11) "still not fetching ... update the asian-catalog fully
  * support anlist mal kitsu so that miruro will work": the asian-catalog
@@ -428,7 +465,9 @@ function pipeRequestInner(path, query) {
   function attempt() {
     if (idx >= MIRURO_ORIGINS.length) return Promise.reject(new Error("pipe: all mirrors failed"));
     var origin = MIRURO_ORIGINS[idx++];
-    return fetchText(origin + PIPE_PATH + "?e=" + enc, PIPE_HEADERS, 12000).then(function (body) {
+    // v2.5.0: 6s per origin (was 12s) - a dead origin must not eat the
+    // overall deadline; the next origin (or the MegaPlay lanes) takes over.
+    return fetchText(origin + PIPE_PATH + "?e=" + enc, PIPE_HEADERS, 6000).then(function (body) {
       // fetchText throws on non-OK, so here status is 200
       return pipeDecode(body, "2");
     }).catch(function (err) {
@@ -457,8 +496,11 @@ function normalizeEpisodes(provData) {
   };
 }
 
-/** Lane B: pipe episodes+sources for one anilist id. Fails soft. */
-function pipeLanes(anilistId, epNumber, makeRow) {
+/** Lane B: pipe episodes+sources for one anilist id. Fails soft.
+ *  v2.5.0: optional sink(row) callback - each provider's rows are pushed the
+ *  moment they resolve, so a hanging provider late in the chain cannot delay
+ *  rows that are already in hand (the overall deadline flushes them). */
+function pipeLanes(anilistId, epNumber, makeRow, sink) {
   return pipeRequest("episodes", { anilistId: anilistId }).then(function (data) {
     var providers = (data && data.providers) || {};
     var names = Object.keys(providers);
@@ -511,6 +553,7 @@ function pipeLanes(anilistId, epNumber, makeRow) {
             };
           });
           if (picked.length) out.forEach(function (r) { if (!r.subtitles) r.subtitles = picked; });
+          if (sink && out.length) out.forEach(sink);
         }).catch(function () {});
       });
     });
@@ -560,7 +603,7 @@ function mpFileId(malId, anilistId, epNumber, lang) {
         "User-Agent": COMMON_UA,
         "Accept": "text/html,*/*",
         "Referer": MEGAPLAY_BASE + "/"
-      }, 8000);
+      }, 6000);
     }).then(function (html) {
       // error / decoy pages carry "Error Code: NNN" and no player div
       if (!html || html.indexOf("Error Code:") !== -1) return attempt();
@@ -578,19 +621,27 @@ function mpFileId(malId, anilistId, epNumber, lang) {
 var MP_SRC_CACHE_TTL = 10 * 60 * 1000;
 var _mpSrcCache = _muState.mpSources || (_muState.mpSources = {});
 
-/** sources JSON for a file id: {file, tracks}. Fail-soft. */
-function mpSources(fileId) {
-  var hit = _mpSrcCache[fileId];
+/**
+ * sources JSON for a file id: {file, tracks}. Fail-soft.
+ * v2.5.0: sHint selects MegaPlay's own CDN (verified live: null ->
+ * megap.shiora.top, "tcdn" -> megap.norami.top, "bcdn" -> megap.shiora.site).
+ * The cache key carries the hint so rotation results don't clobber each other.
+ */
+function mpSources(fileId, sHint) {
+  var cacheKey = fileId + ":" + (sHint || "def");
+  var hit = _mpSrcCache[cacheKey];
   if (hit && Date.now() - hit.ts < MP_SRC_CACHE_TTL) {
     return Promise.resolve(hit.data);
   }
   return mpGap().then(function () {
-    return fetchJson(MEGAPLAY_BASE + "/stream/getSourcesNew?id=" + encodeURIComponent(fileId), {
+    var url = MEGAPLAY_BASE + "/stream/getSourcesNew?id=" + encodeURIComponent(fileId);
+    if (sHint) url += "&s=" + encodeURIComponent(sHint);
+    return fetchJson(url, {
       "User-Agent": COMMON_UA,
       "Accept": "application/json",
       "Referer": MEGAPLAY_BASE + "/",
       "X-Requested-With": "XMLHttpRequest"
-    }, 8000);
+    }, 6000);
   }).then(function (data) {
     if (!data || !data.sources || !data.sources.file ||
         !/^https?:\/\//i.test(String(data.sources.file))) return null;
@@ -598,21 +649,20 @@ function mpSources(fileId) {
       file: String(data.sources.file),
       tracks: Array.isArray(data.tracks) ? data.tracks : []
     };
-    _mpSrcCache[fileId] = { ts: Date.now(), data: out };
+    _mpSrcCache[cacheKey] = { ts: Date.now(), data: out };
     return out;
   }).catch(function () { return null; });
 }
 
-/**
- * Lane A: MegaPlay sub+dub rows for one episode. Both languages share the
- * same file-id resolution; each language that resolves becomes its own rows
- * (master m3u8 variants labeled by height) with English/Tagalog subtitles.
- */
-// v2.4.0: shared by megaplayLanes (mal/ani routes) and anikotoS2Lanes
-// (s-2 embed-id route) — tracks -> English/Tagalog subs, master m3u8 ->
-// per-variant rows.
-function megaPlayRowsFromSources(src, label, lang, makeRow) {
-  var subs = src.tracks.filter(function (t) {
+// v2.5.0: MegaPlay's own CDN selector values + interchangeable hosts. All
+// MegaPlay m3u8 hosts serve IDENTICAL paths, so a host-swap of the returned
+// master URL is safe when every selector hint still lands on a blocked host.
+var MP_S_HINTS = [null, "tcdn", "bcdn"];
+var MP_HOST_SWAPS = ["megap.akirax.buzz", "megap.mikora.top"];
+
+/** English/Tagalog subtitle rows from a getSourcesNew tracks[] array. */
+function subsFromTracks(tracks) {
+  return (tracks || []).filter(function (t) {
     return t && t.file && /^https?:/i.test(String(t.file)) &&
       /(english|filipino|tagalog)/i.test(String(t.label || t.language || ""));
   }).slice(0, 6).map(function (t) {
@@ -624,37 +674,105 @@ function megaPlayRowsFromSources(src, label, lang, makeRow) {
       name: isTl ? "Tagalog / Filipino" : l
     };
   });
-  return hlsVariants(src.file, MEGAPLAY_BASE + "/").then(function (variants) {
-    var added = [];
-    if (variants.length) {
-      variants.forEach(function (v) { added.push(makeRow(v.url, "", label, lang, v.height)); });
-    } else {
-      added.push(makeRow(src.file, "", label, lang, 0));
-    }
-    if (subs.length) {
-      added.forEach(function (r) { if (!r.subtitles) r.subtitles = subs; });
-    }
-    return added;
+}
+
+function attachSubs(subs, rows) {
+  if (subs && subs.length) rows.forEach(function (r) { if (!r.subtitles) r.subtitles = subs; });
+  return rows;
+}
+
+function rowsFromMaster(masterUrl, res, subs, label, lang, makeRow) {
+  var added = [];
+  if (res && res.variants && res.variants.length) {
+    res.variants.forEach(function (v) { added.push(makeRow(v.url, "", label, lang, v.height)); });
+  } else {
+    added.push(makeRow(masterUrl, "", label, lang, 0));
+  }
+  return attachSubs(subs, added);
+}
+
+/** One sources response -> rows, plus a reachability verdict. live=true
+ *  means the master playlist downloaded on THIS device (or the device at
+ *  least answered), so the URLs we emit are the ones that worked here. */
+function megaPlayRowsFromSources(src, label, lang, makeRow) {
+  var subs = subsFromTracks(src.tracks);
+  return hlsVariants(src.file, MEGAPLAY_BASE + "/").then(function (res) {
+    return {
+      rows: rowsFromMaster(src.file, res, subs, label, lang, makeRow),
+      live: !!(res && res.ok)
+    };
   });
 }
 
-function megaplayLanes(animeIds, epNumber, makeRow) {
+/**
+ * v2.5.0: one language's rows with device-reachability-driven CDN rotation.
+ * Try MegaPlay's selector hints in order; the first hint whose master
+ * playlist actually downloads wins. If every hint fails, swap the host on
+ * the plain master URL across the interchangeable CDN hosts. If even that
+ * fails, return the plain rows anyway (the fail-open post-filter keeps them
+ * visible instead of deleting them) - never return "nothing" while MegaPlay
+ * itself answered.
+ */
+function megaPlayRowsSmart(fileId, label, lang, makeRow) {
+  var idx = 0;
+  // v2.5.0 fix: rows built from a hint whose master we could NOT download are
+  // kept here - if every hint and every host-swap fails these are still real
+  // MegaPlay URLs (site answered, file id resolved, sources JSON parsed) and
+  // the fail-open post-filter keeps them visible instead of returning nothing.
+  var unlive = null;
+  function attemptHint() {
+    if (idx >= MP_S_HINTS.length) return Promise.resolve(null);
+    var hint = MP_S_HINTS[idx++];
+    return mpSources(fileId, hint).then(function (src) {
+      if (!src) return attemptHint();
+      return megaPlayRowsFromSources(src, label, lang, makeRow).then(function (out) {
+        if (out.live) return out.rows; // master downloaded -> done
+        if (out.rows.length && !unlive) unlive = out.rows;
+        console.log("[Miruro] master unreachable via " + (hint || "default CDN") +
+          " -> rotating CDN hint");
+        return attemptHint();
+      });
+    }).catch(function () { return attemptHint(); });
+  }
+  return attemptHint().then(function (rows) {
+    if (rows && rows.length) return rows;
+    // last resort: same path on sibling hosts (paths are host-agnostic)
+    return mpSources(fileId, null).then(function (src) {
+      if (!src) return unlive || [];
+      var m = String(src.file).match(/^(https:\/\/)[^/]+(\/.+)$/);
+      if (!m) return unlive || [];
+      var subs = subsFromTracks(src.tracks);
+      var swaps = MP_HOST_SWAPS.slice();
+      function trySwap() {
+        if (!swaps.length) return unlive || []; // unlive rows -> fail-open keeps them
+        var alt = m[1] + swaps.shift() + m[2];
+        return hlsVariants(alt, MEGAPLAY_BASE + "/").then(function (res) {
+          if (!res || !res.ok) return trySwap();
+          console.log("[Miruro] master OK via host swap -> " + alt.split("/")[2]);
+          return rowsFromMaster(alt, res, subs, label, lang, makeRow);
+        });
+      }
+      return trySwap();
+    }).catch(function () { return unlive || []; });
+  });
+}
+
+function megaplayLanes(animeIds, epNumber, makeRow, sink) {
   if (!animeIds || (!animeIds.malId && !animeIds.anilistId)) return Promise.resolve([]);
   var langs = ["sub", "dub"];
   var rows = [];
   // v2.1.0: both languages resolve in parallel - the shared paced queue
   // (mpGap) still spaces the actual HTTP calls, but the wall clock halves,
   // which matters on device connections where every hop is slower.
+  // v2.5.0: sink(row) pushes each language's rows the moment they resolve.
   return Promise.all(langs.map(function (lang) {
     return mpFileId(animeIds.malId, animeIds.anilistId, epNumber, lang)
       .then(function (fileId) {
           if (!fileId) return;
-          return mpSources(fileId).then(function (src) {
-            if (!src) return;
-            var label = "MegaPlay " + (lang === "dub" ? "Dub" : "Sub");
-            return megaPlayRowsFromSources(src, label, lang, makeRow).then(function (added) {
-              added.forEach(function (r) { rows.push(r); });
-            });
+          var label = "MegaPlay " + (lang === "dub" ? "Dub" : "Sub");
+          return megaPlayRowsSmart(fileId, label, lang, makeRow).then(function (added) {
+            if (sink && added.length) added.forEach(sink);
+            added.forEach(function (r) { rows.push(r); });
           });
         }).catch(function () {});
   })).then(function () { return rows; });
@@ -675,7 +793,7 @@ function mpFileIdFromEmbedId(embedId, lang) {
       "User-Agent": COMMON_UA,
       "Accept": "text/html,*/*",
       "Referer": MEGAPLAY_BASE + "/"
-    }, 8000);
+    }, 6000);
   }).then(function (html) {
     if (!html || html.indexOf("Error Code:") !== -1) return null;
     var m = html.match(/id="megaplay-player"[^>]*data-id="(\d+)"/) ||
@@ -715,11 +833,8 @@ function anikotoS2Lanes(ep, makeRow) {
   return Promise.all(langs.map(function (l) {
     return mpFileIdFromEmbedId(l.embed, l.lang).then(function (fileId) {
       if (!fileId) return;
-      return mpSources(fileId).then(function (src) {
-        if (!src) return;
-        var label = "MegaPlay " + (l.lang === "dub" ? "Dub" : "Sub");
-        return megaPlayRowsFromSources(src, label, l.lang, makeRow);
-      });
+      var label = "MegaPlay " + (l.lang === "dub" ? "Dub" : "Sub");
+      return megaPlayRowsSmart(fileId, label, l.lang, makeRow);
     }).catch(function () { return null; });
   })).then(function (parts) {
     var rows = [];
@@ -729,9 +844,13 @@ function anikotoS2Lanes(ep, makeRow) {
 }
 
 // "anikoto:{id}" lane: resolve the series once, then run the s-2 embed-id
-// lanes AND the mal/ani lanes (the series response carries mal_id/ani_id)
-// in parallel; dedupe happens in getStreams.
-function anikotoAllLanes(anikotoId, epNumber, makeRow) {
+// lanes AND the mal/ani lanes in parallel (the series response carries
+// mal_id/ani_id); dedupe happens in getStreams.
+// v2.5.0: third lane - the site secure pipe for ani_id (the pipe is the only
+// lane that does not depend on megaplay.buzz being reachable, which is the
+// exact failure mode seen on the reporter's device), plus sink(row) pushes
+// per lane so one hanging lane cannot delay the others' rows.
+function anikotoAllLanes(anikotoId, epNumber, makeRow, sink) {
   return anikotoSeries(anikotoId).then(function (data) {
     if (!data) return { rows: [] };
     var anime = data.anime || {};
@@ -741,17 +860,24 @@ function anikotoAllLanes(anikotoId, epNumber, makeRow) {
       malId: isFinite(malId) && malId > 0 ? malId : null,
       anilistId: isFinite(aniId) && aniId > 0 ? aniId : null
     };
+    function push(rows) {
+      if (sink && rows && rows.length) rows.forEach(sink);
+      return rows;
+    }
     var eps = Array.isArray(data.episodes) ? data.episodes : [];
     var ep = null;
     for (var i = 0; i < eps.length; i++) {
       if (parseInt(eps[i] && eps[i].number, 10) === parseInt(epNumber, 10)) { ep = eps[i]; break; }
     }
-    var s2 = ep ? anikotoS2Lanes(ep, makeRow) : Promise.resolve([]);
+    var s2 = ep ? anikotoS2Lanes(ep, makeRow).then(push) : Promise.resolve([]);
     var mp = (animeIds.malId || animeIds.anilistId)
-      ? megaplayLanes(animeIds, epNumber, makeRow)
+      ? megaplayLanes(animeIds, epNumber, makeRow, sink).then(push)
       : Promise.resolve([]);
-    return Promise.all([s2, mp]).then(function (parts) {
-      return { rows: parts[0].concat(parts[1]) };
+    var pp = animeIds.anilistId
+      ? pipeLanes(animeIds.anilistId, epNumber, makeRow, sink).then(push)
+      : Promise.resolve([]);
+    return Promise.all([s2, mp, pp]).then(function (parts) {
+      return { rows: parts[0].concat(parts[1]).concat(parts[2]) };
     });
   });
 }
@@ -776,11 +902,13 @@ function kitsuById(kitsuId) {
   }).catch(function () { return null; });
 }
 
-/** Fetch a master m3u8 and return [{url, quality}] variants (max 4, best first). */
+/** Fetch a master m3u8; v2.5.0 returns {ok, variants} - ok=true means the
+ *  master actually downloaded on this device (reachability signal used by
+ *  the CDN rotation). variants max 4, best first. */
 function hlsVariants(masterUrl, referer) {
-  return fetchText(masterUrl, { "User-Agent": COMMON_UA, "Referer": referer }, 7000)
+  return fetchText(masterUrl, { "User-Agent": COMMON_UA, "Referer": referer }, 5000)
     .then(function (master) {
-      if (!master || master.indexOf("#EXTM3U") === -1) return [];
+      if (!master || master.indexOf("#EXTM3U") === -1) return { ok: true, variants: [] };
       var lines = master.split(/\r?\n/), out = [];
       for (var i = 0; i < lines.length; i++) {
         if (lines[i].indexOf("#EXT-X-STREAM-INF") !== 0) continue;
@@ -798,8 +926,8 @@ function hlsVariants(masterUrl, referer) {
         out.push({ url: url, height: h });
       }
       out.sort(function (a, b) { return b.height - a.height; });
-      return out.slice(0, 4);
-    }).catch(function () { return []; });
+      return { ok: true, variants: out.slice(0, 4) };
+    }).catch(function () { return { ok: false, variants: [] }; });
 }
 
 // ---------------------------------------------------- TMDB -> anime map
@@ -1028,8 +1156,9 @@ function mapTMDBToAnime(tmdbId, isTv, info, season) {
   uncapped.then(function (res) {
     if (res) _mapCache[mapKey] = { ts: Date.now(), res: res };
   }).catch(function () {});
-  // v2.2.0: the mapping phase can never hold the provider hostage past 11s
-  return withDeadline(uncapped, 11000).catch(function () { return null; });
+  // v2.2.0: the mapping phase can never hold the provider hostage; v2.5.0:
+  // trimmed to 8s so the lanes get room under the 10.5s overall deadline
+  return withDeadline(uncapped, 8000).catch(function () { return null; });
 }
 
 function mapTMDBToAnimeUncached(tmdbId, isTv, info, season) {
@@ -1153,7 +1282,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
   episode = parseInt(episode || 1, 10) || 1;
   var key = cacheKey(tmdbId, mediaType, season, episode);
   var hit = _muState.cache[key];
-  if (hit && Date.now() - hit.ts < CACHE_TTL) return Promise.resolve(hit.streams);
+  if (hit && Date.now() - hit.ts < (hit.ttl || CACHE_TTL)) return Promise.resolve(hit.streams);
   if (_muState.inflight[key]) return _muState.inflight[key];
 
   console.log("[Miruro] start " + mediaType + " " + tmdbId +
@@ -1184,50 +1313,53 @@ function getStreams(tmdbId, mediaType, season, episode) {
     };
   }
 
+  // v2.5.0: every lane pushes its rows into `collected` the moment it
+  // finishes. The overall deadline (below) flushes whatever is already
+  // collected instead of letting one slow lane starve the response.
+  var collected = [];
+  function sinkRow(r) { collected.push(r); }
+  function tap(p) {
+    return Promise.resolve(p).then(function (rows) {
+      (rows || []).forEach(function (r) { collected.push(r); });
+      return rows;
+    }).catch(function () { return []; });
+  }
+
   // v2.4.0: catalog-issued anime ids ("mal:52991", "anilist:154587",
   // "kitsu:46474", "anikoto:8952") arrive VERBATIM from Nuvio (the app only
   // rewrites tmdb:/tt ids) and skip the TMDB-mapping phase entirely.
   var pm = tmdbId.match(/^(mal|anilist|kitsu|anikoto):(\d+)$/i);
-  var run;
+  var lanes;
   if (pm) {
     var prefix = pm[1].toLowerCase();
     var catId = pm[2];
     console.log("[Miruro] start catalog id " + prefix + ":" + catId +
       (isTv ? " S" + season + "E" + episode : "") + " -> direct MegaPlay lane");
     var catEp = episode; // anime numbering is flat (season 1 per the meta addon)
+    var catLanes;
     if (prefix === "mal") {
-      run = megaplayLanes({ malId: catId, anilistId: null }, catEp, makeRow)
-        .then(function (rows) { return { rows: rows }; });
+      catLanes = [megaplayLanes({ malId: catId, anilistId: null }, catEp, makeRow, sinkRow)];
     } else if (prefix === "anilist") {
-      run = Promise.all([
-        megaplayLanes({ malId: null, anilistId: catId }, catEp, makeRow),
-        pipeLanes(catId, catEp, makeRow)
-      ]).then(function (parts) { return { rows: parts[0].concat(parts[1]) }; });
+      catLanes = [
+        megaplayLanes({ malId: null, anilistId: catId }, catEp, makeRow, sinkRow),
+        pipeLanes(catId, catEp, makeRow, sinkRow)
+      ];
     } else if (prefix === "kitsu") {
-      run = kitsuById(catId).then(function (ids) {
-        if (!ids) return { rows: [] };
+      catLanes = [kitsuById(catId).then(function (ids) {
+        if (!ids) return [];
         console.log("[Miruro] kitsu " + catId + " -> mal " + ids.malId + " / anilist " + ids.anilistId);
-        return Promise.all([
-          megaplayLanes(ids, catEp, makeRow),
-          ids.anilistId ? pipeLanes(ids.anilistId, catEp, makeRow) : Promise.resolve([])
-        ]).then(function (parts) { return { rows: parts[0].concat(parts[1]) }; });
-      });
+        var mp = tap(megaplayLanes(ids, catEp, makeRow, sinkRow));
+        var pp = ids.anilistId ? tap(pipeLanes(ids.anilistId, catEp, makeRow, sinkRow)) : Promise.resolve([]);
+        return Promise.all([mp, pp]).then(function (parts) { return parts[0].concat(parts[1]); });
+      })];
     } else {
-      run = anikotoAllLanes(catId, catEp, makeRow);
+      catLanes = [anikotoAllLanes(catId, catEp, makeRow, sinkRow).then(function (out) {
+        return out && out.rows ? out.rows : [];
+      })];
     }
-    run = run.then(function (out) {
-      var seen = {}, outRows = [];
-      (out && out.rows ? out.rows : []).forEach(function (r) {
-        var nu = String(r.url).replace(/[#?].*$/, "");
-        if (seen[nu]) return;
-        seen[nu] = 1;
-        outRows.push(r);
-      });
-      console.log("[Miruro] returning " + outRows.length + " stream(s)");
-      return outRows;
-    });
+    lanes = catLanes.map(tap);
   } else {
-    run = tmdbInfo(tmdbId, isTv ? "tv" : "movie").then(function (info) {
+    lanes = [tap(tmdbInfo(tmdbId, isTv ? "tv" : "movie").then(function (info) {
     // mapTMDBToAnime never rejects (null on total mapping outage)
     return mapTMDBToAnime(tmdbId, isTv, info, isTv ? season : 1).then(function (animeIds) {
       if (animeIds) {
@@ -1247,30 +1379,56 @@ function getStreams(tmdbId, mediaType, season, episode) {
         epP = absoluteEpisode(tmdbId, season, episode);
       }
       return epP.then(function (epNumber) {
-        var a = megaplayLanes(animeIds, epNumber, makeRow);
+        // v2.5.0: inner tap()s + sinkRow - pipe rows land in `collected` the
+        // moment they resolve even if the MegaPlay lane is still hanging
+        var a = tap(megaplayLanes(animeIds, epNumber, makeRow, sinkRow));
         var b = animeIds && animeIds.anilistId
-          ? pipeLanes(animeIds.anilistId, epNumber, makeRow)
+          ? tap(pipeLanes(animeIds.anilistId, epNumber, makeRow, sinkRow))
           : Promise.resolve([]);
         return Promise.all([a, b]).then(function (parts) {
-          var seen = {}, out = [];
-          parts[0].concat(parts[1]).forEach(function (r) {
-            var nu = String(r.url).replace(/[#?].*$/, "");
-            if (seen[nu]) return;
-            seen[nu] = 1;
-            out.push(r);
-          });
-          console.log("[Miruro] returning " + out.length + " stream(s)");
-          return out;
+          return parts[0].concat(parts[1]);
         });
       });
     });
-    });
+    }))];
   }
-  run = run.catch(function (error) {
+  // v2.5.0: overall deadline. Whichever comes first wins: all lanes done,
+  // or 10.5s with the rows collected so far. This is what keeps one
+  // blackholed host from burning the app-level stream timeout.
+  var run = Promise.all(lanes).then(function (parts) {
+    return parts.reduce(function (acc, p) { return acc.concat(p || []); }, []);
+  });
+  if (hasTimers()) {
+    run = Promise.race([
+      run,
+      new Promise(function (resolve) {
+        var t = setTimeout(function () { resolve("__mp_deadline__"); }, 10500);
+        if (typeof t === "object" && t && typeof t.unref === "function") t.unref();
+      })
+    ]);
+  }
+  run = run.then(function (out) {
+    var rows = out === "__mp_deadline__" ? collected : out;
+    if (out === "__mp_deadline__") {
+      console.log("[Miruro] deadline hit -> flushing " + collected.length + " collected row(s)");
+    }
+    var seen = {}, outRows = [];
+    rows.forEach(function (r) {
+      var nu = String(r.url).replace(/[#?].*$/, "");
+      if (seen[nu]) return;
+      seen[nu] = 1;
+      outRows.push(r);
+    });
+    console.log("[Miruro] returning " + outRows.length + " stream(s)");
+    return outRows;
+  }).catch(function (error) {
     console.log("[Miruro] failed: " + (error && error.message ? error.message : error));
     return [];
   }).then(function (streams) {
     delete _muState.inflight[key];
+    // v2.5.0: the stream cache is finally WRITTEN. Successes keep the full
+    // TTL; empty results only 60s so a recovered network retries soon.
+    _muState.cache[key] = { ts: Date.now(), streams: streams, ttl: streams.length ? CACHE_TTL : 60000 };
     return streams;
   });
   _muState.inflight[key] = run;
@@ -1337,15 +1495,21 @@ module.exports = {
     return "";
   }
   var qualCache = G.__NV_QUAL_CACHE__ || (G.__NV_QUAL_CACHE__ = {});
+  // v2.5.0 (miruro copy): the probe is now FAIL-OPEN. A probe request that
+  // ERRORS or times out returns the sentinel "ERR" and the row is KEPT
+  // (untagged) instead of deleted - a network failure is not evidence the
+  // stream is bad. Only a probe that SUCCEEDS and still finds no resolution
+  // info ("") or finds SD/CAM ladders ("CAM") drops the row.
   function probeM3u8(url, headers) {
     var now = Date.now();
     var c = qualCache[url];
-    if (c && now - c.t < (c.q ? 15 * 60 * 1000 : 3 * 60 * 1000)) {
+    if (c && now - c.t < (c.q && c.q !== "ERR" ? 15 * 60 * 1000 : 3 * 60 * 1000)) {
       return Promise.resolve(c.q);
     }
     var opts = { headers: Object.assign({}, headers || {}) };
     var p = fetch(url, opts).then(function (r) {
-      return r.ok ? r.text() : "";
+      if (!r.ok) return Promise.reject(new Error("HTTP " + r.status));
+      return r.text();
     }).then(function (t) {
       var q = "";
       if (t && t.indexOf("#EXTM3U") !== -1) {
@@ -1362,10 +1526,12 @@ module.exports = {
       }
       qualCache[url] = { t: now, q: q };
       return q;
-    }).catch(function () { qualCache[url] = { t: now, q: "" }; return ""; });
+    }).catch(function () { qualCache[url] = { t: now, q: "ERR" }; return "ERR"; });
     if (hasTimers()) {
       p = Promise.race([p, new Promise(function (res) {
-        var timer = setTimeout(function () { res(""); }, 6000);
+        // 3.5s: the probe only ENRICHES quality now (fail-open), so a slow
+        // probe must not stretch the response; the row survives as "ERR".
+        var timer = setTimeout(function () { res("ERR"); }, 3500);
         if (typeof timer === "object" && typeof timer.unref === "function") timer.unref();
       })]);
     }
@@ -1444,7 +1610,14 @@ module.exports = {
       var ranked = [];
       rows.forEach(function (row, k) {
         var q = qs[k];
-        if (!q) return; // unknown resolution -> removed
+        if (q === "ERR") {
+          // v2.5.0 fail-open: probe request failed (blocked host / timeout /
+          // stripped header). Keep the row untagged instead of deleting it.
+          row.s.quality = row.s.quality || "";
+          ranked.push({ s: row.s, i: row.i, q: row.s.quality || "ERR" });
+          return;
+        }
+        if (!q) return; // probe succeeded, no resolution info -> removed
         if (q === "CAM") return; // cam / sd / sub-720 -> removed
         row.s.quality = q;
         ranked.push({ s: row.s, i: row.i, q: q });
