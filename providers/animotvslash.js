@@ -1,4 +1,13 @@
 // providers/animotvslash.js
+// v5.2.0 (2026-09-10): app arg-shape hardening, same failure class as
+// pinoyhub 5.6.0 ("movies work / series don't"):
+//   - IMDb tt-id inputs (app without TMDB key) resolved via the TMDB find
+//     API with the authoritative movie/tv type pinned from the hit.
+//   - Media-type slot aliases "series"/"show"/"tv_show" normalized to "tv"
+//     (NuvioTVSmart passes the catalog type verbatim).
+//   - Missing/null season+episode on a TV id no longer returns zero rows:
+//     proceeds with S1E1 (app's own testScraper convention).
+//   - Season/episode forms '01'/'S01'/'E02' normalized via epNum().
 // v5.1.0: slug-guess 404s fixed with a real search fallback. Anime titles
 // romanize inconsistently (TMDB "Naruto Shippūden" -> slug "naruto-shippden"
 // but the site uses "naruto-shippuuden"); no static map can guess every
@@ -680,41 +689,55 @@ async function resolvePageBySearch(title, original, episodeNum) {
 // ------------------------------------------------------------------
 // Main exported function
 // ------------------------------------------------------------------
-async function getStreams(tmdbId, season, episode) {
+
+// v5.2.0: normalize '1', '01', 'S01', 'E02' etc. to a plain integer.
+function epNum(v) {
+    var s = String(v === undefined || v === null ? "" : v).replace(/^[se]/i, "").replace(/[^0-9]/g, "");
+    return parseInt(s, 10) || 1;
+}
+
+async function runStreams(tmdbId, mediaTypeHint, season, episode) {
     cookieJar = {};
 
-    var mediaType = null;
-    if (season === "movie" || season === "tv") {
-        mediaType = season;
-        season = episode;
-        episode = arguments[3];
-    }
-
-    var seasonStr = season || "";
-    var episodeStr = episode || "";
-    var seasonNum = parseInt(season, 10) || 1;
-    var episodeNum = parseInt(episode, 10) || 1;
-    console.log(`[animotvslash] === START TMDB:${tmdbId} S${seasonStr}E${episodeStr} ===`);
+    var seasonNum = epNum(season);
+    var episodeNum = epNum(episode);
+    console.log(`[animotvslash] === START TMDB:${tmdbId} type=${mediaTypeHint || "auto"} S${seasonNum}E${episodeNum} ===`);
 
     var forceTv = !!(season && episode);
-    var tmdbPromise = forceTv
-        ? fetchJSONWithCookies(`https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}`).then(function(data) {
+    var tmdbPromise;
+    if (mediaTypeHint === "tv") {
+        tmdbPromise = fetchJSONWithCookies(`https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}`).then(function(data) {
             if (!data) throw new Error("TV not found");
             return { type: "tv", title: data.name || "", original: data.original_name || "", year: (data.first_air_date || "").split("-")[0], raw: data };
-        }).catch(function() { return { type: "", title: "", original: "", year: "", raw: null }; })
-        : getTmdbInfoAuto(tmdbId);
+        }).catch(function() { return { type: "", title: "", original: "", year: "", raw: null }; });
+    } else if (mediaTypeHint === "movie") {
+        tmdbPromise = fetchJSONWithCookies(`https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}`).then(function(data) {
+            if (!data) throw new Error("Movie not found");
+            return { type: "movie", title: data.title || "", original: data.original_title || "", year: (data.release_date || "").split("-")[0], raw: data };
+        }).catch(function() { return { type: "", title: "", original: "", year: "", raw: null }; });
+    } else {
+        tmdbPromise = forceTv
+            ? fetchJSONWithCookies(`https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}`).then(function(data) {
+                if (!data) throw new Error("TV not found");
+                return { type: "tv", title: data.name || "", original: data.original_name || "", year: (data.first_air_date || "").split("-")[0], raw: data };
+            }).catch(function() { return { type: "", title: "", original: "", year: "", raw: null }; })
+            : getTmdbInfoAuto(tmdbId);
+    }
 
     var tmdbData = await tmdbPromise;
     if (!tmdbData.type) {
         console.log(`[animotvslash] Could not detect type for TMDB:${tmdbId}`);
         return [];
     }
-    mediaType = tmdbData.type;
+    var mediaType = tmdbData.type;
     console.log(`[animotvslash] Type: ${mediaType} | Title: "${tmdbData.title}"`);
 
+    // v5.2.0: several app entry points pass season/episode as null
+    // (StreamsScreen.loadSources defaults). seasonNum/episodeNum already
+    // default to 1, so instead of returning zero rows we just proceed S1E1
+    // (same convention as the app's testScraper).
     if (mediaType === "tv" && (!season || !episode)) {
-        console.log("[animotvslash] TV requires season+episode");
-        return [];
+        console.log("[animotvslash] season/episode not provided by app - defaulting to S1E1");
     }
 
     try {
@@ -850,4 +873,46 @@ async function finishStreams(pageResult, tmdbData, mediaType, seasonNum, episode
         return streams;
 }
 
-module.exports = { getStreams };
+/**
+ * v5.2.0 app entry: remaps the 4-arg app signature, normalizes media-type
+ * aliases ("series"/"show" -> "tv", NuvioTVSmart passes the type verbatim)
+ * and resolves IMDb tt-ids (app without TMDB key) to TMDB ids before the
+ * main runStreams flow.
+ */
+async function getStreams(tmdbId, season, episode) {
+    var mediaType = null;
+    var mtSlot = String(season === undefined || season === null ? "" : season).toLowerCase();
+    if (mtSlot === "movie" || mtSlot === "tv" || mtSlot === "series" || mtSlot === "show" || mtSlot === "tv_show" || mtSlot === "tvshow") {
+        mediaType = mtSlot === "movie" ? "movie" : "tv";
+        season = episode;
+        episode = arguments[3];
+    }
+
+    var idStr = String(tmdbId === undefined || tmdbId === null ? "" : tmdbId).replace(/^tmdb:/i, "").trim();
+    if (!idStr) return [];
+
+    if (/^tt\d+/i.test(idStr)) {
+        var hit = await fetchJSONWithCookies(`https://api.themoviedb.org/3/find/${idStr}?api_key=${TMDB_API_KEY}&external_source=imdb_id`).then(function(data) {
+            if (!data || typeof data !== "object") return null;
+            var tv = (data.tv_results || [])[0];
+            var mv = (data.movie_results || [])[0];
+            if (tv && tv.id) return { tmdbId: String(tv.id), type: "tv" };
+            if (mv && mv.id) return { tmdbId: String(mv.id), type: "movie" };
+            return null;
+        }).catch(function() { return null; });
+        if (!hit) {
+            console.log(`[animotvslash] IMDb id could not be resolved: ${idStr}`);
+            return [];
+        }
+        console.log(`[animotvslash] IMDb ${idStr} -> TMDB ${hit.tmdbId} (${hit.type})`);
+        return runStreams(hit.tmdbId, mediaType || hit.type, season, episode);
+    }
+
+    return runStreams(idStr, mediaType, season, episode);
+}
+
+if (typeof module !== "undefined" && module.exports) {
+    module.exports = { getStreams: getStreams };
+} else if (typeof global !== "undefined") {
+    global.getStreams = getStreams;
+}

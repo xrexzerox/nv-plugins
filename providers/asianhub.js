@@ -5,7 +5,17 @@
  *           Hong Kong / other Asian titles, English subs)
  * Language: ko / zh / ja / th / en
  * Author: xrexzerox
- * Version: 2.3.0
+ * Version: 2.5.0
+ *
+ * v2.5.0 (2026-09-10) - app arg-shape hardening + kisskh lane self-sufficiency
+ *   (same failure class as pinoyhub 5.6.0 "movies work / series don't"):
+ *   - IMDb tt-id inputs (app without TMDB key) are resolved via the TMDB find
+ *     API with the authoritative movie/tv type pinned from the hit.
+ *   - Missing/null season+episode on a TV id no longer returns zero rows:
+ *     defaults to S1E1 (app's own testScraper convention).
+ *   - kisskh lane kkey is now generated LOCALLY first (AES-128 v2.8.10 port,
+ *     byte-verified 16/16) -> site /keygen -> Google Script. The lane no
+ *     longer dies when both external key services are unreachable.
  *
  * v2.3.0 (2026-09-10) — NuvioTVSmart webOS adaptation (Mixdrop/Dood TV-safe):
  *   - NEW: headerless-playability probe (ranged GET with zero custom headers).
@@ -383,6 +393,26 @@ function getTmdbEpisodeTitle(tmdbId, season, episode) {
   return fetchJson(url).then(function(data) {
     return (data && data.name) || "";
   }).catch(function() { return ""; });
+}
+
+// v2.5.0: the app passes an IMDb tt-id when no TMDB key is configured
+// (PluginRepository.ensureTmdbId falls back to the raw id). Resolve it to a
+// TMDB id via the find API (same fix as pinoyhub 5.6.0 / kisskh 4.3.0).
+function resolveImdbToTmdb(imdbId) {
+  var url = "https://api.themoviedb.org/3/find/" + encodeURIComponent(imdbId) +
+    "?api_key=" + TMDB_API_KEY + "&external_source=imdb_id";
+  return fetchJson(url, { timeoutMs: 15000 }).then(function(data) {
+    if (!data || typeof data !== "object") return null;
+    var tv = (data.tv_results || [])[0];
+    var mv = (data.movie_results || [])[0];
+    if (tv && tv.id) {
+      return { tmdbId: String(tv.id), type: "tv", title: tv.name || tv.original_name || "" };
+    }
+    if (mv && mv.id) {
+      return { tmdbId: String(mv.id), type: "movie", title: mv.title || mv.original_title || "" };
+    }
+    return null;
+  }).catch(function() { return null; });
 }
 
 // ===== GLOBAL EXTRACTION DEADLINE =====
@@ -1457,7 +1487,139 @@ function kisskhFindEpisode(episodes, mediaType, episodeNum) {
   throw new Error("kisskh episode " + episodeNum + " not found");
 }
 
+// ---- v2.5.0: local kkey generation (v2.8.10 algorithm, ported from
+// kisskh.js 4.2.0 where it is byte-verified 16/16 against the reference and
+// the Google Script API). Used as PRIMARY so the kisskh lane works even when
+// both the site keygen and the external script are unreachable.
+var KKEY_ROUND_KEYS = [
+  0x4f6bdaa3, -0x61d07350, 0x7f5e722d, -0x61210cec,
+  0x536620a8, -0x32b653e8, -0x4de821cb, 0x2cc92d21,
+  -0x73412227, 0x41f771c1, -0xc1f500c, -0x20d67d2b,
+  0x2dadde47, 0x6c5aaf86, -0x6045ff8e, 0x409382a7,
+  -0x6417db2, -0x6a1bd238, 0xa5e2dba, 0x4acdaf1d,
+  0x54c72698, -0x3edcf4b0, -0x3482d916, -0x7e4f7609,
+  -0x6c9fb16c, 0x524345c4, -0x66c19cd2, 0x188eead9,
+  -0x351884c7, -0x675bc103, 0x19a5dd3, 0x1914b70a,
+  -0x4fb1e313, 0x28ea2210, 0x29707fc3, 0x3064c8c9,
+  -0x17593e17, -0x3fb31c07, -0x16c363c6, -0x26a7ab0d,
+  -0x4b793324, 0x74ca2f25, -0x62094ce1, 0x44aee7ec
+];
+var KKEY_IV = [0x1504af3, 0x56e619cf, 0x2e42bba6, -0x73c08f07];
+var _kkeyTables = null;
+
+function kkeyCalculateHash(str) {
+  var hash = 0;
+  for (var i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+  }
+  return hash;
+}
+
+function kkeyWordsToHex(words) {
+  var out = '';
+  for (var i = 0; i < words.length; i++) {
+    var hex = (words[i] >>> 0).toString(16);
+    while (hex.length < 8) hex = '0' + hex;
+    out += hex;
+  }
+  return out.toUpperCase();
+}
+
+function kkeyBuildTables() {
+  var pow = [];
+  for (var i = 0; i < 256; i++) pow[i] = i < 128 ? (i << 1) : ((i << 1) ^ 0x11b);
+  var sbox = [], T1 = [], T2 = [], T3 = [], T4 = [];
+  var x = 0, xi = 0;
+  for (var j = 0; j < 256; j++) {
+    var sx = xi ^ (xi << 1) ^ (xi << 2) ^ (xi << 3) ^ (xi << 4);
+    sx = (sx >>> 8) ^ (0xff & sx) ^ 0x63;
+    sbox[x] = sx;
+    var x2 = pow[x];
+    var x8 = pow[pow[x2]];
+    var w = 0x101 * pow[sx] ^ 0x1010100 * sx;
+    T1[x] = (w << 0x18) | (w >>> 0x8);
+    T2[x] = (w << 0x10) | (w >>> 0x10);
+    T3[x] = (w << 0x8) | (w >>> 0x18);
+    T4[x] = w;
+    if (x) {
+      x = x2 ^ pow[pow[pow[x8 ^ x2]]];
+      xi ^= pow[pow[xi]];
+    } else {
+      x = xi = 1;
+    }
+  }
+  return [T1, T2, T3, T4, sbox];
+}
+
+function kkeyEncrypt(plaintext) {
+  if (!_kkeyTables) _kkeyTables = kkeyBuildTables();
+  var T1 = _kkeyTables[0], T2 = _kkeyTables[1], T3 = _kkeyTables[2], T4 = _kkeyTables[3], sbox = _kkeyTables[4];
+
+  var data = plaintext;
+  var padLen = 16 - (plaintext.length % 16);
+  for (var p = 0; p < padLen; p++) data += String.fromCharCode(padLen);
+
+  var words = [];
+  for (var i = 0; i < data.length; i += 4) {
+    words.push(
+      data.charCodeAt(i) << 0x18 |
+      data.charCodeAt(i + 1) << 0x10 |
+      data.charCodeAt(i + 2) << 0x8 |
+      data.charCodeAt(i + 3)
+    );
+  }
+
+  var keys = KKEY_ROUND_KEYS;
+
+  for (var block = 0; block < words.length; block += 4) {
+    var roundKey = block === 0 ? KKEY_IV : words.slice(block - 4, block);
+
+    for (var k = 0; k < 4; k++) words[block + k] ^= roundKey[k];
+
+    var s0 = words[block] ^ keys[0];
+    var s1 = words[block + 1] ^ keys[1];
+    var s2 = words[block + 2] ^ keys[2];
+    var s3 = words[block + 3] ^ keys[3];
+    var tIdx = 4;
+
+    for (var round = 1; round < 10; round++) {
+      var t0 = T1[s0 >>> 0x18] ^ T2[(s1 >>> 0x10) & 0xff] ^ T3[(s2 >>> 0x8) & 0xff] ^ T4[s3 & 0xff] ^ keys[tIdx++];
+      var t1 = T1[s1 >>> 0x18] ^ T2[(s2 >>> 0x10) & 0xff] ^ T3[(s3 >>> 0x8) & 0xff] ^ T4[s0 & 0xff] ^ keys[tIdx++];
+      var t2 = T1[s2 >>> 0x18] ^ T2[(s3 >>> 0x10) & 0xff] ^ T3[(s0 >>> 0x8) & 0xff] ^ T4[s1 & 0xff] ^ keys[tIdx++];
+      s3 = T1[s3 >>> 0x18] ^ T2[(s0 >>> 0x10) & 0xff] ^ T3[(s1 >>> 0x8) & 0xff] ^ T4[s2 & 0xff] ^ keys[tIdx++];
+      s0 = t0; s1 = t1; s2 = t2;
+    }
+
+    words[block]     = ((sbox[s0 >>> 0x18] << 0x18) | (sbox[(s1 >>> 0x10) & 0xff] << 0x10) | (sbox[(s2 >>> 0x8) & 0xff] << 0x8) | sbox[s3 & 0xff]) ^ keys[tIdx++];
+    words[block + 1] = ((sbox[s1 >>> 0x18] << 0x18) | (sbox[(s2 >>> 0x10) & 0xff] << 0x10) | (sbox[(s3 >>> 0x8) & 0xff] << 0x8) | sbox[s0 & 0xff]) ^ keys[tIdx++];
+    words[block + 2] = ((sbox[s2 >>> 0x18] << 0x18) | (sbox[(s3 >>> 0x10) & 0xff] << 0x10) | (sbox[(s0 >>> 0x8) & 0xff] << 0x8) | sbox[s1 & 0xff]) ^ keys[tIdx++];
+    words[block + 3] = ((sbox[s3 >>> 0x18] << 0x18) | (sbox[(s0 >>> 0x10) & 0xff] << 0x10) | (sbox[(s1 >>> 0x8) & 0xff] << 0x8) | sbox[s2 & 0xff]) ^ keys[tIdx++];
+  }
+
+  return kkeyWordsToHex(words);
+}
+
+var KKEY_SUB_SALT = 'VgV52sWhwvBSf8BsM3BRY9weWiiCbtGp';
+var KKEY_VIDEO_SALT = '62f176f3bb1b5b8e70e39932ad34a0c7';
+
+function generateKkeyLocal(epsId, isSub) {
+  var fields = [
+    '', epsId.toString(), '', 'mg3c3b04ba', '2.8.10',
+    isSub ? KKEY_SUB_SALT : KKEY_VIDEO_SALT,
+    '4830201', 'kisskh', 'kisskh', 'kisskh', 'kisskh', 'kisskh', 'kisskh',
+    '00', ''
+  ];
+  var hash = kkeyCalculateHash(fields.join('|'));
+  fields.splice(1, 0, hash.toString());
+  return kkeyEncrypt(fields.join('|'));
+}
+
 function kisskhGenerateKey(epsId) {
+  // PRIMARY: compute locally (no external dependency)
+  try {
+    var localKey = generateKkeyLocal(epsId, false);
+    if (localKey && localKey.length >= 32) return Promise.resolve(localKey);
+  } catch (e) { /* fall through to network keygen */ }
   return kisskhFetchJson("/keygen?id=" + epsId + "&version=2.8.10").then(function(k) {
     if (k && k.key) return k.key;
     // fall back to the Google Apps Script key generator used by kisskh.js
@@ -1560,7 +1722,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
   // NuvioTVSmart's local-id plugin path passes the catalog type verbatim
   // ("series"), so normalize before the legacy-shift check.
   var mt = String(mediaType === undefined || mediaType === null ? "" : mediaType).toLowerCase();
-  if (mt === "series" || mt === "show") mt = "tv";
+  if (mt === "series" || mt === "show" || mt === "tv_show" || mt === "tvshow") mt = "tv";
   if (mt !== "movie" && mt !== "tv") {
     episode = season;
     season = mediaType;
@@ -1579,6 +1741,30 @@ function getStreams(tmdbId, mediaType, season, episode) {
   console.log("[AsianHub] === START tmdbId=" + tmdbId + " type=" + mt + " S" + season + "E" + episode + " ===");
 
   if (!tmdbId) return Promise.resolve([]);
+
+  // v2.5.0: IMDb tt-id input -> resolve to TMDB first (authoritative type
+  // pinned from the find hit), then run the normal flow on the resolved id.
+  if (/^tt\d+/i.test(tmdbId)) {
+    return resolveImdbToTmdb(tmdbId).then(function(hit) {
+      if (!hit) {
+        console.log("[AsianHub] IMDb id could not be resolved to TMDB: " + tmdbId);
+        return [];
+      }
+      console.log("[AsianHub] IMDb " + tmdbId + " -> TMDB " + hit.tmdbId + " (" + hit.type + ")");
+      mt = hit.type;
+      tmdbId = hit.tmdbId;
+      return getStreamsCore(tmdbId, mt, season, episode);
+    }).catch(function(err) {
+      console.error("[AsianHub] imdb resolve error:", (err && err.message) || err);
+      return [];
+    });
+  }
+
+  return getStreamsCore(tmdbId, mt, season, episode);
+}
+
+function getStreamsCore(tmdbId, mt, season, episode) {
+  var forceTv = mt === "tv" || (!!(season && episode) && !mt);
 
   // asian-catalog fallback rows (asian:<slug>): skip TMDB entirely — the
   // slug is the site's own slug, de-slug it and search the lanes directly.
@@ -1660,8 +1846,6 @@ function getStreams(tmdbId, mediaType, season, episode) {
     });
   }
 
-  var forceTv = mt === "tv" || (!!(season && episode) && !mt);
-
   var tmdbPromise = mt === "movie"
     ? tmdbLookup("movie", tmdbId).then(function(r) { return r || getTmdbInfoAuto(tmdbId); })
     : forceTv
@@ -1677,9 +1861,13 @@ function getStreams(tmdbId, mediaType, season, episode) {
     var isSeries = type === "tv";
     console.log("[AsianHub] type=" + type + " | title=" + tmdb.title + " | year=" + tmdb.year);
 
+    // v2.5.0: several app entry points pass season/episode as null
+    // (StreamsScreen.loadSources defaults). Default to S1E1 instead of a
+    // dead row (same convention as the app's testScraper).
     if (isSeries && (!season || !episode)) {
-      console.log("[AsianHub] TV show requires season and episode");
-      return [];
+      console.log("[AsianHub] season/episode not provided by app - defaulting to S1E1");
+      season = "1";
+      episode = "1";
     }
 
     var epPromise = isSeries

@@ -7,6 +7,17 @@
  * Entry point signatures:
  *   Movie: getStreams("1007757")
  *   TV:    getStreams("287011", "1", "1")
+ *
+ * v4.3.0 (2026-09-10) - app arg-shape hardening (same class of fixes as
+ * pinoyhub 5.6.0, root cause of "movies work / series don't"):
+ *   - IMDb tt-id inputs (app without TMDB key) resolved via TMDB find API
+ *     with the authoritative movie/tv type pinned from the hit.
+ *   - Media-type slot aliases "series"/"show"/"tv_show" normalized to "tv"
+ *     (NuvioTVSmart passes the catalog type verbatim).
+ *   - Missing/null season+episode on a TV id no longer returns zero rows:
+ *     defaults to S1E1 (app's own testScraper convention).
+ *   - Season/episode forms '01'/'S01'/'E01' normalized to digits.
+ *   - Drama detail fetch now rides the mirror-rotation helper.
  */
 
 var MAIN_URL = "https://kisskh.nl";
@@ -203,6 +214,27 @@ function getTmdbEpisodeTitle(tmdbId, season, episode) {
         return data.name || "";
     }).catch(function() {
         return "";
+    });
+}
+
+// v4.3.0: the app passes an IMDb tt-id when no TMDB key is configured
+// (PluginRepository.ensureTmdbId falls back to the raw id). Resolve it to a
+// TMDB id via the find API (same fix as pinoyhub 5.6.0) so the search lanes
+// get a usable id + authoritative type.
+function resolveImdbToTmdb(imdbId) {
+    var url = "https://api.themoviedb.org/3/find/" + encodeURIComponent(imdbId) +
+        "?api_key=" + TMDB_API_KEY + "&external_source=imdb_id";
+    return fetchJson(url).then(function(data) {
+        if (!data || typeof data !== "object") return null;
+        var tv = (data.tv_results || [])[0];
+        var mv = (data.movie_results || [])[0];
+        if (tv && tv.id) {
+            return { tmdbId: String(tv.id), type: "tv", title: tv.name || tv.original_name || "" };
+        }
+        if (mv && mv.id) {
+            return { tmdbId: String(mv.id), type: "movie", title: mv.title || mv.original_title || "" };
+        }
+        return null;
     });
 }
 
@@ -403,8 +435,9 @@ function searchKisskh(title) {
 }
 
 function getDramaDetail(dramaId) {
-    var url = kisskhBase() + "/api/DramaList/Drama/" + dramaId + "?isq=false";
-    return fetchJson(url).then(function(detail) {
+    // v4.3.0: route through kisskhApi so a mid-session host failure rotates
+    // mirrors instead of hard-failing on the pinned base.
+    return kisskhApi("/api/DramaList/Drama/" + dramaId + "?isq=false").then(function(detail) {
         if (!detail || !detail.episodes || detail.episodes.length === 0) {
             throw new Error("No episodes found for drama " + dramaId);
         }
@@ -520,34 +553,54 @@ function sourcesToStreams(sources, dramaTitle, epTitle, epNumber) {
 
 // ===== ENTRY POINT (same signature as 4KHDHub) =====
 
-function getStreams(tmdbId, season, episode) {
-    // Backward compatibility: old signature was getStreams(tmdbId, mediaType, seasonNum, episodeNum)
-    // Nuvio may still call with 4 args. Detect and remap.
-    var mediaType = null;
-    if (season === "movie" || season === "tv") {
-        mediaType = season;
-        season = episode;
-        episode = arguments[3];
-        log("Detected old signature (mediaType=" + mediaType + "), remapped to season=" + season + " episode=" + episode);
-    }
+// v4.3.0: normalize '1', '01', 'S01', 'E01' etc. to a plain digit string.
+function normalizeNum(v) {
+    if (v === undefined || v === null) return "";
+    var s = String(v).replace(/^[se]/i, "").replace(/[^0-9]/g, "");
+    return s;
+}
 
-    var seasonStr = season || "";
-    var episodeStr = episode || "";
-    log("getStreams called: " + tmdbId + " S" + seasonStr + "E" + episodeStr);
+// Core flow, split out of getStreams so the IMDb tt-id branch can reuse it.
+// mediaTypeHint: null (auto-detect) | "movie" | "tv" (pinned by app or IMDb).
+function runStreams(tmdbId, mediaTypeHint, season, episode) {
+    season = normalizeNum(season);
+    episode = normalizeNum(episode);
+    log("getStreams called: " + tmdbId + " type=" + (mediaTypeHint || "auto") + " S" + season + "E" + episode);
 
     // If season and episode are provided, force TV mode (avoids TMDB ID namespace collision)
     var forceTv = !!(season && episode);
 
-    var tmdbPromise = forceTv
-        ? fetchJson("https://api.themoviedb.org/3/tv/" + tmdbId + "?api_key=" + TMDB_API_KEY).then(function(data) {
+    var tmdbPromise;
+    if (mediaTypeHint === "tv") {
+        tmdbPromise = fetchJson("https://api.themoviedb.org/3/tv/" + tmdbId + "?api_key=" + TMDB_API_KEY).then(function(data) {
             var title = data.name || "";
             var original = data.original_name || title;
             var year = (data.first_air_date || "").split("-")[0];
             return { type: "tv", title: title, original: original, year: year, raw: data };
         }).catch(function() {
             return { type: "", title: "", original: "", year: "", raw: null };
-        })
-        : getTmdbInfoAuto(tmdbId);
+        });
+    } else if (mediaTypeHint === "movie") {
+        tmdbPromise = fetchJson("https://api.themoviedb.org/3/movie/" + tmdbId + "?api_key=" + TMDB_API_KEY).then(function(data) {
+            var title = data.title || "";
+            var original = data.original_title || title;
+            var year = (data.release_date || "").split("-")[0];
+            return { type: "movie", title: title, original: original, year: year, raw: data };
+        }).catch(function() {
+            return { type: "", title: "", original: "", year: "", raw: null };
+        });
+    } else {
+        tmdbPromise = forceTv
+            ? fetchJson("https://api.themoviedb.org/3/tv/" + tmdbId + "?api_key=" + TMDB_API_KEY).then(function(data) {
+                var title = data.name || "";
+                var original = data.original_name || title;
+                var year = (data.first_air_date || "").split("-")[0];
+                return { type: "tv", title: title, original: original, year: year, raw: data };
+            }).catch(function() {
+                return { type: "", title: "", original: "", year: "", raw: null };
+            })
+            : getTmdbInfoAuto(tmdbId);
+    }
 
     return tmdbPromise.then(function(tmdbData) {
         if (!tmdbData.type) {
@@ -557,9 +610,13 @@ function getStreams(tmdbId, season, episode) {
         var mediaType = tmdbData.type;
         log("Detected type: " + mediaType + " | Title: " + tmdbData.title + " | Year: " + tmdbData.year);
 
+        // v4.3.0: several app entry points pass season/episode as null
+        // (StreamsScreen.loadSources defaults). Instead of returning zero
+        // rows, default to S1E1 (same convention as the app's testScraper).
         if (mediaType === "tv" && (!season || !episode)) {
-            log("TV show requires season and episode parameters");
-            return [];
+            log("Season/episode not provided by app - defaulting to S1E1");
+            season = "1";
+            episode = "1";
         }
 
         var epPromise = (mediaType === "tv")
@@ -594,6 +651,41 @@ function getStreams(tmdbId, season, episode) {
         log("Error: " + err.message);
         return [];
     });
+}
+
+function getStreams(tmdbId, season, episode) {
+    // App signature: getStreams(tmdbId, mediaType, seasonNum, episodeNum).
+    // Media-type slot accepts the documented "movie"/"tv" plus the aliases
+    // NuvioTVSmart passes verbatim ("series"/"show") - normalize before the
+    // remap so the shift never misfires.
+    var mediaType = null;
+    var mtSlot = String(season === undefined || season === null ? "" : season).toLowerCase();
+    if (mtSlot === "movie" || mtSlot === "tv" || mtSlot === "series" || mtSlot === "show" || mtSlot === "tv_show" || mtSlot === "tvshow") {
+        mediaType = mtSlot === "movie" ? "movie" : "tv";
+        season = episode;
+        episode = arguments[3];
+        log("Detected app signature (mediaType=" + mediaType + "), remapped to season=" + season + " episode=" + episode);
+    }
+
+    var idStr = String(tmdbId === undefined || tmdbId === null ? "" : tmdbId).replace(/^tmdb:/i, "").trim();
+    if (!idStr) return Promise.resolve([]);
+
+    // v4.3.0: IMDb tt-id (app without TMDB key) -> resolve to TMDB first.
+    if (/^tt\d+/i.test(idStr)) {
+        return resolveImdbToTmdb(idStr).then(function(hit) {
+            if (!hit) {
+                log("IMDb id could not be resolved to TMDB: " + idStr);
+                return [];
+            }
+            log("IMDb " + idStr + " -> TMDB " + hit.tmdbId + " (" + hit.type + ")");
+            return runStreams(hit.tmdbId, mediaType || hit.type, season, episode);
+        }).catch(function(e) {
+            log("IMDb resolve failed: " + e.message);
+            return [];
+        });
+    }
+
+    return runStreams(idStr, mediaType, season, episode);
 }
 
 if (typeof module !== "undefined" && module.exports) {

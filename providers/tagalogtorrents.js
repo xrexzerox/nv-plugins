@@ -26,9 +26,15 @@
  *
  * Sandbox-safe: pure-JS bundle, ES5 promise chains only, zero external
  * modules, chrome56-compatible string APIs, fail-soft everywhere.
+ *
+ * v1.2.0 (2026-09-10) - app arg-shape hardening (same class as pinoyhub
+ * 5.6.0): IMDb tt-id inputs resolve via TMDB find (tt-id kept as the IMDb
+ * lane key even on failure); media-type aliases "series"/"show" normalized
+ * to "tv" (NuvioTVSmart passes the catalog type verbatim); "tmdb:" prefixed
+ * ids tolerated.
  */
 
-var __version = "1.1.0";
+var __version = "1.2.0";
 
 // ---------- constants ----------
 var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
@@ -158,6 +164,27 @@ function fetchTmdbMeta(tmdbId, mediaType) {
     };
   }).catch(function () {
     return { title: "", originalTitle: "", year: null, imdbId: null, originalLanguage: "", isTagalogOriginal: false };
+  });
+}
+
+// v1.2.0: the app passes an IMDb tt-id when no TMDB key is configured
+// (PluginRepository.ensureTmdbId falls back to the raw id). fetchTmdbMeta
+// would 404 on a tt-id -> empty title + null imdbId -> ALL FOUR LANES EMPTY.
+// Resolve the tt-id to a TMDB id via the find API (same fix as pinoyhub
+// 5.6.0) so meta loads; even when TMDB is unreachable, the tt-id itself is
+// used directly as the Stremio/apibay IMDb key so those lanes still work.
+function resolveImdbToTmdb(imdbId) {
+  var url = TMDB_BASE_URL + "/find/" + encodeURIComponent(String(imdbId)) +
+    "?api_key=" + TMDB_API_KEY + "&external_source=imdb_id";
+  return fetchText(url, TMDB_TIMEOUT_MS).then(function (text) {
+    var data = JSON.parse(text);
+    var tv = (data.tv_results || [])[0];
+    var mv = (data.movie_results || [])[0];
+    if (tv && tv.id) return { tmdbId: String(tv.id), type: "tv" };
+    if (mv && mv.id) return { tmdbId: String(mv.id), type: "movie" };
+    return null;
+  }).catch(function () {
+    return null;
   });
 }
 
@@ -692,34 +719,52 @@ function getStreams(tmdbId, mediaType, season, episode) {
   try {
     var cfg = settings();
     if (cfg.enableTorrents === false) return Promise.resolve([]);
-    var isTv = String(mediaType) === "tv";
-    return fetchTmdbMeta(tmdbId, mediaType).then(function (meta) {
-      var ctx = {
-        isTv: isTv,
-        title: meta.title || meta.originalTitle || "",
-        originalTitle: meta.originalTitle || meta.title || "",
-        year: meta.year,
-        imdbId: meta.imdbId,
-        isTagalogOriginal: meta.isTagalogOriginal,
-        season: isTv ? (season != null ? parseInt(season, 10) || 1 : 1) : null,
-        episode: isTv ? (episode != null ? parseInt(episode, 10) || 1 : 1) : null,
-        keepAllLanguages: cfg.keepAllLanguages === true
-      };
-      var jobs = [];
-      if (cfg.torrentioLane !== false) jobs.push(stremioLane("Torrentio", TORRENTIO_API, ctx));
-      if (cfg.torrentsdbLane !== false) jobs.push(stremioLane("TorrentsDB", TORRENTSDB_API, ctx));
-      if (cfg.tpbLane !== false) jobs.push(withTimeout(apibayLane(ctx), LANE_TIMEOUT_MS * 2 + 2000, "tpb"));
-      if (cfg.x1337Lane !== false) jobs.push(withTimeout(x1337Lane(ctx), (X1337_TIMEOUT_MS + 2000) * 3, "1337x"));
-      if (!jobs.length) return [];
-      return Promise.all(jobs).then(function (results) {
-        var merged = [];
-        for (var i = 0; i < results.length; i++) merged = merged.concat(results[i] || []);
-        return finalize(merged);
+    // v1.2.0: normalize media-type aliases - NuvioTVSmart passes the catalog
+    // type verbatim ("series"), which used to classify every episode as a
+    // movie lookup and pulled wrong/unmatched torrents.
+    var mt = String(mediaType === undefined || mediaType === null ? "" : mediaType).toLowerCase();
+    if (mt === "series" || mt === "show" || mt === "tv_show" || mt === "tvshow") mt = "tv";
+    var idStr = String(tmdbId === undefined || tmdbId === null ? "" : tmdbId).replace(/^tmdb:/i, "").trim();
+
+    var run = function (effectiveId, effectiveType, forcedImdbId) {
+      var isTv = effectiveType === "tv";
+      return fetchTmdbMeta(effectiveId, effectiveType).then(function (meta) {
+        var ctx = {
+          isTv: isTv,
+          title: meta.title || meta.originalTitle || "",
+          originalTitle: meta.originalTitle || meta.title || "",
+          year: meta.year,
+          imdbId: meta.imdbId || forcedImdbId || null,
+          isTagalogOriginal: meta.isTagalogOriginal,
+          season: isTv ? (season != null ? parseInt(season, 10) || 1 : 1) : null,
+          episode: isTv ? (episode != null ? parseInt(episode, 10) || 1 : 1) : null,
+          keepAllLanguages: cfg.keepAllLanguages === true
+        };
+        var jobs = [];
+        if (cfg.torrentioLane !== false) jobs.push(stremioLane("Torrentio", TORRENTIO_API, ctx));
+        if (cfg.torrentsdbLane !== false) jobs.push(stremioLane("TorrentsDB", TORRENTSDB_API, ctx));
+        if (cfg.tpbLane !== false) jobs.push(withTimeout(apibayLane(ctx), LANE_TIMEOUT_MS * 2 + 2000, "tpb"));
+        if (cfg.x1337Lane !== false) jobs.push(withTimeout(x1337Lane(ctx), (X1337_TIMEOUT_MS + 2000) * 3, "1337x"));
+        if (!jobs.length) return [];
+        return Promise.all(jobs).then(function (results) {
+          var merged = [];
+          for (var i = 0; i < results.length; i++) merged = merged.concat(results[i] || []);
+          return finalize(merged);
+        });
       });
-    }).catch(function (e) {
-      console.log("[TagalogTorrents] " + (e && e.message));
-      return [];
-    });
+    };
+
+    // IMDb tt-id input -> resolve to TMDB for meta; the tt-id doubles as the
+    // IMDb key for the Stremio/apibay lanes even if TMDB resolution fails.
+    if (/^tt\d+/i.test(idStr)) {
+      return resolveImdbToTmdb(idStr).then(function (hit) {
+        console.log("[TagalogTorrents] IMDb " + idStr + " -> " + (hit ? ("TMDB " + hit.tmdbId + " (" + hit.type + ")") : "no TMDB hit; using tt-id as IMDb key"));
+        return run(hit ? hit.tmdbId : idStr, hit ? hit.type : mt, idStr);
+      });
+    }
+
+    if (!idStr) return Promise.resolve([]);
+    return run(idStr, mt, null);
   } catch (e) {
     return Promise.resolve([]);
   }

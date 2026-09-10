@@ -1,18 +1,33 @@
-NV-PLUGINS UPLOAD — v3.13.0 (81 providers)
-============================================
-This round: providers/pinoyhub.js 5.5.0 -> 5.6.0 (series-args hardening).
-The Nuvio app can pass IMDb tt-ids, missing/zero-padded season/episode and
-type aliases to plugins; v5.6.0 handles all of them (14/14 app shapes
-tested green for Queen Mantis S1E1, movie path regression-clean).
+NV-PLUGINS UPLOAD — v3.14.0 (40 providers, All-in-One REMOVED)
+===============================================================
+WHAT CHANGED
+============
+1) All-in-One-Nuvio removal (user request). The repo is back to the ORIGINAL
+   40 providers: pinoyhub, asianhub, tagalogtorrents, animotvslash, kisskh,
+   animepahe, cinemacity, 4khdhub, okru, hexa, vidzee, vidrock, vidfast, ...
+   All 61 merged All-in-One scrapers (torrentio, hianime, vidsrc, vixsrc,
+   allanime, cineby, onlykdrama, ...) were DELETED, and the three files the
+   merge had overwritten (vixsrc.js, animekai.js, dahmermovies.js) were
+   restored to their originals.
 
-Upload ALL files to xrexzerox/nv-plugins main branch, same paths:
-- manifest.json                 3.12.0 -> 3.13.0
-- providers/pinoyhub.js         5.5.0 -> 5.6.0  (THE series fix)
-- providers/kisskh.js           4.2.0 (kept)
-- providers/asianhub.js         2.4.0 (kept)
-- everything else unchanged
-- addons/asian-catalog/*        unchanged (still needs CF dashboard paste of worker-bundle.js)
+2) Deep review + fixes (same bug family as the pinoyhub series fix):
+   - kisskh.js 4.3.0: IMDb tt-id resolve, series/show/tvshow aliases,
+     null S/E -> S1E1 default, padding-safe S/E, mirror-rotated detail fetch.
+   - asianhub.js 2.5.0: IMDb tt-id resolve, null S/E -> S1E1 default,
+     'tvshow' alias (was mis-detecting TV as movie), kisskh lane kkey now
+     generated LOCALLY first (16/16 byte-verified vs reference) with
+     site-keygen + Google Script as fallbacks.
+   - tagalogtorrents.js 1.2.0: IMDb tt-id input used to return ZERO torrents
+     from all 4 lanes; now resolves via TMDB find and keeps the tt-id as the
+     Stremio/apibay IMDb key even if TMDB fails. "series"/"tvshow" types were
+     treated as movies -> normalized. E2E: tt10156112 -> 6 torrents.
+   - animotvslash.js 5.2.0: tt-id resolve, aliases, null S/E -> S1E1,
+     padding-safe episode numbers. E2E: tt13293588 S3E11 -> 5 streams.
 
-AFTER UPLOAD: in the app remove + re-add the plugin (manifest URL:
-https://raw.githubusercontent.com/xrexzerox/nv-plugins/main/manifest.json)
-or wait for the 6-hour auto refresh. Then retest Queen Mantis S1E1.
+FILES
+=====
+manifest.json (3.14.0, 40 scrapers) + providers/ (50 files: 40 listed +
+10 legacy unlisted) + addons/asian-catalog/ + build.js + README.md.
+
+AFTER UPLOAD: also upload nvv-fix-1.3.0.zip to github.com/xrexzerox/nvv
+(the phone manifest), then remove + re-add the plugin on the device.
