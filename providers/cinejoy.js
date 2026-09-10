@@ -1,8 +1,20 @@
 /**
- * cinejoy v1.4.0 - Built from src/cinejoy/ (run bun build.js to regenerate)
- * v1.4.0: on-device text-safe /g exchange via the asian-catalog worker relay
- * (POST /relay, host-allowlisted) — device fetch bridges are text-only; direct
- * binary attempts kept as fallback for binary-capable runtimes.
+ * cinejoy - Built from src/cinejoy/ (run bun build.js to regenerate)
+ *
+ * v1.4.0 (device binary transport):
+ *  The enc-cinejoy -> POST /g -> dec-cinejoy chain is BINARY on both legs
+ *  (verified live: api.shegu.st/g accepts ONLY raw octet-stream bodies -
+ *  every base64/text/JSON/form/hex variant 404s - and replies octet-stream).
+ *  Runtimes therefore need real byte fidelity:
+ *   - Node/CF/tests: Uint8Array body + arrayBuffer() response (native).
+ *   - NuvioTVSmart (webOS/Tizen): the plugin worker shim base64-encodes
+ *     typed-array bodies and the plugin network service decodes them at the
+ *     socket (x-nuvio-body-encoding: base64 protocol); binary responses come
+ *     back base64-marked and the shim's arrayBuffer()/text() restore exact
+ *     bytes. This provider needs no TV-specific code for that path.
+ *   - NuvioMobile: the bridge stringifies bodies (no binary support), the
+ *     /g request cannot succeed, and the per-server try/catch fail-softs to
+ *     zero results (unchanged from before - cinejoy never worked there).
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
@@ -638,25 +650,16 @@ function wyzieKeyField() {
 // src/_shared/sources/cinejoy.js
 var B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 function b64urlDecodeToBytes(s) {
-  // Accepts url-safe or standard, padded or unpadded. Padding chars MUST be
-  // stripped before decode: B64.indexOf("=") is -1 and the old `& 63` mask
-  // silently corrupted the last group (broke relayed replies, which are
-  // standard padded base64, while unpadded enc-cinejoy data kept working).
-  let std = String(s || "").replace(/-/g, "+").replace(/_/g, "/").replace(/[^A-Za-z0-9+/]/g, "");
+  let std = String(s || "").replace(/-/g, "+").replace(/_/g, "/");
+  while (std.length % 4 !== 0)
+    std += "=";
   const out = [];
-  const full = Math.floor(std.length / 4) * 4;
-  for (let i = 0; i < full; i += 4) {
-    const n = B64.indexOf(std[i]) << 18 | B64.indexOf(std[i + 1]) << 12 | B64.indexOf(std[i + 2]) << 6 | B64.indexOf(std[i + 3]);
+  for (let i = 0; i < std.length; i += 4) {
+    const n = B64.indexOf(std[i]) << 18 | B64.indexOf(std[i + 1]) << 12 | (B64.indexOf(std[i + 2]) & 63) << 6 | B64.indexOf(std[i + 3]) & 63;
     out.push(n >> 16 & 255, n >> 8 & 255, n & 255);
   }
-  const rem = std.length - full;
-  if (rem === 2) {
-    const n = B64.indexOf(std[full]) << 18 | B64.indexOf(std[full + 1]) << 12;
-    out.push(n >> 16 & 255);
-  } else if (rem === 3) {
-    const n = B64.indexOf(std[full]) << 18 | B64.indexOf(std[full + 1]) << 12 | B64.indexOf(std[full + 2]) << 6;
-    out.push(n >> 16 & 255, n >> 8 & 255);
-  }
+  while (out.length && out[out.length - 1] === 0 && std.slice(-2) !== "==")
+    break;
   return out;
 }
 function b64urlEncodeNoPad(bytes) {
@@ -677,117 +680,6 @@ function enabled() {
   } catch (e) {
     return true;
   }
-}
-// ---------------------------------------------------------------------------
-// v1.4.0 — on-device text-safe transport.
-// Runtime research proved NuvioMobile + NuvioTVSmart CANNOT exchange binary
-// with /g: both bridges stringify request bodies (Uint8Array -> "[object
-// Uint8Array]") and their fetch polyfills expose text()/json() only (no
-// arrayBuffer). The /g endpoint accepts raw octet-stream bodies exclusively
-// (all text encodings 404'd, payload is not valid UTF-8, so string
-// pre-compensation is impossible), and public CORS relays are unreliable.
-// Fix: the asian-catalog Cloudflare worker (v3.1.0+) exposes POST /relay —
-// a host-allowlisted binary relay. We base64 the request into JSON, the
-// worker performs the binary POST (Workers handle octet-stream natively) and
-// returns the reply base64-wrapped. Every on-device hop is text.
-// Direct binary attempts are kept LAST so Node/desktop/future binary-capable
-// runtimes still work without the relay.
-function relayBase() {
-  try {
-    const s = globalThis.SCRAPER_SETTINGS || {};
-    const raw = String(s.workerRelay || s.cinejoyRelay || "").trim().replace(/\/+$/, "");
-    return raw && /^https?:\/\//i.test(raw) ? raw : "";
-  } catch (e) {
-    return "";
-  }
-}
-function relayExchange(bodyBytes, headers) {
-  const base = relayBase();
-  if (!base)
-    return Promise.resolve(null);
-  const payload = {
-    url: CINEJOY_API + "/g",
-    method: "POST",
-    // /g requires the octet-stream content-type server-side (directExchange
-    // adds it on its own fetch; the relay must forward it too)
-    headers: Object.assign({}, headers, { "Content-Type": "application/octet-stream" }),
-    bodyB64: b64urlEncodeNoPad(bodyBytes)
-  };
-  return fetch(base + "/relay", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(payload)
-  }).then(function (r) {
-    if (!r || !r.ok)
-      return null;
-    return r.json();
-  }).then(function (j) {
-    if (!j || !j.ok || !j.bodyB64)
-      return null;
-    const bytes = b64urlDecodeToBytes(j.bodyB64);
-    return bytes && bytes.length ? bytes : null;
-  }).catch(function () {
-    return null;
-  });
-}
-function directExchange(bodyBytes, headers) {
-  // Binary-capable runtimes only. On Nuvio devices this either throws or the
-  // server 404s the stringified body — either way we fail soft.
-  let gBody = bodyBytes;
-  if (!(typeof Uint8Array !== "undefined" && bodyBytes instanceof Uint8Array)) {
-    gBody = new Uint8Array(bodyBytes.length);
-    for (let i = 0; i < bodyBytes.length; i++) gBody[i] = bodyBytes[i] & 255;
-  }
-  return fetch(CINEJOY_API + "/g", {
-    method: "POST",
-    headers: Object.assign({}, headers, { "Content-Type": "application/octet-stream", Origin: CINEJOY_BASE }),
-    body: gBody
-  }).catch(function () {
-    // byte-transparent runtimes: Latin1 string body
-    let binBody = "";
-    for (let i = 0; i < bodyBytes.length; i++)
-      binBody += String.fromCharCode(bodyBytes[i] & 255);
-    return fetch(CINEJOY_API + "/g", {
-      method: "POST",
-      headers: Object.assign({}, headers, { "Content-Type": "application/octet-stream", Origin: CINEJOY_BASE }),
-      body: binBody
-    });
-  }).then(function (gRes) {
-    if (!gRes || !gRes.ok)
-      return null;
-    if (gRes.arrayBuffer) {
-      return gRes.arrayBuffer().then(function (ab) {
-        const u8 = new Uint8Array(ab);
-        const buf = [];
-        for (let i = 0; i < u8.length; i++) buf.push(u8[i] & 255);
-        return buf;
-      });
-    }
-    return gRes.text().then(function (gText) {
-      const buf = [];
-      for (let i = 0; i < gText.length; i++)
-        buf.push(gText.charCodeAt(i) & 255);
-      return buf;
-    });
-  }).catch(function () {
-    return null;
-  });
-}
-function gExchange(bodyBytes, headers) {
-  return relayExchange(bodyBytes, headers).then(function (relayed) {
-    if (relayed && relayed.length)
-      return relayed;
-    return directExchange(bodyBytes, headers);
-  });
-}
-function wyzieKeyFieldPlus() {
-  return {
-    type: "text",
-    key: "workerRelay",
-    label: "Worker relay URL",
-    placeholder: "https://your-worker.workers.dev",
-    description: "Base URL of your asian-catalog worker (v3.1.0+). Required on Nuvio devices: cinejoy's encrypted exchange is binary-only, and device runtimes can only send/receive text. The worker relays it safely."
-  };
 }
 function scrape(ctx) {
   return __async(this, null, function* () {
@@ -822,12 +714,50 @@ function scrape(ctx) {
           if (!result || !result.data)
             continue;
           const bodyBytes = b64urlDecodeToBytes(result.data);
-          // v1.4.0: /g is binary-only (probed: text encodings 404) and device
-          // fetch bridges are text-only. Relay first (worker does the binary
-          // POST), then fall back to direct binary for capable runtimes.
-          const gBuf = yield gExchange(bodyBytes, headers);
-          if (!gBuf || !gBuf.length)
+          // The request/response bodies are BINARY. A JS string body gets
+          // UTF-8 encoded by fetch (corrupting bytes >127), which 404s. Send
+          // a typed array: spec-compliant runtimes (Node/CF) transmit it raw;
+          // NuvioTVSmart's shim base64-encodes it for the string bridge and
+          // the service decodes at the socket; Mobile cannot send binary at
+          // all (the bridge stringifies) and the failure fail-softs below.
+          let gBody = bodyBytes;
+          if (!(typeof Uint8Array !== "undefined" && bodyBytes instanceof Uint8Array)) {
+            gBody = new Uint8Array(bodyBytes.length);
+            for (let i = 0; i < bodyBytes.length; i++) gBody[i] = bodyBytes[i] & 255;
+          }
+          const gRes = yield fetch(CINEJOY_API + "/g", {
+            method: "POST",
+            headers: Object.assign({}, headers, { "Content-Type": "application/octet-stream", Origin: CINEJOY_BASE }),
+            body: gBody
+          }).catch(function (e) {
+            // runtimes without Uint8Array body support: fall back to binary string
+            let binBody = "";
+            for (let i = 0; i < bodyBytes.length; i++)
+              binBody += String.fromCharCode(bodyBytes[i] & 255);
+            return fetch(CINEJOY_API + "/g", {
+              method: "POST",
+              headers: Object.assign({}, headers, { "Content-Type": "application/octet-stream", Origin: CINEJOY_BASE }),
+              body: binBody
+            });
+          });
+          if (!gRes || !gRes.ok)
             continue;
+          let gBuf;
+          if (gRes.arrayBuffer) {
+            // Preferred: exact bytes (Node/CF native; TVSmart shim decodes its
+            // base64 transport marker; both preserve bytes >127).
+            const ab = yield gRes.arrayBuffer();
+            gBuf = [];
+            const u8 = new Uint8Array(ab);
+            for (let i = 0; i < u8.length; i++) gBuf.push(u8[i] & 255);
+          } else {
+            // Last resort (string-only runtimes): latin-1 round-trip. Bytes
+            // >=128 are already lost to UTF-8 decode on those runtimes.
+            const gText = yield gRes.text();
+            gBuf = [];
+            for (let i = 0; i < gText.length; i++)
+              gBuf.push(gText.charCodeAt(i) & 255);
+          }
           const payload = b64urlEncodeNoPad(gBuf);
           const decJson = yield postJson(
             MULTI_DECRYPT_API + "/dec-cinejoy",
@@ -886,7 +816,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
 }
 function onSettings() {
   return __async(this, null, function* () {
-    return [wyzieKeyField(), wyzieKeyFieldPlus()];
+    return [wyzieKeyField()];
   });
 }
 module.exports = { getStreams, onSettings };

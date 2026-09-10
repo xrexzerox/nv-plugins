@@ -1,9 +1,9 @@
 // cinemacity.js v4.2.0
-// v4.2.0: optional worker-relay lane. The site sits behind a Cloudflare
-// managed challenge that challenges some IPs (notably datacenter egress) no
-// matter the identity; the asian-catalog worker relay (v3.1.0+) fetches with
-// worker-grade HTTP and base64-wraps the reply, so text-only device runtimes
-// and challenged clients get a second path. Direct lanes stay primary.
+// v4.2.0: third retry identity (Googlebot). The site's Cloudflare sits in
+// front of DLE with a managed challenge: desktop Chrome -> 403, mobile
+// Android -> 403 on some edges. WordPress/DLE hosts commonly allow-list the
+// Google crawler, so the escalation now ends with a Googlebot UA before
+// giving up (same 3-step ladder the asian-catalog addon uses successfully).
 // v4.1.0: the site sits behind a Cloudflare managed challenge. The old fetch
 // ignored response codes, so a challenge page was parsed as if it were real
 // markup ("Found 0 script tags" / no anchors). Now: challenge/403 detection,
@@ -19,6 +19,13 @@ var HEADERS = {
 };
 var MOBILE_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+  "Cookie": "dle_user_id=32729; dle_password=894171c6a8dab18ee594d5c652009a35;",
+  "Referer": "https://cinemacity.cc/",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9"
+};
+var BOT_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
   "Cookie": "dle_user_id=32729; dle_password=894171c6a8dab18ee594d5c652009a35;",
   "Referer": "https://cinemacity.cc/",
   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -55,43 +62,6 @@ function looksLikeChallenge(html) {
   return /Just a moment|challenges\.cloudflare\.com|Attention Required|cf-chl/i.test(html || "");
 }
 
-function relayBase() {
-  try {
-    var s = globalThis.SCRAPER_SETTINGS || {};
-    var raw = String(s.workerRelay || s.cinemacityRelay || "").trim().replace(/\/+$/, "");
-    return raw && /^https?:\/\//i.test(raw) ? raw : "";
-  } catch (e) {
-    return "";
-  }
-}
-
-function relayGetText(url, headers) {
-  var base = relayBase();
-  if (!base)
-    return Promise.resolve("");
-  return fetch(base + "/relay", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ url: url, method: "GET", headers: headers || {} })
-  }).then(function (r) {
-    if (!r || !r.ok)
-      return "";
-    return r.json();
-  }).then(function (j) {
-    if (!j || !j.ok || !j.bodyB64)
-      return "";
-    try {
-      var norm = String(j.bodyB64).replace(/-/g, "+").replace(/_/g, "/").replace(/[^A-Za-z0-9+/=]/g, "");
-      while (norm.length % 4) norm += "=";
-      return typeof atob === "function" ? atob(norm) : "";
-    } catch (e) {
-      return "";
-    }
-  }).catch(function () {
-    return "";
-  });
-}
-
 function fetchOnce(url, headers) {
   return fetch(url, {
     headers: headers || HEADERS,
@@ -110,15 +80,17 @@ function fetchText(url, options) {
   options = options || {};
   return fetchOnce(url, options.headers).catch(function(err) {
     console.log("[CinemaCity] blocked or failed (" + err.message + "), retrying with mobile identity...");
-    return fetchOnce(url, MOBILE_HEADERS);
-  }).catch(function(err2) {
-    console.log("[CinemaCity] retry failed too (" + err2.message + "), trying worker relay...");
-    return relayGetText(url, options.headers || MOBILE_HEADERS).then(function(relayed) {
-      if (relayed && !looksLikeChallenge(relayed))
-        return relayed;
-      console.log("[CinemaCity] relay empty or challenged too");
-      return ""; // empty keeps the old fail-soft flow (callers treat falsy as no-data)
+    return fetchOnce(url, MOBILE_HEADERS).catch(function(err2) {
+      var msg2 = String((err2 && err2.message) || err2);
+      if (/CF_BLOCK (403|503)/.test(msg2)) {
+        console.log("[CinemaCity] mobile retry failed too (" + msg2 + "), trying Googlebot identity...");
+        return fetchOnce(url, BOT_HEADERS);
+      }
+      throw err2;
     });
+  }).catch(function(err3) {
+    console.log("[CinemaCity] all identities failed (" + err3.message + ")");
+    return ""; // empty keeps the old fail-soft flow (callers treat falsy as no-data)
   });
 }
 
@@ -394,13 +366,4 @@ function getStreams(tmdbId, mediaType, season, episode) {
   });
 }
 
-module.exports = {
-  getStreams,
-  // test hooks (offline regression suite)
-  _test: {
-    looksLikeChallenge: looksLikeChallenge,
-    relayBase: relayBase,
-    atobPolyfill: atobPolyfill,
-    extractBalanced: extractBalanced
-  }
-};
+module.exports = { getStreams };

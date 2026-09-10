@@ -1,9 +1,9 @@
-# Asian Catalog (community.asian.catalog) — v3.2.0
+# Asian Catalog (community.asian.catalog) — v3.0.0
 
 Stremio-protocol **catalog addon** for Nuvio (NuvioMobile + NuvioTVSmart). Organized
 directory, every catalog searchable, TMDB-mapped rows for playback.
 
-## Organized directory (14 catalogs, grouped by source)
+## Organized directory (11 catalogs, grouped by source)
 
 | # | Catalog | Type | Source | Extras |
 |---|---------|------|--------|--------|
@@ -18,12 +18,9 @@ directory, every catalog searchable, TMDB-mapped rows for playback.
 | 9 | Asian Movies | movie | TMDB | search, skip |
 | 10 | Asian Series Trending | series | TMDB | search, skip |
 | 11 | Asian Movies by Genre | movie | TMDB | genre chips (17), skip |
-| 12 | Asian Series by Language | series | TMDB | language chips (5), skip |
-| 13 | Asian Movies by Language | movie | TMDB | language chips (5), skip |
-| 14 | Asian Series On The Air | series | TMDB | skip |
 
 - **Pinoy** rows resolve to `tmdb:` ids (posters + metadata). Unmatched titles stay
-  visible as `asian:<slug>` fallback rows (site poster) unless `ASIAN_KEEP_UNMATCHED=0`.
+  visible as source-scoped `asian:ks-/va-/pmh-<slug>` fallback rows (site poster; the paired plugins navigate the sites' real episode/movie pages DIRECTLY from the slug) unless `ASIAN_KEEP_UNMATCHED=0`.
 - **KissAsian** (kissasian.cam, WordPress "dramastream" theme): the home archive
   (`/page/N/`) is scraped and deduped to series — a fresh "latest updates" browse.
   Search uses the site's own `/?s=` endpoint. Genre chips route to the site's
@@ -36,36 +33,10 @@ directory, every catalog searchable, TMDB-mapped rows for playback.
 - **TMDB** catalogs are official directories filtered to Asian original languages
   (`ko|zh|ja|th|tl`): popular Asian movies, newest Asian series, genre browses.
   Search filters TMDB results to those languages only.
-- **v3.1.0 language matrix + on-the-air** (patterns proven by Streaming Catalogs
-  Plus on stremio-addons.net): *Asian Series/Movies by Language* pin ONE original
-  language per chip (Korean `ko`, Japanese `ja`, Chinese `zh`, Thai `th`, Filipino
-  `tl`); *Asian Series On The Air* uses TMDB's `on_the_air=true` for dramas with
-  episodes airing right now.
 - **kisskh.co is intentionally NOT a catalog source** (v3.0.0): it Cloudflare-
   challenges datacenter IPs, so a server-side worker cannot browse it. It stays a
   **playback lane** inside `providers/asianhub.js`, where Nuvio devices are served
   normally. Same split as the standalone kisskh.js provider.
-
-## What changed in v3.1.0
-
-- **3 new TMDB catalogs**: Asian Series by Language, Asian Movies by Language
-  (language matrix) and Asian Series On The Air (airing now).
-- **Manifest personalization** (Streaming-Catalogs-Plus pattern, proven Nuvio-safe):
-  - `/manifest.json?sources=pinoy,kissasian,viewasian,tmdb` keeps only those sources
-  - `/manifest.json?langs=ko,ja,th` trims the language rows to those chips
-  - Combine freely; without params you get all 14 catalogs.
-- **POST /relay — text-safe binary relay for Nuvio plugins.** Device runtimes
-  stringify fetch bodies and expose text()/json() only, so plugins cannot POST
-  binary or read binary replies (cinejoy's octet-stream exchange broke on-device).
-  The relay does the binary fetch server-side (Workers handle octet-stream
-  natively) and base64-wraps the reply. **Host-allowlisted**
-  (`api.shegu.st`, `animotvslash.ru`, `animotvslash.p2pplay.pro`, `cinemacity.cc`)
-  so the deployment can never serve as an open proxy; reply cap 2 MB; 20 s timeout.
-  Verified byte-identical round-trip in real workerd.
-- Plugins that use it (set **Worker Relay URL** in the plugin's settings to this
-  worker's base URL): **cinejoy v1.4.0** (required on device), **animotvslash
-  v6.0.0** (fallback when the ru API challenges the client), **cinemacity v4.2.0**
-  (fallback when CF challenges the client).
 
 ## What changed in v3.0.0 (source swap, user request)
 
@@ -94,54 +65,10 @@ directory, every catalog searchable, TMDB-mapped rows for playback.
 ```
 GET /                                   human-readable directory page
 GET /manifest.json                      addon manifest (Stremio protocol)
-GET /manifest.json?sources=..&langs=..  personalized manifest (optional)
 GET /catalog/{type}/{catalogId}.json                       first page
 GET /catalog/{type}/{catalogId}/{extras}.json              extras as path segment
 GET /catalog/{type}/{catalogId}.json?search=x&skip=20      extras as query params
-GET /meta/{type}/{id}.json              details + episode videos (asian: ids)
-GET /stream/{type}/{id}.json            playable streams (asian: + tmdb: ids)
 GET /health                             per-source probes: ok/ms/items + hints
-POST /relay                             text-safe binary relay (allowlisted hosts)
-```
-
-## Every catalog row is playable (v3.2.0)
-
-Rows carry two id shapes, and BOTH now resolve to streams:
-
-- `tmdb:<id>` rows — the apps hand these to the AsianHub/PinoyMoviesHub
-  plugins (unchanged), AND the addon serves them server-side via
-  `/stream` (TMDB title lookup -> site search -> extraction).
-- `asian:<site>-<slug>` rows (`ks-` KissAsian, `va-` ViewAsian, `ph-`
-  PinoymoviesHub) — rows the TMDB match could not resolve. Before v3.2.0
-  these were DEAD: both apps only forward `tmdb:`/`tt` ids to plugins
-  (TVSmart skips plugin execution for `asian:` ids entirely; Mobile passes
-  the raw string and the plugin's TMDB lookup 404s). Now:
-  - the addon manifest declares `meta` + `stream` resources with
-    `idPrefixes`, so BOTH apps call `/stream/{type}/{id}.json` and
-    `/meta/{type}/{id}.json` on this worker;
-  - `/stream` resolves the item DIRECTLY from its source page (no title
-    search): KissAsian rows run the full Byse chain server-side (captcha ->
-    PoW -> AES-CTR decrypt), ViewAsian rows run the 3-hop embed chain,
-    Pinoy rows run the Dooplay/dooplayer + Mixdrop/Byse/Dood extractors;
-  - `/meta` returns episode `videos` for series rows so the episode list
-    renders and each episode id (`asian:ks-<slug>:<s>:<e>`) streams;
-  - legacy bare `asian:<slug>` ids (pre-3.2.0 rows cached in apps) fall
-    back to title search across all three sites;
-  - the AsianHub (v2.1.0) and PinoyMoviesHub (v5.3.0) plugins ALSO accept
-    the site-coded ids, so on Mobile every row plays even without the
-    addon stream path.
-
-Caveat: server-minted Byse URLs may be IP-aware; if a KissAsian stream from
-the addon path does not play on a device, the device-side plugin path
-(AsianHub with the same row) remains the primary lane.
-
-Examples:
-
-```
-/meta/series/asian:ks-queen-of-tears.json
-/stream/series/asian:ks-queen-of-tears:1:2.json
-/stream/movie/asian:ph-hello-love-again.json
-/stream/series/tmdb:286988:1:1.json        (server-side title search)
 ```
 
 Extras: `search` (text), `genre` (chip label), `skip` (offset). Nuvio sends them as
@@ -164,11 +91,8 @@ Examples:
 
 1. Cloudflare dashboard → Workers & Pages → Create worker (or open the existing
    `asian-catalog` worker).
-2. Paste the whole `worker-bundle.js` (v3.1.0) into the editor → Deploy.
+2. Paste the whole `worker-bundle.js` (v3.2.0) into the editor → Deploy.
 3. Add `https://<your-worker>.workers.dev/manifest.json` in Nuvio → Settings → Addons.
-4. **Plugins (cinejoy / animotvslash / cinemacity):** open the plugin's settings in
-   Nuvio and set **Worker Relay URL** to `https://<your-worker>.workers.dev`.
-   cinejoy requires it on device; the other two use it as an automatic fallback.
 
 Optional vars/secrets: `TMDB_API_KEY`, `PINOY_SITE`, `KISSASIAN_SITE`,
 `VIEWASIAN_SITE`, `ASIAN_PAGE_LIMIT`, `ASIAN_MAX_PAGES`, `ASIAN_KEEP_UNMATCHED`.
@@ -210,10 +134,44 @@ Nuvio and add this one; both may coexist temporarily (rows would duplicate).
 ## Development
 
 ```
-node test-catalog.js          # 129 offline tests (mock network)
-LIVE=1 node test-catalog.js   # + 15 live checks against the real sources
-node debug-catalog.js health  # live per-source errors on your machine
+node test-catalog.js          # 113 offline tests (mock network)
+LIVE=1 node test-catalog.js   # + 14 live checks against the real sources
+node debug-asian.js help      # unified debugger: catalog + plugins
 ```
+
+### Unified debugger — `debug-asian.js`
+
+Tests the WHOLE asian pipeline on your own machine (Node >= 18, zero deps):
+the catalog engine AND the plugins (`asianhub.js` + `pinoyhub.js`), with the
+exact `getStreams` calls Nuvio makes. Supersedes `debug-catalog.js`
+(catalog-side only). Plain ASCII output, cmd.exe-safe; exit 0/1/2.
+
+```
+node debug-asian.js all                       # FLAGSHIP end-to-end audit:
+                                              #  health -> every catalog -> sampled
+                                              #  rows -> paired plugin -> stream link
+                                              #  + miss diagnosis (bot-gate, 500s, ...)
+node debug-asian.js all --full                # every row of every catalog (slow)
+node debug-asian.js all --catalog asian-series --sample 5
+node debug-asian.js health                    # 4 source probes, real errors
+node debug-asian.js catalog series asian-series search=queen of tears
+node debug-asian.js stream series asian:queen-of-tears 1 1 --verify
+                                              # one id -> plugin lanes -> stream,
+                                              # --verify probes the m3u8 live
+node debug-asian.js plugins                   # plugin audit: version, exports,
+                                              #   sandbox lint, lane hosts
+node debug-asian.js sites                     # reachability matrix (catalog + lanes)
+node debug-asian.js remote https://<worker>.workers.dev
+                                              # stale-deploy detector: compares the
+                                              #   deployed version vs local core.js
+node debug-asian.js verify "<m3u8-url>"       # probe any stream URL
+```
+
+Common flags: `--trace` (log every outbound HTTP call), `--json`, `--verify`,
+`--sample N`, `--full`, `--catalog <id>`, `--type movie|series`,
+`--plugin auto|asianhub|pinoyhub|both`, `--timeout <ms>`, `--repo <path>`.
+Env overrides match the worker: `TMDB_API_KEY`, `PINOY_SITE`, `KISSASIAN_SITE`,
+`VIEWASIAN_SITE`.
 
 Rebuild the worker bundle after editing `core.js` / `worker.js`:
 

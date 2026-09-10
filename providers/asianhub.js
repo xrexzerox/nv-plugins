@@ -5,21 +5,52 @@
  *           Hong Kong / other Asian titles, English subs)
  * Language: ko / zh / ja / th / en
  * Author: xrexzerox
- * Version: 2.1.0
+ * Version: 2.3.0
  *
- * v2.1.0 (2026-09-09) — catalog-native ids (pairs with asian-catalog v3.2.0):
- *   The asian-catalog addon emits site-coded fallback ids for rows its TMDB
- *   match could not resolve: "asian:ks-<slug>" / "asian:va-<slug>". Nuvio
- *   Mobile hands those ids to plugins verbatim (pluginContentId only strips
- *   a "tmdb:" prefix), so getStreams now parses them and resolves the item
- *   DIRECTLY from its source page — no TMDB lookup, no title search:
- *     asian:ks-<slug>  -> /series/{slug}/ -> episode page -> Byse chain
- *     asian:va-<slug>  -> /drama/{slug}/  -> episode page -> 3-hop chain
- *     asian:ph-<slug>  -> ignored here (PinoyMoviesHub plugin owns it)
- *     asian:<slug>     -> legacy bare id -> treated as a title for the
- *                          standard search lanes
- *   (TVSmart skips plugins for asian: ids entirely — those rows are served
- *   by the addon's own /stream endpoint server-side.)
+ * v2.3.0 (2026-09-10) — NuvioTVSmart webOS adaptation (Mixdrop/Dood TV-safe):
+ *   - NEW: headerless-playability probe (ranged GET with zero custom headers).
+ *     webOS/Tizen players can never send Referer/User-Agent, so Mixdrop
+ *     direct mp4s (MDCore.wurl) and Dood token URLs used to be DEAD rows on
+ *     TV even when extraction succeeded. When the CDN serves the bytes
+ *     headerless (the token usually IS the authorization), the stream is
+ *     now emitted HEADERLESS = plays on webOS, Tizen and ExoPlayer alike;
+ *     when the CDN still 403s, the historical Referer-carrying row is kept
+ *     (mobile unchanged). Probe fail-closes to the old behavior.
+ *   - NEW: Mixdrop family extractor for kissasian's /v/3/ mxdrop server
+ *     (packed eval -> MDCore.wurl -> direct mp4). Previously /v/3/ fell
+ *     into the generic m3u8-leak family and always failed for mxdrop.
+ *
+ * v2.2.0 (2026-09-10) — direct-lane routing for source-scoped catalog ids
+ *   (user report: "the reason why plugin not fetches because the url is
+ *   different to the website"): asian-catalog 3.2.0 now emits TMDB-unmatched
+ *   rows as SOURCE-SCOPED ids whose tail is the source site's OWN page slug:
+ *       asian:ks-<kissasian-slug>   asian:va-<viewasian-slug>   asian:pmh-<...>
+ *   For ks-/va- ids this plugin SKIPS title search and navigates the site's
+ *   real page structure directly (paths verified live 2026-09-10):
+ *       ks- -> /series/{slug}/ -> /{slug}-episode-{n}/
+ *               player servers: /v/1/ justplay (default embed), /v/2/
+ *               vidmoly (m3u8 leaks plain), /v/3/ mxdrop (packed)
+ *               -> NEW: /v/2/ vidmoly fallback when the Byse chain fails
+ *       va- -> /drama/{slug}/ -> /{show}-episode-{n}-...-sub/ ->
+ *               kisskh.space/{show}-ep-{n}/ iframe -> vidmoly embed -> m3u8
+ *   pmh- rows belong to the PinoyMoviesHub plugin -> skipped here fast (a
+ *   wrong-site search could false-match an unrelated pinoy title).
+ *   The legacy generic asian:<slug> search flow stays as fail-soft backup
+ *   after the direct lane (and for stale CDN-cached rows).
+ *
+ * v2.1.0 (2026-09-09) — asian-catalog fallback-id alignment (user request:
+ *   "ensure that every result in our catalog we have a stream link"):
+ *   The asian-catalog addon emits two id shapes. `tmdb:<id>` metas already
+ *   played fine, but TMDB-unmatched rows are emitted as `asian:<slug>`
+ *   fallback metas (the site's own series/drama slug). On NuvioMobile those
+ *   ids reach this plugin verbatim; previously the TMDB lookup on the raw
+ *   string failed and getStreams returned [] — those rows had NO stream.
+ *   Fix: parse the `asian:` prefix, de-slug the title ("queen-of-tears" ->
+ *   "queen of tears") and run all three lanes with a pseudo-TMDB meta. The
+ *   slug IS the source site's own slug, so the site search hits it exactly.
+ *   Also: NuvioTVSmart's local-id plugin path passes mediaType "series"
+ *   verbatim (not "tv") — normalize it here ("series"/"show" -> "tv") so
+ *   the legacy-signature arg-shift cannot corrupt season/episode.
  *
  * v2.0.0 (2026-09-09) — source swap (user request):
  *   REMOVED: MyAsianTV (myasiantv.com.lv) and Dramacool (dramacool.uno) lanes.
@@ -207,6 +238,41 @@ function hostOf(url) {
   return m ? m[1].replace(/^www\./i, "") : "";
 }
 
+/**
+ * v2.3.0 webOS adaptation: can this direct URL be fetched with NO custom
+ * headers at all? webOS/Tizen players cannot send Referer/User-Agent, so a
+ * stream is only TV-safe when the CDN serves it headerless. One ranged GET
+ * (0-1023 bytes): 2xx/206 with a non-HTML content-type means the token IS
+ * the authorization -> emit the stream WITHOUT headers. Any 40x, challenge
+ * page or probe error fail-closes to the historical headers-carrying row.
+ * No Referer is sent: the whole point is to test the player's condition.
+ */
+function probeHeaderless(url) {
+  return fetchWithTimeout(url, {
+    method: "GET",
+    redirect: "follow",
+    headers: { "Range": "bytes=0-1023" }
+  }, 9000).then(function(res) {
+    if (!res || res.status < 200 || res.status >= 300) return false;
+    var ct = "";
+    try {
+      if (res.headers && typeof res.headers.get === "function") {
+        ct = String(res.headers.get("content-type") || "");
+      } else if (res.headers && typeof res.headers === "object") {
+        var keys = Object.keys(res.headers), k;
+        for (k = 0; k < keys.length; k++) {
+          if (String(keys[k]).toLowerCase() === "content-type") {
+            ct = String(res.headers[keys[k]] || "");
+            break;
+          }
+        }
+      }
+    } catch (e) { ct = ""; }
+    if (/text\/html/i.test(ct)) return false; // challenge/soft-404 page
+    return true;
+  }).catch(function() { return false; });
+}
+
 function slugify(s) {
   return String(s || "")
     .toLowerCase()
@@ -242,6 +308,35 @@ function titleScore(a, b) {
   for (i = 0; i < at.length; i++) if (set[at[i]]) inter++;
   var cov = inter / Math.max(at.length, bt.length);
   return cov >= 0.6 ? 1.5 : 0;
+}
+
+/**
+ * asian-catalog addon fallback ids (parse BEFORE the generic de-slug):
+ *   v3.2.0 source-scoped shapes — asian:ks-<slug>, asian:va-<slug>,
+ *   asian:pmh-<slug>. The tail slug is the source site's own page slug, so
+ *   the plugin can navigate the real site structure directly instead of
+ *   searching a title that may not match the site's URL. Returns:
+ *     { source: "ks"|"va"|"pmh", slug, title }  for scoped rows
+ *     { source: "", slug, title }               for legacy generic rows
+ *   null when the id is not an asian-catalog id.
+ */
+function parseAsianCatalogId(rawId) {
+  var s = String(rawId || "").trim();
+  var m = s.match(/^asian[:\/](.+)$/i);
+  if (!m) return null;
+  var tail = m[1].replace(/\.json$/i, "").split("/")[0].trim().toLowerCase();
+  if (!tail || !/^[a-z0-9][a-z0-9-]*$/i.test(tail)) return null;
+  var pm = tail.match(/^(ks|va|pmh)-([a-z0-9][a-z0-9-]*)$/);
+  if (pm) {
+    // a source-scoped row; a bare prefix with no slug is invalid
+    if (!pm[2] || pm[2] === "") return null;
+    var stitle = pm[2].replace(/-+/g, " ").replace(/\s+/g, " ").trim();
+    if (!stitle) return null;
+    return { source: pm[1], slug: pm[2], title: stitle };
+  }
+  var title = tail.replace(/-+/g, " ").replace(/\s+/g, " ").trim();
+  if (!title) return null;
+  return { source: "", slug: tail, title: title };
 }
 
 function parseQualityFromPlaylist(playlistText) {
@@ -653,6 +748,182 @@ function byseSolvePow(nonceStr, difficulty, maxMs) {
 
 // ===== SOURCE 1: KissAsian (kissasian.cam -> justplay.cam Byse) =====
 
+// --- v2.2.0 Dood-family extractor (ported from pinoyhub.js, proven on-device).
+// kissasian's /v/2/ and /v/3/ servers vary PER SHOW (verified live:
+// justplay default, vidmoly, dooood.com, likessb.com, drive.google.com
+// placeholder) — extract each family accordingly.
+
+function doodFamilyHost(host) {
+  var h = String(host || "").toLowerCase();
+  if (h.indexOf("dood") !== -1 || h.indexOf("dooo") !== -1 || h.indexOf("dsvplay") !== -1) return true;
+  var known = ["playmogo.com", "myvidplay.com", "dsvplay.com", "d000d.com", "dooood.com", "ds2play.com", "ds2play2.com", "doodcdn.io"];
+  for (var i = 0; i < known.length; i++) {
+    if (h.indexOf(known[i]) !== -1) return true;
+  }
+  return false;
+}
+
+function doodFindMd5Path(html) {
+  var m = html.match(/["']\/(pass_md5\/[a-z0-9]+(?:\/[a-z0-9]+)?)['"]/i);
+  if (m) return m[1];
+  var unpacked = unpackPacker(html);
+  if (unpacked) {
+    m = unpacked.match(/["']\/(pass_md5\/[a-z0-9]+(?:\/[a-z0-9]+)?)['"]/i);
+    if (m) return m[1];
+  }
+  m = html.match(/\/pass_md5\/([a-z0-9]+)/i);
+  return m ? "pass_md5/" + m[1] : null;
+}
+
+function doodIsGated(html) {
+  return /op=validate|turnstile\.render|challenges\.cloudflare\.com\/turnstile/i.test(html);
+}
+
+function doodIsDead(html) {
+  return /video you are looking for is not found|class="not_found"/i.test(html);
+}
+
+function doodFetchDirect(host, md5Path, refererUrl, qualityHint) {
+  var passUrl = "https://" + host + "/" + md5Path;
+  return fetchText(passUrl, {
+    headers: { "Referer": refererUrl, "X-Requested-With": "XMLHttpRequest" }
+  }).then(function(body) {
+    var base = String(body).trim();
+    if (base.indexOf("http") !== 0) return null;
+    var token = md5Path.split("/")[1] || "";
+    var expiry = Date.now() + 2 * 60 * 60 * 1000;
+    var chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    var pad = "", ci;
+    for (ci = 0; ci < 10; ci++) pad += chars.charAt(Math.floor(Math.random() * chars.length));
+    var directUrl = base + pad + "?token=" + token + "&expiry=" + expiry;
+    // v2.3.0 webOS adaptation: the token IS the authorization on most Dood
+    // nodes -> headerless rows play on webOS/Tizen too. Fail-closed to the
+    // Referer-carrying row when the CDN still demands it (mobile unchanged).
+    return probeHeaderless(directUrl).then(function(headerlessOk) {
+      return {
+        url: directUrl,
+        quality: parseQualityLabel(qualityHint),
+        headers: headerlessOk ? null : { "Referer": "https://" + host + "/", "User-Agent": HEADERS["User-Agent"] },
+        headerless: headerlessOk
+      };
+    });
+  }).catch(function() { return null; });
+}
+
+function extractDoodDirect(embedUrl, refererUrl) {
+  var embedIdMatch = embedUrl.match(/\/e\/([a-z0-9]+)/i);
+  if (!embedIdMatch) return Promise.resolve(null);
+  var embedId = embedIdMatch[1];
+  var qualityHint = "";
+  return fetchWithTimeout(embedUrl, {
+    method: "GET", redirect: "follow",
+    headers: merge(HEADERS, { "Referer": refererUrl || "" })
+  }, EMBED_TIMEOUT_MS).then(function(res) {
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var finalUrl = (res && res.url) ? String(res.url) : embedUrl;
+    return raceBody(res.text(), EMBED_TIMEOUT_MS).then(function(html) {
+      var host = hostOf(finalUrl) || hostOf(embedUrl);
+      if (doodIsGated(html)) return null;
+      if (doodIsDead(html)) return null;
+      var tm = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+      if (tm) qualityHint = tm[1];
+      var md5Path = doodFindMd5Path(html);
+      if (!md5Path) return null;
+      return doodFetchDirect(host, md5Path, "https://" + host + "/e/" + embedId, qualityHint);
+    });
+  }).catch(function() { return null; });
+}
+
+// --- v2.3.0 Mixdrop-family extractor (kissasian /v/3/ mxdrop server) ---
+// mxdrop embeds pack the player config in eval(function(p,a,c,k,e,d){...});
+// the unpacked config carries MDCore.wurl = the direct mp4 URL. The generic
+// m3u8-leak family never matched these, so /v/3/ always failed before.
+
+function isMixdropFamily(host) {
+  return /mixdrop|mixdrp|mxdrop|miixdrop|mixdroop/.test(String(host || "").toLowerCase());
+}
+
+function extractMixdropDirect(embedUrl, refererUrl) {
+  if (!embedUrl) return Promise.resolve(null);
+  if (embedUrl.indexOf("//") === 0) embedUrl = "https:" + embedUrl;
+  return fetchWithTimeout(embedUrl, {
+    method: "GET", redirect: "follow",
+    headers: merge(HEADERS, { "Referer": refererUrl || KISSASIAN_BASE + "/" })
+  }, EMBED_TIMEOUT_MS).then(function(res) {
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return raceBody(res.text(), EMBED_TIMEOUT_MS).then(function(html) {
+      var unpacked = unpackPacker(html);
+      var wurl = "";
+      var m = unpacked.match(/MDCore\.wurl\s*=\s*["']([^"']*)["']/);
+      if (m) wurl = m[1];
+      if (!wurl) {
+        m = html.match(/MDCore\.wurl\s*=\s*["']([^"']*)["']/);
+        if (m) wurl = m[1];
+      }
+      if (!wurl || wurl === " " || wurl.length < 6) return null;
+      if (wurl.indexOf("//") === 0) wurl = "https:" + wurl;
+      else if (wurl.indexOf("http") !== 0) wurl = "https://" + wurl.replace(/^\/+/, "");
+      var host = hostOf(res.url) || hostOf(embedUrl);
+      var referered = { "Referer": "https://" + host + "/", "User-Agent": HEADERS["User-Agent"] };
+      // v2.3.0: headerless when the CDN allows it (webOS-safe), else Referer.
+      return probeHeaderless(wurl).then(function(headerlessOk) {
+        return {
+          url: wurl,
+          quality: parseQualityLabel("") || "Direct",
+          headers: headerlessOk ? null : referered,
+          headerless: headerlessOk
+        };
+      });
+    });
+  }).catch(function() { return null; });
+}
+
+function parseQualityLabel(text) {
+  var value = String(text || "").toLowerCase();
+  var m = value.match(/\b(2160p|1440p|1080p|720p|480p|360p|4k|uhd|hd|sd|cam)\b/);
+  if (!m) return "";
+  var q = m[1];
+  if (q === "4k" || q === "uhd") return "2160p";
+  if (q === "hd") return "720p";
+  if (q === "sd") return "480p";
+  if (q === "cam") return "CAM";
+  return q;
+}
+
+// --- v2.2.0 Dean Edwards packer unpacker (for Dood clone packed players) ---
+
+function jsUnescape(s) {
+  return String(s).replace(/\\(u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[0-3][0-7]{0,2}|[\\nrtbfv'"])/g, function(all, esc) {
+    if (esc.charAt(0) === "u" || esc.charAt(0) === "x") {
+      return String.fromCharCode(parseInt(esc.slice(1), 16));
+    }
+    switch (esc) {
+      case "n": return "\n";
+      case "r": return "\r";
+      case "t": return "\t";
+      case "b": return "\b";
+      case "f": return "\f";
+      case "v": return "\v";
+      case "0": return "\0";
+      case "\\": return "\\";
+      default: return esc;
+    }
+  });
+}
+
+function unpackPacker(packed) {
+  var m = String(packed).match(/\}\s*\(\s*'((?:\\.|[^'\\])*)'\s*,\s*\d+\s*,\s*(\d+)\s*,\s*'([^']*)'\.split\('\|'\)/);
+  if (!m) return "";
+  var payload = jsUnescape(m[1]);
+  var keys = jsUnescape(m[3]).split("|");
+  var dict = {};
+  var i;
+  for (i = 0; i < keys.length; i++) dict[String(i)] = keys[i];
+  return payload.replace(/\b\w+\b/g, function(w) {
+    return (dict[w] !== undefined && dict[w] !== "") ? dict[w] : w;
+  });
+}
+
 /**
  * Search returns <article class="bs"> rows. Series rows carry
  * /series/{slug}/ links with a clean title="Show" attribute (no year).
@@ -660,30 +931,41 @@ function byseSolvePow(nonceStr, difficulty, maxMs) {
  * Returns the series page URL of the best title match ("" when none).
  */
 function kissasianSearchSeriesUrl(tmdb) {
-  var query = tmdb.title || tmdb.original || "";
-  if (!query) return Promise.resolve("");
-  var url = KISSASIAN_BASE + "/?s=" + encodeURIComponent(query);
-  return fetchText(url, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
-    var normTitle = normalizeTitle(tmdb.title);
-    var normOrig = normalizeTitle(tmdb.original);
-    var best = "", bestScore = 0;
-    var re = /<article class="bs"[^>]*>([\s\S]*?)<\/article>/g;
-    var m;
-    while ((m = re.exec(html)) !== null) {
-      var body = m[1];
-      var lm = body.match(/href="https?:\/\/kissasian\.cam\/series\/([a-z0-9-]+)\/"/i);
-      if (!lm) continue;
-      var tm = body.match(/title="([^"]+)"/i);
-      if (!tm) continue;
-      var tNorm = normalizeTitle(tm[1]);
-      var score = Math.max(titleScore(normTitle, tNorm), titleScore(normOrig, tNorm));
-      if (score > bestScore) {
-        bestScore = score;
-        best = KISSASIAN_BASE + "/series/" + lm[1] + "/";
+  // Try the TMDB title first, then the ORIGINAL title — the site indexes
+  // many shows under their native-language title, so the second attempt
+  // materially raises the match rate for tmdb: catalog rows.
+  var attempts = [];
+  if (tmdb.title) attempts.push(tmdb.title);
+  if (tmdb.original && attempts.indexOf(tmdb.original) === -1) attempts.push(tmdb.original);
+  if (!attempts.length) return Promise.resolve("");
+  var normTitle = normalizeTitle(tmdb.title);
+  var normOrig = normalizeTitle(tmdb.original);
+  function runSearch(query) {
+    var url = KISSASIAN_BASE + "/?s=" + encodeURIComponent(query);
+    return fetchText(url, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
+      var best = "", bestScore = 0;
+      var re = /<article class="bs"[^>]*>([\s\S]*?)<\/article>/g;
+      var m;
+      while ((m = re.exec(html)) !== null) {
+        var body = m[1];
+        var lm = body.match(/href="https?:\/\/kissasian\.cam\/series\/([a-z0-9-]+)\//i);
+        if (!lm) continue;
+        var tm = body.match(/title="([^"]+)"/i);
+        if (!tm) continue;
+        var tNorm = normalizeTitle(tm[1]);
+        var score = Math.max(titleScore(normTitle, tNorm), titleScore(normOrig, tNorm));
+        if (score > bestScore) {
+          bestScore = score;
+          best = KISSASIAN_BASE + "/series/" + lm[1] + "/";
+        }
       }
-    }
-    return bestScore >= 1.5 ? best : "";
-  }).catch(function() { return ""; });
+      return bestScore >= 1.5 ? best : "";
+    }).catch(function() { return ""; });
+  }
+  return runSearch(attempts[0]).then(function(best) {
+    if (best || attempts.length < 2) return best;
+    return runSearch(attempts[1]);
+  });
 }
 
 /**
@@ -774,17 +1056,91 @@ function byseResolve(code, refererUrl) {
 
 function kissasianExtract(episodeUrl) {
   if (!episodeUrl) return Promise.resolve(null);
-  return fetchText(episodeUrl, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
-    var m = html.match(/<iframe[^>]*src="https?:\/\/justplay\.cam\/e\/([a-z0-9]+)/i);
-    if (!m) m = html.match(/https?:\/\/justplay\.cam\/e\/([a-z0-9]+)/i);
-    if (!m) return null;
-    return byseResolve(m[1], episodeUrl).then(function(r) {
+  // v2.2.0: an episode page exposes MULTIPLE player servers as /v/N/
+  // sub-paths, and the family varies PER SHOW (verified live:
+  //   v/1 default embed = justplay (Byse) on some shows, drive.google.com
+  //   placeholder on others; /v/2/ = vidmoly OR dooood.com; /v/3/ = mxdrop
+  //   OR likessb.com). Probe root + /v/2/ + /v/3/, identify each embed
+  //   family, and return the first successful extraction.
+  var versions = [
+    episodeUrl,
+    episodeUrl.replace(/\/+$/, "") + "/v/2/",
+    episodeUrl.replace(/\/+$/, "") + "/v/3/"
+  ];
+  return kissasianProbeServers(versions, 0);
+}
+
+function kissasianProbeServers(versions, idx) {
+  if (idx >= versions.length) return Promise.resolve(null);
+  var pageUrl = versions[idx];
+  return fetchText(pageUrl, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
+    return kissasianExtractOneFamily(html, pageUrl).then(function(r) {
+      if (r) return r;
+      return kissasianProbeServers(versions, idx + 1);
+    });
+  }).catch(function() {
+    return kissasianProbeServers(versions, idx + 1);
+  });
+}
+
+/** Identifies the embed family on one kissasian server page and extracts. */
+function kissasianExtractOneFamily(html, pageUrl) {
+  var iframe = html.match(/<iframe[^>]*src="(https?:\/\/[^"\s]+)"/i);
+  var embedUrl = iframe ? iframe[1] : "";
+  var host = hostOf(embedUrl);
+
+  // family 1: justplay (Byse PoW chain) — the show's default server
+  var jp = embedUrl.match(/justplay\.cam\/e\/([a-z0-9]+)/i) || html.match(/https?:\/\/justplay\.cam\/e\/([a-z0-9]+)/i);
+  if (jp) {
+    return byseResolve(jp[1], pageUrl).then(function(r) {
       if (!r) return null;
       r.source = "KissAsian";
       r.host = hostOf(r.url);
       return r;
     });
-  }).catch(function() { return null; });
+  }
+  // placeholder/unusable families: skip cleanly
+  if (host.indexOf("drive.google") !== -1) return Promise.resolve(null);
+  // family 2: vidmoly (plain m3u8 leak)
+  if (host.indexOf("vidmoly") !== -1) {
+    return vidmolyEmbedM3u8(embedUrl, pageUrl).then(function(r) {
+      if (!r) return null;
+      r.source = "KissAsian";
+      r.host = hostOf(r.url);
+      return r;
+    });
+  }
+  // family 2b: Mixdrop family (mxdrop et al -> packed player -> direct mp4).
+  // v2.3.0: checked BEFORE the generic /e/{id}.html m3u8-leak family because
+  // mxdrop embeds share that URL shape but carry a packed wurl, not an m3u8.
+  if (isMixdropFamily(host)) {
+    return extractMixdropDirect(embedUrl, pageUrl).then(function(r) {
+      if (!r) return null;
+      r.source = "KissAsian";
+      r.host = hostOf(r.url);
+      return r;
+    });
+  }
+  // family 3: Dood clones (dooood.com et al -> direct mp4 via pass_md5)
+  if (doodFamilyHost(host)) {
+    return extractDoodDirect(embedUrl, pageUrl).then(function(r) {
+      if (!r) return null;
+      r.source = "KissAsian";
+      r.host = hostOf(r.url);
+      return r;
+    });
+  }
+  // family 4: unknown /e/{id}.html embed (likessb, filemoon-style) — try
+  // the plain m3u8 leak before giving up
+  if (embedUrl && /\/e\/[a-z0-9]+\.html/i.test(embedUrl)) {
+    return vidmolyEmbedM3u8(embedUrl, pageUrl).then(function(r) {
+      if (!r) return null;
+      r.source = "KissAsian";
+      r.host = hostOf(r.url);
+      return r;
+    });
+  }
+  return Promise.resolve(null);
 }
 
 function kissasianLane(tmdb, isSeries, season, episode) {
@@ -804,32 +1160,41 @@ function kissasianLane(tmdb, isSeries, season, episode) {
  * title="Show (2024)">. Returns the best-matching drama page URL.
  */
 function viewasianSearchDramaUrl(tmdb) {
-  var query = tmdb.title || tmdb.original || "";
-  if (!query) return Promise.resolve("");
-  var url = VIEWASIAN_BASE + "/?s=" + encodeURIComponent(query);
-  return fetchText(url, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
-    var normTitle = normalizeTitle(tmdb.title);
-    var normOrig = normalizeTitle(tmdb.original);
-    var best = "", bestScore = 0;
-    var seen = {};
-    // a-tag attribute order varies; capture the whole tag then pick title=
-    var re = /<a href="(https?:\/\/viewasian\.lol\/drama\/[a-z0-9-]+\/?)"([^>]*)>/gi;
-    var m;
-    while ((m = re.exec(html)) !== null) {
-      var slugm = m[1].match(/\/drama\/([a-z0-9-]+?)\/?$/i);
-      if (!slugm || seen[slugm[1]]) continue;
-      seen[slugm[1]] = true;
-      var tm = m[2].match(/title="([^"]+)"/i);
-      if (!tm) continue;
-      var tNorm = normalizeTitle(tm[1]);
-      var score = Math.max(titleScore(normTitle, tNorm), titleScore(normOrig, tNorm));
-      if (score > bestScore) {
-        bestScore = score;
-        best = m[1];
+  // Title first, then the ORIGINAL title (same rationale as kissasian).
+  var attempts = [];
+  if (tmdb.title) attempts.push(tmdb.title);
+  if (tmdb.original && attempts.indexOf(tmdb.original) === -1) attempts.push(tmdb.original);
+  if (!attempts.length) return Promise.resolve("");
+  var normTitle = normalizeTitle(tmdb.title);
+  var normOrig = normalizeTitle(tmdb.original);
+  function runSearch(query) {
+    var url = VIEWASIAN_BASE + "/?s=" + encodeURIComponent(query);
+    return fetchText(url, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
+      var best = "", bestScore = 0;
+      var seen = {};
+      // a-tag attribute order varies; capture the whole tag then pick title=
+      var re = /<a href="(https?:\/\/viewasian\.lol\/drama\/[a-z0-9-]+\/?)"([^>]*)>/gi;
+      var m;
+      while ((m = re.exec(html)) !== null) {
+        var slugm = m[1].match(/\/drama\/([a-z0-9-]+?)\/?$/i);
+        if (!slugm || seen[slugm[1]]) continue;
+        seen[slugm[1]] = true;
+        var tm = m[2].match(/title="([^"]+)"/i);
+        if (!tm) continue;
+        var tNorm = normalizeTitle(tm[1]);
+        var score = Math.max(titleScore(normTitle, tNorm), titleScore(normOrig, tNorm));
+        if (score > bestScore) {
+          bestScore = score;
+          best = m[1];
+        }
       }
-    }
-    return bestScore >= 1.5 ? best : "";
-  }).catch(function() { return ""; });
+      return bestScore >= 1.5 ? best : "";
+    }).catch(function() { return ""; });
+  }
+  return runSearch(attempts[0]).then(function(best) {
+    if (best || attempts.length < 2) return best;
+    return runSearch(attempts[1]);
+  });
 }
 
 /**
@@ -886,9 +1251,39 @@ function viewasianFindEpisodeUrl(dramaUrl, wantEp, isSeries) {
 }
 
 /**
+ * vidmoly-family embed finder (v2.2.0, shared). The embed iframe src may
+ * carry escaped slashes; normalize them.
+ */
+function findVidmolyEmbed(html) {
+  var em = html.match(/<iframe[^>]*src="(https?:\/\/[^"]*vidmoly[^"]*\/embed-[a-z0-9]+\.html)"/i);
+  if (em) return em[1].replace(/\\u002F/gi, "/");
+  em = html.match(/(https?:\/\/[a-z0-9.-]*vidmoly[a-z0-9.-]*\/embed-[a-z0-9]+\.html)/i);
+  return em ? em[1].replace(/\\u002F/gi, "/") : null;
+}
+
+/**
+ * vidmoly-family embed page -> direct HLS (v2.2.0, shared). The player is
+ * wrapped in an eval packer but the playlist URL leaks as a plain string;
+ * verified live on both the viewasian chain and kissasian /v/2/ pages.
+ */
+function vidmolyEmbedM3u8(embedUrl, referer) {
+  return fetchText(embedUrl, {
+    headers: referer ? { "Referer": referer } : {},
+    timeoutMs: EMBED_TIMEOUT_MS
+  }).then(function(embedHtml) {
+    var mm = embedHtml.match(/(https?:\/\/[^"'\s\\]+\.m3u8[^"'\s\\]*)/i);
+    if (!mm) return null;
+    var m3u8 = mm[1].replace(/\\u002F/gi, "/").replace(/\\\//g, "/");
+    return resolveHls(m3u8, embedUrl, "");
+  }).catch(function() { return null; });
+}
+
+/**
  * viewasian episode page -> kisskh.space iframe -> vidmoly iframe -> m3u8.
- * The vidmoly embed page obfuscates its player with an eval packer but the
- * playlist URL leaks as a plain string.
+ * The listing markup embeds the player iframe as data-src (both src= and
+ * data-src= are matched by the loose [^>]*src= pattern). The vidmoly embed
+ * page obfuscates its player with an eval packer but the playlist URL
+ * leaks as a plain string.
  */
 function viewasianExtract(episodeUrl) {
   if (!episodeUrl) return Promise.resolve(null);
@@ -901,23 +1296,13 @@ function viewasianExtract(episodeUrl) {
       headers: { "Referer": VIEWASIAN_BASE + "/" },
       timeoutMs: EMBED_TIMEOUT_MS
     }).then(function(playerHtml) {
-      var em = playerHtml.match(/<iframe[^>]*src="(https?:\/\/[^"]*vidmoly[^"]*\/embed-[a-z0-9]+\.html)"/i);
-      if (!em) em = playerHtml.match(/(https?:\/\/[a-z0-9.-]*vidmoly[a-z0-9.-]*\/embed-[a-z0-9]+\.html)/i);
-      if (!em) return null;
-      var embedUrl = em[1].replace(/\\u002F/gi, "/");
-      return fetchText(embedUrl, {
-        headers: { "Referer": playerUrl },
-        timeoutMs: EMBED_TIMEOUT_MS
-      }).then(function(embedHtml) {
-        var mm = embedHtml.match(/(https?:\/\/[^"'\s\\]+\.m3u8[^"'\s\\]*)/i);
-        if (!mm) return null;
-        var m3u8 = mm[1].replace(/\\u002F/gi, "/").replace(/\\\//g, "/");
-        return resolveHls(m3u8, embedUrl, "ViewAsian").then(function(r) {
-          if (!r) return null;
-          r.source = "ViewAsian";
-          r.host = hostOf(r.url);
-          return r;
-        });
+      var embedUrl = findVidmolyEmbed(playerHtml);
+      if (!embedUrl) return null;
+      return vidmolyEmbedM3u8(embedUrl, playerUrl).then(function(r) {
+        if (!r) return null;
+        r.source = "ViewAsian";
+        r.host = hostOf(r.url);
+        return r;
       });
     });
   }).catch(function() { return null; });
@@ -1092,7 +1477,16 @@ function kisskhLane(tmdb, isSeries, season, episode) {
   var wantEp = isSeries ? String(episode) : "";
   var title = tmdb.title || tmdb.original || "";
   if (!title) return Promise.resolve(null);
-  return kisskhSearch(title).then(function(drama) {
+  // Title first, then ORIGINAL title (native-language listings).
+  var attempts = [title];
+  if (tmdb.original && tmdb.original !== title) attempts.push(tmdb.original);
+  function runAttempt(idx) {
+    if (idx >= attempts.length) return Promise.reject(new Error("no kisskh results"));
+    return kisskhSearch(attempts[idx]).catch(function() {
+      return runAttempt(idx + 1);
+    });
+  }
+  return runAttempt(0).then(function(drama) {
     return kisskhDetail(drama.id).then(function(detail) {
       var ep = kisskhFindEpisode(detail.episodes, isSeries ? "tv" : "movie", wantEp || 1);
       return { drama: drama, ep: ep };
@@ -1129,122 +1523,143 @@ function kisskhLane(tmdb, isSeries, season, episode) {
   }).catch(function() { return null; });
 }
 
+// ===== v2.2.0 DIRECT LANES (source-scoped catalog ids asian:ks- / asian:va-) =====
+// The catalog tail slug IS the source site's own page slug, so these lanes
+// navigate the real site structure with ZERO title searching — the fix for
+// "the plugin not fetching because the url is different to the website".
+
+/** asian:ks-<slug> -> kissasian.cam/series/{slug}/ -> episode -> extract. */
+function kissasianDirectLane(slug, season, episode) {
+  if (!slug) return Promise.resolve(null);
+  var wantEp = parseInt(episode, 10) || 1;
+  var seriesUrl = KISSASIAN_BASE + "/series/" + slug + "/";
+  return kissasianFindEpisodeUrl(seriesUrl, wantEp).then(function(epUrl) {
+    return kissasianExtract(epUrl);
+  });
+}
+
+/** asian:va-<slug> -> viewasian.lol/drama/{slug}/ -> episode -> extract. */
+function viewasianDirectLane(slug, isSeries, season, episode) {
+  if (!slug) return Promise.resolve(null);
+  var wantEp = isSeries ? (parseInt(episode, 10) || 1) : 1;
+  var dramaUrl = VIEWASIAN_BASE + "/drama/" + slug + "/";
+  return viewasianFindEpisodeUrl(dramaUrl, wantEp, isSeries).then(function(epUrl) {
+    return viewasianExtract(epUrl);
+  });
+}
+
 // ===== MAIN ENTRY =====
-
-/**
- * asian-catalog v3.2.0 site-coded fallback ids:
- *   "asian:ks-<slug>[:s:e]" / "asian:va-<slug>[:s:e]" / "asian:ph-<slug>"
- *   "asian:<slug>" (legacy bare rows) — treated as a title query.
- * Apps also append ":<season>:<episode>" to series ids; those are parsed
- * here as a fallback (the runtime normally passes s/e as separate args).
- */
-function parseAsianCatalogId(raw) {
-  var s = String(raw || "");
-  if (s.indexOf("asian:") !== 0) return null;
-  var id = s.substring(6);
-  var season = "", episode = "";
-  var m = id.match(/^(.+):(\d+):(\d+)$/);
-  if (m) {
-    // Slugs never contain colons, so a trailing ":<s>:<e>" is always the
-    // app's episode suffix (used when the runtime did not pass s/e args).
-    id = m[1];
-    season = m[2];
-    episode = m[3];
-  }
-  var sm = id.match(/^(ph|ks|va)-([a-z0-9-]+)$/i);
-  if (sm) return { site: sm[1].toLowerCase(), slug: sm[2], season: season, episode: episode };
-  return { site: "", slug: id, season: season, episode: episode };
-}
-
-function asianCatalogLane(parsed, mediaType, season, episode) {
-  if (!parsed || parsed.site === "ph") return Promise.resolve(null);
-  var effSeason = season || parsed.season || "";
-  var effEpisode = episode || parsed.episode || "";
-  var isSeries = mediaType === "tv" || mediaType === "series" || !!(effSeason && effEpisode);
-  var wantEp = parseInt(effEpisode, 10) || 1;
-  var lane = null;
-  if (parsed.site === "ks") {
-    lane = kissasianFindEpisodeUrl(KISSASIAN_BASE + "/series/" + parsed.slug + "/", wantEp)
-      .then(function (epUrl) { return kissasianExtract(epUrl); });
-  } else if (parsed.site === "va") {
-    lane = viewasianFindEpisodeUrl(VIEWASIAN_BASE + "/drama/" + parsed.slug + "/", wantEp, isSeries)
-      .then(function (epUrl) { return viewasianExtract(epUrl); });
-  } else {
-    // Legacy bare slug: run the standard title-search lanes with a faux
-    // TMDB object so every existing lane is reused unchanged.
-    var faux = { title: parsed.slug.replace(/-/g, " "), original: "", year: "" };
-    return withExtractionDeadline([
-      function () { return kissasianLane(faux, isSeries, effSeason, effEpisode); },
-      function () { return viewasianLane(faux, isSeries, effSeason, effEpisode); },
-      function () { return kisskhLane(faux, isSeries, effSeason, effEpisode); }
-    ], GLOBAL_DEADLINE_MS).then(function (results) {
-      var out = [];
-      for (var i = 0; i < results.length; i++) {
-        if (results[i] && results[i].url) out.push(results[i]);
-      }
-      return out.length ? out : null;
-    });
-  }
-  return lane.catch(function () { return null; });
-}
 
 function getStreams(tmdbId, mediaType, season, episode) {
   // Legacy signatures:
   //   getStreams(tmdbId, season, episode)               -> mediaType undefined
   //   getStreams(tmdbId, mediaType, season, episode)    -> Nuvio contract (4 args)
-  if (mediaType !== "movie" && mediaType !== "tv") {
+  // NuvioTVSmart's local-id plugin path passes the catalog type verbatim
+  // ("series"), so normalize before the legacy-shift check.
+  var mt = String(mediaType === undefined || mediaType === null ? "" : mediaType).toLowerCase();
+  if (mt === "series" || mt === "show") mt = "tv";
+  if (mt !== "movie" && mt !== "tv") {
     episode = season;
     season = mediaType;
-    mediaType = "";
+    mt = "";
   }
 
   try { tmdbId = String(tmdbId); } catch (e) { tmdbId = ""; }
+  // Tolerate prefixed ids ("tmdb:286988"). NuvioMobile passes the raw
+  // catalog meta id when no TMDB API key is configured (ensureTmdbId falls
+  // back to the untouched string); a prefixed id would 404 every TMDB
+  // request -> a dead row. Strip it defensively.
+  tmdbId = tmdbId.replace(/^tmdb:/i, "").trim();
   season = (season === undefined || season === null || season === "") ? "" : String(season).replace(/^s/i, "").replace(/[^0-9]/g, "");
   episode = (episode === undefined || episode === null || episode === "") ? "" : String(episode).replace(/^e/i, "").replace(/[^0-9]/g, "");
 
-  console.log("[AsianHub] === START tmdbId=" + tmdbId + " type=" + mediaType + " S" + season + "E" + episode + " ===");
+  console.log("[AsianHub] === START tmdbId=" + tmdbId + " type=" + mt + " S" + season + "E" + episode + " ===");
 
   if (!tmdbId) return Promise.resolve([]);
 
-  // v2.1.0: asian-catalog site-coded ids resolve WITHOUT TMDB.
-  var asianParsed = parseAsianCatalogId(tmdbId);
-  if (asianParsed) {
-    var asianDisplay = asianParsed.slug.replace(/-/g, " ");
-    var asianIsSeries = mediaType === "tv" || mediaType === "series" ||
-      !!(season && episode) || !!(asianParsed.season && asianParsed.episode);
-    var asianMeta = {
-      isSeries: asianIsSeries,
-      season: season || asianParsed.season,
-      episode: episode || asianParsed.episode,
+  // asian-catalog fallback rows (asian:<slug>): skip TMDB entirely — the
+  // slug is the site's own slug, de-slug it and search the lanes directly.
+  var catalogId = parseAsianCatalogId(tmdbId);
+  if (catalogId) {
+    // v2.2.0 source-scoped routing: pmh rows belong to the PinoyMoviesHub
+    // plugin (its direct lanes hit pinoymovieshub.win exactly). Searching
+    // them here would waste the runtime budget and risks false-matching an
+    // unrelated pinoy title on kissasian/viewasian/kisskh.
+    if (catalogId.source === "pmh") {
+      console.log("[AsianHub] asian:pmh- id -> handled by PinoyMoviesHub plugin, skipping");
+      return Promise.resolve([]);
+    }
+    var catIsSeries = mt === "tv" || !!(season && episode);
+    var catMeta = {
+      isSeries: catIsSeries,
+      season: season,
+      episode: episode,
       episodeTitle: ""
     };
-    var asianDisplayTitle = asianIsSeries
-      ? asianDisplay + " S" + asianMeta.season + "E" + asianMeta.episode
-      : asianDisplay;
-    return asianCatalogLane(asianParsed, mediaType, season, episode).then(function (results) {
-      var streams = [];
-      var seen = {};
-      var list;
-      if (!results) list = [];
-      else if (Object.prototype.toString.call(results) === "[object Array]") list = results;
-      else list = [results];
-      for (var i = 0; i < list.length; i++) {
-        var r = list[i];
-        if (!r || !r.url || seen[r.url]) continue;
-        seen[r.url] = true;
-        streams.push(buildStream(asianDisplayTitle, asianMeta, r));
-      }
-      console.log("[AsianHub] catalog-id path returning " + streams.length + " stream(s)");
+    var catDisplay = catIsSeries
+      ? catalogId.title + " S" + season + "E" + episode
+      : catalogId.title;
+    var catPseudo = { type: catIsSeries ? "tv" : "movie", title: catalogId.title, original: catalogId.title, year: "", raw: null };
+    console.log("[AsianHub] catalog fallback id -> title=\"" + catalogId.title + "\" isSeries=" + catIsSeries + " source=" + (catalogId.source || "generic"));
+
+    // v2.2.0: scoped rows (ks-/va-) run the DIRECT lane first — it navigates
+    // the site's own page for the exact slug, no search involved. When the
+    // direct lane comes up empty (site moved a page, listing markup
+    // changed) fall back to the generic search lanes so the row still
+    // streams. Generic rows (stale CDN cache) run the search lanes only.
+    function genericLanes() {
+      return withExtractionDeadline([
+        function() { return kissasianLane(catPseudo, catIsSeries, season, episode); },
+        function() { return viewasianLane(catPseudo, catIsSeries, season, episode); },
+        function() { return kisskhLane(catPseudo, catIsSeries, season, episode); }
+      ], GLOBAL_DEADLINE_MS).then(function(results) {
+        var streams = [];
+        var seen = {};
+        var i, r, s;
+        for (i = 0; i < results.length; i++) {
+          r = results[i];
+          if (!r || !r.url) continue;
+          if (seen[r.url]) continue;
+          seen[r.url] = true;
+          s = buildStream(catDisplay, catMeta, r);
+          streams.push(s);
+        }
+        return streams;
+      });
+    }
+
+    if (catalogId.source === "ks" || catalogId.source === "va") {
+      var directP = catalogId.source === "ks"
+        ? kissasianDirectLane(catalogId.slug, season, episode)
+        : viewasianDirectLane(catalogId.slug, catIsSeries, season, episode);
+      return directP.then(function(r) {
+        if (r && r.url) {
+          console.log("[AsianHub] direct lane hit (" + catalogId.source + ") -> " + r.url);
+          return [buildStream(catDisplay, catMeta, r)];
+        }
+        console.log("[AsianHub] direct lane (" + catalogId.source + ") empty -> generic search lanes");
+        return genericLanes();
+      }).then(function(streams) {
+        console.log("[AsianHub] Returning " + streams.length + " stream(s) (catalog " + catalogId.source + ")");
+        return streams;
+      }).catch(function(err) {
+        console.error("[AsianHub] catalog direct error:", (err && err.message) || err);
+        return [];
+      });
+    }
+
+    return genericLanes().then(function(streams) {
+      console.log("[AsianHub] Returning " + streams.length + " stream(s) (catalog fallback)");
       return streams;
-    }).catch(function (err) {
-      console.error("[AsianHub] catalog-id path error:", (err && err.message) || err);
+    }).catch(function(err) {
+      console.error("[AsianHub] catalog fallback error:", (err && err.message) || err);
       return [];
     });
   }
 
-  var forceTv = mediaType === "tv" || (!!(season && episode) && !mediaType);
+  var forceTv = mt === "tv" || (!!(season && episode) && !mt);
 
-  var tmdbPromise = mediaType === "movie"
+  var tmdbPromise = mt === "movie"
     ? tmdbLookup("movie", tmdbId).then(function(r) { return r || getTmdbInfoAuto(tmdbId); })
     : forceTv
       ? tmdbLookup("tv", tmdbId).then(function(r) { return r || { type: "", title: "", original: "", year: "", raw: null }; })

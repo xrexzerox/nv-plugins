@@ -1,14 +1,14 @@
 {
   "name": "NV Plugins",
-  "version": "3.9.0",
-  "description": "Canonical Nuvio provider collection. v3.7.0: asian-catalog addon 3.0.0 swaps series sources to kissasian.cam + viewasian.lol (myasiantv/dramacool/animepahe catalogs removed, 11 catalogs) and asianhub provider 2.0.0 adds three new lanes (KissAsian via the captcha+PoW-gated Byse player with AES payload decrypt, ViewAsian via kisskh.space/vidmoly, KissKH API on kisskh.co) — all three live-verified.",
+  "version": "3.10.0",
+  "description": "Canonical Nuvio provider collection. v3.10.0: device-transport fix-all — cinejoy 1.4.0 documents the binary chain (api.shegu.st/g accepts ONLY raw octet-stream bodies — every text variant 404s — and replies binary; NuvioTVSmart now ships a base64 binary transport in its plugin worker + network service so the chain works on webOS/Tizen; mobile unchanged, fail-soft) — pinoyhub 5.5.0 + asianhub 2.3.0 webOS adaptation: headerless-playability probe (ranged GET, zero custom headers) emits Mixdrop/Dood direct links WITHOUT Referer when the CDN serves bytes headerless (webOS players can never send headers), fail-closed to the historical Referer row otherwise; asianhub adds the Mixdrop family extractor for kissasian's /v/3/ mxdrop server (packed eval -> MDCore.wurl -> direct mp4) — animotvslash 5.1.0 fixes slug-404s with a site search fallback + macron transliteration (TMDB 'Shippūden' vs site 'shippuuden') — cinemacity 4.2.0 adds a Googlebot third retry identity for the CF managed challenge.",
   "author": "xrexzerox",
   "scrapers": [
     {
       "id": "pinoymovieshub",
       "name": "PinoyMoviesHub",
-      "description": "Filipino movies & series from PinoyMoviesHub with TV-safe headerless Byse extraction (Byse first), Mixdrop/Dood direct-play, search-based matching",
-      "version": "5.2.2",
+      "description": "Pinoy movies & series from pinoymovieshub.win: direct pmh- slug lanes, and headerless-probe emission for Mixdrop/Dood direct links (TV-safe when the CDN allows; Byse stays first)",
+      "version": "5.5.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -295,7 +295,7 @@
     {
       "id": "cinejoy",
       "name": "Cinejoy",
-      "description": "Cinejoy (encrypted /g exchange via worker relay; works on text-only Nuvio runtimes when the Worker Relay setting points at an asian-catalog v3.1.0+ worker)",
+      "description": "Cinejoy binary chain proven live: /g accepts only raw octet-stream and replies binary; devices need the TVSmart base64 transport (worker shim + network service); mobile fail-soft unchanged",
       "version": "1.4.0",
       "author": "Streamline",
       "supportedTypes": [
@@ -521,8 +521,8 @@
     {
       "id": "animotvslash",
       "name": "ANIMOTVSLASH",
-      "description": "AnimoTVSlash anime sources: animotvslash.ru multi-server API (AniList id mapping) + p2pplay decrypt lane + tryembed fallback",
-      "version": "6.0.0",
+      "description": "Anime from animotvslash.org - site search fallback fixes romanization slug 404s (Shippuden->shippuuden), macron-aware slugify; plyr/jw player configs still primary",
+      "version": "5.1.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -562,7 +562,7 @@
     {
       "id": "cinemacity",
       "name": "CinemaCity",
-      "description": "CinemaCity (DLE) with CF-challenge detection, mobile-identity retry and optional worker-relay lane",
+      "description": "CinemaCity (DLE) streams - CF challenge retries now escalate desktop->mobile->Googlebot; fail-soft preserved",
       "version": "4.2.0",
       "author": "xrexzerox",
       "supportedTypes": [
@@ -836,8 +836,8 @@
     {
       "id": "asianhub",
       "name": "AsianHub",
-      "description": "Asian movies & series (Korean/Chinese/Japanese/Thai) from KissAsian + ViewAsian + KissKH: catalog-native asian:ks|va-<slug> ids resolve directly (no TMDB lookup), Byse PoW-gated player resolution (captcha + AES-CTR payload decrypt), vidmoly direct HLS and KissKH JSON API (kisskh.co with kisskh.ovh fallback)",
-      "version": "2.1.0",
+      "description": "Asian movies & series (Korean/Chinese/Japanese/Thai) from KissAsian + ViewAsian + KissKH: Mixdrop /v/3/ server extractor, headerless-probe TV-safe Dood/Mixdrop rows (webOS can't send Referer)",
+      "version": "2.3.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",

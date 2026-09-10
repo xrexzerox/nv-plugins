@@ -2,37 +2,10 @@
   "id": "community.asian.catalog",
   "version": "3.2.0",
   "name": "Asian Catalog",
-  "description": "Organized Asian catalogs: Pinoy movies & series (pinoymovieshub), Asian dramas (kissasian.cam + viewasian.lol) and Asian movies/series directories by language (TMDB). EVERY row resolves to a playable stream: the addon serves /stream + /meta for its own ids (site-coded fallbacks + TMDB rows), paired with the AsianHub/PinoyMoviesHub plugins.",
+  "description": "Organized Asian catalogs: Pinoy movies & series (pinoymovieshub), Asian dramas (kissasian.cam /series/ + viewasian.lol) and Asian movies/series directories by language (TMDB). Fallback rows carry source-scoped ids (asian:ks-/va-/pmh-<slug>) the paired plugins resolve straight to the sites' real episode/movie pages.",
   "logo": "https://pinoymovieshub.win/wp-content/uploads/2025/04/cropped-favicon-11-192x192.png",
   "resources": [
-    {
-      "name": "catalog",
-      "types": [
-        "movie",
-        "series"
-      ]
-    },
-    {
-      "name": "meta",
-      "types": [
-        "movie",
-        "series"
-      ],
-      "idPrefixes": [
-        "asian:"
-      ]
-    },
-    {
-      "name": "stream",
-      "types": [
-        "movie",
-        "series"
-      ],
-      "idPrefixes": [
-        "asian:",
-        "tmdb:"
-      ]
-    }
+    "catalog"
   ],
   "types": [
     "movie",
@@ -324,59 +297,6 @@
             "War"
           ]
         },
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "series",
-      "id": "asian-series-language",
-      "name": "Asian Series by Language",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "genre",
-          "options": [
-            "Korean",
-            "Japanese",
-            "Chinese",
-            "Thai",
-            "Filipino / Tagalog"
-          ]
-        },
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "movie",
-      "id": "asian-movies-language",
-      "name": "Asian Movies by Language",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "genre",
-          "options": [
-            "Korean",
-            "Japanese",
-            "Chinese",
-            "Thai",
-            "Filipino / Tagalog"
-          ]
-        },
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "series",
-      "id": "asian-series-airing",
-      "name": "Asian Series On The Air",
-      "pageSize": 20,
-      "extra": [
         {
           "name": "skip"
         }

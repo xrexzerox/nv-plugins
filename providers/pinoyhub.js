@@ -4,17 +4,60 @@
  * Supports: Movies & TV Shows
  * Language: Filipino / Tagalog / English
  * Author: xrexzerox
- * Version: 5.3.0
+ * Version: 5.5.0
  *
- * v5.3.0 changelog (catalog-native ids, pairs with asian-catalog v3.2.0):
- *  - ACCEPTS "asian:ph-<slug>[:<s>:<e>]" ids. The asian-catalog addon emits
- *    these for Pinoy rows its TMDB match could not resolve. Nuvio Mobile
- *    hands them to plugins verbatim, so getStreams now resolves them
- *    DIRECTLY from /movies/{slug} or /episodes/{slug}-SxE — no TMDB lookup,
- *    no Dooplay search, no nonce. Non-PH asian: ids (ks/va) are ignored
- *    here (the AsianHub plugin owns those).
- *  - (TVSmart skips plugins for asian: ids entirely; those rows stream via
- *    the addon's own /stream endpoint.)
+ * v5.5.0 changelog (NuvioTVSmart webOS adaptation - Mixdrop/Dood TV-safe):
+ *  - NEW: headerless-playability probe. Mixdrop direct mp4s and Dood
+ *    token URLs are emitted with Referer+UA headers "because the CDN
+ *    enforces them" - but webOS/Tizen players can NEVER send custom
+ *    headers, so those rows were dead on TV even when extraction worked
+ *    (Byse already sorted first for exactly this reason). Now, after
+ *    extracting the direct URL, a cheap ranged GET with NO custom headers
+ *    (Range: bytes=0-1023) checks whether the CDN actually serves the
+ *    bytes without a Referer. When it does (tokens ARE the authorization
+ *    on most nodes), the stream is emitted HEADERLESS = plays on webOS,
+ *    Tizen and ExoPlayer alike. When the CDN still 403s, the previous
+ *    headers-carrying row is kept (mobile-only, unchanged).
+ *  - Same probe applied to the Dood-family token URLs (playmogo.com et al).
+ *  - Probe costs one small ranged GET per lane, runs inside the existing
+ *    20s per-lane deadline, and fail-closes: any probe error keeps the
+ *    historical headers-carrying behavior. Mobile output only ever loses
+ *    the headers field (which mobile players ignore when unnecessary).
+ *
+ * v5.4.0 changelog (source-scoped catalog ids — direct page resolution):
+ *  - NEW: asian-catalog 3.2.0 emits pinoymovieshub rows as asian:pmh-<slug>
+ *    (source-scoped fallback ids; user report: "the reason why plugin not
+ *    fetches because the url is different to the website"). The tail slug
+ *    IS pinoymovieshub's own movie/series slug, so resolution now goes
+ *    STRAIGHT to the real page — no title search that can diverge from the
+ *    site's URL structure:
+ *        movies  -> /movies/{slug}            (verified: /movies/tayo-sa-wakas)
+ *        series  -> /series/{slug} -> scrape the server-rendered episode
+ *                  map (numerando + single-quoted hrefs, verified live) ->
+ *                  the REAL /episodes/{show}-{s}x{e} page. Episode slugs
+ *                  differ from series slugs (series "mousetrap-tagalog-
+ *                  dubbed" -> episode "mousetrap-1x10") — the scrape picks
+ *                  the exact page, the old slug-guess could never.
+ *    The search-based flow stays as fail-soft backup after the direct
+ *    attempt (and for legacy asian:<slug> rows without the pmh- prefix).
+ *  - NEW: ks-/va- scoped ids belong to the AsianHub plugin -> skipped here
+ *    fast (a pinoymovieshub search for a kissasian/viewasian title could
+ *    false-match an unrelated pinoy show and return a WRONG stream).
+ *
+ * v5.3.0 changelog (asian-catalog fallback-id alignment):
+ *  - NEW: `asian:<slug>` catalog ids are now playable. The asian-catalog
+ *    addon emits TMDB-unmatched rows as `asian:<slug>` fallback metas using
+ *    the site's own movie/series slug. Previously the raw string went
+ *    through the TMDB lookup, failed, and getStreams returned [] — those
+ *    rows had no stream link. Now the prefix is parsed, the slug
+ *    de-slugified into the title, and resolution runs exactly as for a
+ *    TMDB-matched title (direct slug guess -> live search -> episode map).
+ *    Because the slug IS pinoymovieshub's own slug, the direct /movies/
+ *    /episodes/ guess hits exactly.
+ *  - FIX: mediaType "series"/"show" (NuvioTVSmart local-id path passes the
+ *    catalog type verbatim) is normalized to "tv" before the legacy
+ *    3-arg remap, so season/episode can no longer be shifted into the
+ *    wrong slots.
  *
  * v5.2.2 changelog (NuvioTVSmart / webOS focus - mobile behavior unchanged):
  *  - TV: Byse streams are now emitted HEADERLESS. Byse signed URLs are
@@ -153,8 +196,63 @@ function fetchTextFollow(url, options) {
   });
 }
 
+/**
+ * v5.5.0 webOS adaptation: can this direct URL be fetched with NO custom
+ * headers at all? webOS/Tizen players cannot send Referer/User-Agent, so a
+ * stream is only TV-safe when the CDN serves it headerless. One ranged GET
+ * (0-1023 bytes) is enough: 2xx/206 with a non-HTML content-type means the
+ * token IS the authorization -> emit the stream WITHOUT headers. Any 40x,
+ * challenge page or probe error fail-closes to the historical behavior
+ * (headers-carrying row; mobile-only when the CDN enforces Referer).
+ * No Referer is sent: the whole point is to test the player's condition.
+ */
+function probeHeaderless(url) {
+  return fetchWithTimeout(url, {
+    method: "GET",
+    redirect: "follow",
+    headers: { "Range": "bytes=0-1023" }
+  }, 9000).then(function(res) {
+    if (!res || res.status < 200 || res.status >= 300) return false;
+    var ct = "";
+    try {
+      if (res.headers && typeof res.headers.get === "function") {
+        ct = String(res.headers.get("content-type") || "");
+      } else if (res.headers && typeof res.headers === "object") {
+        var keys = Object.keys(res.headers), k;
+        for (k = 0; k < keys.length; k++) {
+          if (String(keys[k]).toLowerCase() === "content-type") {
+            ct = String(res.headers[keys[k]] || "");
+            break;
+          }
+        }
+      }
+    } catch (e) { ct = ""; }
+    if (/text\/html/i.test(ct)) return false; // challenge/soft-404 page
+    return true;
+  }).catch(function() { return false; });
+}
+
+// WordPress transliterates accented Latin letters in slugs (Filipino titles
+// are full of them: "Filipiñana" -> filipinana, "Pepé" -> pepe). Without
+// this map slugify() turned ñ into a HYPHEN ("filipi-ana") and the direct
+// /movies/{slug}/ guess could never hit. Explicit map: QuickJS-safe.
+var ACCENT_MAP = {
+  'á': 'a', 'à': 'a', 'â': 'a', 'ä': 'a', 'ã': 'a', 'å': 'a',
+  'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+  'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+  'ó': 'o', 'ò': 'o', 'ô': 'o', 'ö': 'o', 'õ': 'o',
+  'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
+  'ñ': 'n', 'ç': 'c',
+  'ý': 'y', 'ÿ': 'y', 'š': 's', 'ž': 'z', 'œ': 'oe', 'æ': 'ae',
+  'ł': 'l', 'đ': 'd', 'ß': 'ss'
+};
+
 function slugify(title) {
-  return String(title || "").toLowerCase()
+  var s = String(title || "").toLowerCase();
+  s = s.replace(/[\u00c0-\u017f]/g, function (ch) {
+    return ACCENT_MAP[ch] !== undefined ? ACCENT_MAP[ch] : ch;
+  });
+  return s
     .replace(/['\u2019]/g, "")
     .replace(/&/g, "and")
     .replace(/[^\w\s-]/g, "")
@@ -584,6 +682,24 @@ function resolvePageUrl(mediaType, tmdb, season, episode) {
   };
 
   if (mediaType === "movie") {
+    var trySearchFallback = function() {
+      // v5.3.0: the movie branch previously returned empty here (the
+      // "fall through to search" comment lied). Movies whose slug guess
+      // fails (diacritics, year suffixes, apostrophes) now run the same
+      // live-search fallback the TV branch always had.
+      return getSearchNonce(false).then(function(nonce) {
+        if (!nonce) return { url: "", html: "" };
+        return searchWithRetry(tmdb.title).then(function(results) {
+          var movie = scoreMovieResults(results, tmdbSlug, tmdb.year);
+          if (!movie) return { url: "", html: "" };
+          var mu = absoluteUrl(movie.url);
+          return tryFetchPlayers(mu).then(function(htmlM) {
+            if (htmlM) return { url: mu, html: htmlM };
+            return { url: "", html: "" };
+          });
+        });
+      });
+    };
     pageUrl = BASE_URL + "/movies/" + tmdbSlug;
     return tryFetchPlayers(pageUrl).then(function(html) {
       if (html) return { url: pageUrl, html: html };
@@ -591,10 +707,10 @@ function resolvePageUrl(mediaType, tmdb, season, episode) {
         var altUrl = BASE_URL + "/movies/" + altSlug;
         return tryFetchPlayers(altUrl).then(function(html2) {
           if (html2) return { url: altUrl, html: html2 };
-          return { url: "", html: "" }; // fall through to search
+          return trySearchFallback();
         });
       }
-      return { url: "", html: "" };
+      return trySearchFallback();
     });
   }
 
@@ -775,10 +891,17 @@ function extractMixdropDirect(embedUrl) {
     if (wurl.indexOf("//") === 0) wurl = "https:" + wurl;
     else if (wurl.indexOf("http") !== 0) wurl = "https://" + wurl.replace(/^\/+/, "");
     var host = hostOf(embedUrl);
-    return {
-      url: wurl,
-      headers: { Referer: "https://" + host + "/", "User-Agent": HEADERS["User-Agent"] }
-    };
+    var referered = { Referer: "https://" + host + "/", "User-Agent": HEADERS["User-Agent"] };
+    // v5.5.0 webOS adaptation: emit HEADERLESS when the CDN serves the bytes
+    // without a Referer (webOS players cannot send headers). Fail-closed to
+    // the historical headers-carrying row otherwise (mobile unchanged).
+    return probeHeaderless(wurl).then(function(headerlessOk) {
+      return {
+        url: wurl,
+        headers: headerlessOk ? null : referered,
+        headerless: headerlessOk
+      };
+    });
   }).catch(function(e) {
     console.log("[PinoyMoviesHub] mixdrop extract failed:", e.message);
     return null;
@@ -953,11 +1076,18 @@ function doodFetchDirect(host, md5Path, refererUrl, qualityHint) {
     if (base.indexOf("http") !== 0) return null;
     var token = md5Path.split("/")[1] || "";
     var expiry = Date.now() + 2 * 60 * 60 * 1000;
-    return {
-      url: base + randomToken(10) + "?token=" + token + "&expiry=" + expiry,
-      quality: parseQuality(qualityHint),
-      headers: { Referer: "https://" + host + "/", "User-Agent": HEADERS["User-Agent"] }
-    };
+    var directUrl = base + randomToken(10) + "?token=" + token + "&expiry=" + expiry;
+    // v5.5.0 webOS adaptation: the token IS the authorization on most Dood
+    // nodes -> headerless rows play on webOS/Tizen too. Fail-closed to the
+    // Referer-carrying row when the CDN still demands it (mobile unchanged).
+    return probeHeaderless(directUrl).then(function(headerlessOk) {
+      return {
+        url: directUrl,
+        quality: parseQuality(qualityHint),
+        headers: headerlessOk ? null : { Referer: "https://" + host + "/", "User-Agent": HEADERS["User-Agent"] },
+        headerless: headerlessOk
+      };
+    });
   }).catch(function() { return null; });
 }
 
@@ -1049,130 +1179,208 @@ function buildStream(displayTitle, player, resolved, meta, embedHost) {
 // ===== MAIN ENTRY =====
 
 /**
- * asian-catalog v3.2.0 site-coded fallback ids ("asian:ph-<slug>[:s:e]").
- * Slugs never contain colons, so a trailing ":<s>:<e>" is always the app's
- * episode suffix (parsed as a fallback when s/e args are absent).
+ * asian-catalog addon fallback ids (v5.4.0 source-scoped aware):
+ *   "asian:pmh-<slug>" -> { source: "pmh", slug, title }  (this plugin's
+ *       rows: the slug IS pinoymovieshub's own movie/series page slug)
+ *   "asian:ks-<slug>" / "asian:va-<slug>" -> { source, ... } rows owned by
+ *       the AsianHub plugin; getStreams skips them fast.
+ *   "asian:<slug>" (no prefix) -> { source: "", slug, title } legacy rows
+ *       (stale CDN cache): de-slug + full resolution flow.
+ *   Tolerates "asian/<slug>" and a trailing ".json". Returns null when the
+ *   id is not an asian-catalog id.
  */
-function parseAsianCatalogId(raw) {
-  var s = String(raw || "");
-  if (s.indexOf("asian:") !== 0) return null;
-  var id = s.substring(6);
-  var season = "", episode = "";
-  var m = id.match(/^(.+):(\d+):(\d+)$/);
-  if (m) {
-    id = m[1];
-    season = m[2];
-    episode = m[3];
+function parseAsianCatalogId(rawId) {
+  var s = String(rawId || "").trim();
+  var m = s.match(/^asian[:\/](.+)$/i);
+  if (!m) return null;
+  var tail = m[1].replace(/\.json$/i, "").split("/")[0].trim().toLowerCase();
+  if (!tail || !/^[a-z0-9][a-z0-9-]*$/i.test(tail)) return null;
+  var pm = tail.match(/^(ks|va|pmh)-([a-z0-9][a-z0-9-]*)$/);
+  if (pm) {
+    if (!pm[2]) return null;
+    var stitle = pm[2].replace(/-+/g, " ").replace(/\s+/g, " ").trim();
+    if (!stitle) return null;
+    return { source: pm[1], slug: pm[2], title: stitle };
   }
-  var sm = id.match(/^(ph|ks|va)-([a-z0-9-]+)$/i);
-  if (sm) return { site: sm[1].toLowerCase(), slug: sm[2], season: season, episode: episode };
-  return { site: "", slug: id, season: season, episode: episode };
+  var title = tail.replace(/-+/g, " ").replace(/\s+/g, " ").trim();
+  if (!title) return null;
+  return { source: "", slug: tail, title: title };
 }
 
 /**
- * Direct page resolution for catalog-native PH ids. Reuses every extractor
- * of the TMDB path (dooplayer v2 -> mixdrop/byse/dood) without the search.
+ * v5.4.0 DIRECT page resolution for pmh- rows: navigate the site's own URL
+ * structure (paths verified live 2026-09-10) instead of searching a title.
+ * Returns { url, html } when a page with player options is found, else null
+ * (caller falls back to the search-based resolvePageUrl).
  */
-function asianCatalogStreams(parsed, mediaType, season, episode) {
-  var isSeries = mediaType === "tv" || mediaType === "series" ||
-    !!(season && episode) || !!(parsed.season && parsed.episode);
-  var effSeason = parseInt(season || parsed.season, 10) || 1;
-  var effEpisode = parseInt(episode || parsed.episode, 10) || 1;
-  var displayTitle = parsed.slug.replace(/-/g, " ") +
-    (isSeries ? " S" + effSeason + "E" + effEpisode : "");
-  var meta = { isSeries: isSeries, season: effSeason, episode: effEpisode, episodeTitle: "" };
+function resolvePageUrlDirect(slug, mediaType, season, episode) {
+  var tryFetchPlayers = function(url) {
+    return fetchText(url).then(function(html) {
+      return hasPlayerOptions(html) ? { url: url, html: html } : null;
+    }).catch(function() { return null; });
+  };
 
-  var tryPages = isSeries
-    ? [BASE_URL + "/episodes/" + parsed.slug + "-" + effSeason + "x" + effEpisode,
-       BASE_URL + "/series/" + parsed.slug]
-    : [BASE_URL + "/movies/" + parsed.slug];
+  if (mediaType !== "tv") {
+    return tryFetchPlayers(BASE_URL + "/movies/" + slug);
+  }
 
-  return (function tryIdx(i) {
-    if (i >= tryPages.length) return Promise.resolve([]);
-    var pageUrl = tryPages[i];
-    return fetchText(pageUrl).then(function (html) {
-      if (!hasPlayerOptions(html)) return tryIdx(i + 1);
-      var options = extractPlayerOptions(html);
-      var realOptions = [];
-      var trailerOptions = [];
-      for (var oi = 0; oi < options.length; oi++) {
-        if (/trailer/i.test(options[oi].label || "")) trailerOptions.push(options[oi]);
-        else realOptions.push(options[oi]);
+  // TV: the series page server-renders the episode map for EVERY season
+  // as <div class='numerando'>S - E</div><a href='.../episodes/SLUG-SxE'>.
+  // hrefs use single quotes on this site — the findEpisodeUrlInSeries
+  // regex already accepts both quote styles.
+  return fetchText(BASE_URL + "/series/" + slug).then(function(seriesHtml) {
+    var epUrl = findEpisodeUrlInSeries(seriesHtml, parseInt(season, 10) || 1, parseInt(episode, 10) || 1);
+    if (!epUrl) return null;
+    return tryFetchPlayers(epUrl);
+  }).catch(function() { return null; });
+}
+
+/**
+ * Shared tail of getStreams: takes a resolved PMH page and extracts direct
+ * streams from its Dooplay player options. Used by BOTH the TMDB-id path
+ * and the asian-catalog fallback-id path.
+ */
+function extractStreamsFromPage(page, displayTitle, meta) {
+  var html = page && page.html;
+  if (!html) {
+    console.log("[PinoyMoviesHub] No PMH page/players found for \"" + displayTitle + "\"");
+    return [];
+  }
+  var options = extractPlayerOptions(html);
+  if (!options.length) return [];
+
+  // Prefer real sources; only fall back to trailer posts when nothing else exists.
+  var realOptions = [];
+  var trailerOptions = [];
+  var oi;
+  for (oi = 0; oi < options.length; oi++) {
+    if (/trailer/i.test(options[oi].label || "")) trailerOptions.push(options[oi]);
+    else realOptions.push(options[oi]);
+  }
+  var chosen = realOptions.length ? realOptions : trailerOptions;
+
+  return Promise.all(chosen.slice(0, 8).map(function(player) {
+    return withLaneDeadline(callDooPlayerAPI(player, page.url).then(function(embedUrl) {
+      if (!embedUrl) return null;
+      var host = hostOf(embedUrl);
+      var extractor = null;
+
+      if (isMixdrop(host)) {
+        extractor = extractMixdropDirect(embedUrl);
+      } else if (isByse(host)) {
+        extractor = extractByseDirect(embedUrl);
+      } else if (isDoodFamily(host)) {
+        extractor = extractDoodDirect(embedUrl);
+      } else {
+        // Unknown host: content-sniff for a mixdrop-style player
+        // (auto-covers future mirror domains), then try the Byse API
+        // shape (covers rebranded domains), else give up.
+        extractor = extractMixdropDirect(embedUrl).then(function(direct) {
+          return direct || extractByseDirect(embedUrl);
+        });
       }
-      var chosen = realOptions.length ? realOptions : trailerOptions;
-      return Promise.all(chosen.slice(0, 8).map(function (player) {
-        return withLaneDeadline(callDooPlayerAPI(player, pageUrl).then(function (embedUrl) {
-          if (!embedUrl) return null;
-          var host = hostOf(embedUrl);
-          var extractor = null;
-          if (isMixdrop(host)) {
-            extractor = extractMixdropDirect(embedUrl);
-          } else if (isByse(host)) {
-            extractor = extractByseDirect(embedUrl);
-          } else if (isDoodFamily(host)) {
-            extractor = extractDoodDirect(embedUrl);
-          } else {
-            extractor = extractMixdropDirect(embedUrl).then(function (direct) {
-              return direct || extractByseDirect(embedUrl);
-            });
-          }
-          return extractor.then(function (direct) {
-            if (direct && direct.url) {
-              return buildStream(displayTitle, player, {
-                url: direct.url,
-                headers: direct.headers,
-                quality: direct.quality
-              }, meta, host);
-            }
-            return null;
-          });
-        })).catch(function () { return null; });
-      })).then(function (results) {
-        var streams = [];
-        for (var si = 0; si < results.length; si++) {
-          if (results[si] && results[si].url) streams.push(results[si]);
+
+      return extractor.then(function(direct) {
+        if (direct && direct.url) {
+          return buildStream(displayTitle, player, {
+            url: direct.url,
+            headers: direct.headers,
+            quality: direct.quality
+          }, meta, host);
         }
-        if (streams.length) {
-          streams.sort(function (a, b) { return (a._hostPriority || 3) - (b._hostPriority || 3); });
-          for (var ci = 0; ci < streams.length; ci++) delete streams[ci]._hostPriority;
-          console.log("[PinoyMoviesHub] catalog-id path returning " + streams.length + " stream(s)");
-          return streams;
-        }
-        return tryIdx(i + 1);
+        // Extraction unavailable (captcha-gated dood, dead video,
+        // unknown SPA): skip the player. Nuvio has no webview on any
+        // platform, so an embed URL could never play anyway.
+        return null;
       });
-    }).catch(function () { return tryIdx(i + 1); });
-  })(0);
+    }, LANE_TIMEOUT_MS));
+  })).then(function(results) {
+    var streams = [];
+    var i;
+    for (i = 0; i < results.length; i++) {
+      if (results[i]) streams.push(results[i]);
+    }
+    // v5.2.2: Byse first (plays everywhere), then Mixdrop, then Dood.
+    streams.sort(function(a, b) {
+      var pa = a._hostPriority === undefined ? 3 : a._hostPriority;
+      var pb = b._hostPriority === undefined ? 3 : b._hostPriority;
+      if (pa !== pb) return pa - pb;
+      return 0;
+    });
+    for (i = 0; i < streams.length; i++) delete streams[i]._hostPriority;
+    console.log("[PinoyMoviesHub] Returning", streams.length, "stream(s)");
+    return streams;
+  });
 }
 
 function getStreams(tmdbId, mediaType, season, episode) {
   // Legacy signatures:
   //   getStreams(tmdbId, season, episode)               -> mediaType undefined
   //   getStreams(tmdbId, mediaType, season, episode)    -> Nuvio contract (4 args)
-  if (mediaType !== "movie" && mediaType !== "tv") {
+  // NuvioTVSmart's local-id plugin path passes the catalog type verbatim
+  // ("series"), so normalize before the legacy-shift check.
+  var mt = String(mediaType === undefined || mediaType === null ? "" : mediaType).toLowerCase();
+  if (mt === "series" || mt === "show") mt = "tv";
+  if (mt !== "movie" && mt !== "tv") {
     // shift: mediaType slot actually held season (or nothing)
     episode = season;
     season = mediaType;
-    mediaType = "";
+    mt = "";
   }
 
   try { tmdbId = String(tmdbId); } catch (e) { tmdbId = ""; }
+  // Tolerate prefixed ids ("tmdb:243248") — NuvioMobile passes the raw
+  // catalog meta id when no TMDB API key is configured; a prefixed id would
+  // 404 every TMDB request -> a dead row. Strip it defensively.
+  tmdbId = tmdbId.replace(/^tmdb:/i, "").trim();
   season = (season === undefined || season === null || season === "") ? "" : String(season).replace(/^s/i, "").replace(/[^0-9]/g, "");
   episode = (episode === undefined || episode === null || episode === "") ? "" : String(episode).replace(/^e/i, "").replace(/[^0-9]/g, "");
 
-  console.log("[PinoyMoviesHub] === START tmdbId=" + tmdbId + " type=" + mediaType + " S" + season + "E" + episode + " ===");
+  console.log("[PinoyMoviesHub] === START tmdbId=" + tmdbId + " type=" + mt + " S" + season + "E" + episode + " ===");
 
   if (!tmdbId) return Promise.resolve([]);
 
-  // v5.3.0: asian-catalog site-coded ids resolve WITHOUT TMDB.
-  var asianParsed = parseAsianCatalogId(tmdbId);
-  if (asianParsed) {
-    if (asianParsed.site !== "ph") return Promise.resolve([]); // AsianHub owns ks/va
-    return asianCatalogStreams(asianParsed, mediaType, season, episode);
+  // asian-catalog fallback rows (asian:<slug>): skip TMDB entirely.
+  //   v5.4.0: pmh- rows resolve DIRECTLY against pinoymovieshub's own URL
+  //   structure (the tail slug IS the site's page slug); search flow only
+  //   as fallback. ks-/va- rows belong to AsianHub -> skipped fast.
+  var catalogId = parseAsianCatalogId(tmdbId);
+  if (catalogId) {
+    if (catalogId.source === "ks" || catalogId.source === "va") {
+      console.log("[PinoyMoviesHub] asian:" + catalogId.source + "- id -> handled by AsianHub plugin, skipping");
+      return Promise.resolve([]);
+    }
+    var catIsSeries = mt === "tv" || !!(season && episode);
+    var catType = catIsSeries ? "tv" : "movie";
+    var catPseudo = { type: catType, title: catalogId.title, original: catalogId.title, year: "", raw: null };
+    var catMeta = { isSeries: catIsSeries, season: season, episode: episode, episodeTitle: "" };
+    var catDisplay = catIsSeries
+      ? catalogId.title + " S" + season + "E" + episode
+      : catalogId.title;
+    console.log("[PinoyMoviesHub] catalog fallback id -> title=\"" + catalogId.title + "\" type=" + catType + " source=" + (catalogId.source || "generic"));
+    if (catIsSeries && (!season || !episode)) {
+      console.log("[PinoyMoviesHub] TV show requires season and episode");
+      return Promise.resolve([]);
+    }
+    var directPageP = resolvePageUrlDirect(catalogId.slug, catType, season, episode);
+    return directPageP.then(function(page) {
+      if (page && page.html) {
+        console.log("[PinoyMoviesHub] direct pmh- hit -> " + page.url);
+        return extractStreamsFromPage(page, catDisplay, catMeta);
+      }
+      console.log("[PinoyMoviesHub] direct pmh- miss -> search-based resolution");
+      return resolvePageUrl(catType, catPseudo, season, episode).then(function(page2) {
+        return extractStreamsFromPage(page2, catDisplay, catMeta);
+      });
+    }).catch(function(err) {
+      console.error("[PinoyMoviesHub] catalog fallback error:", (err && err.message) || err);
+      return [];
+    });
   }
 
-  var forceTv = mediaType === "tv" || (!!(season && episode) && !mediaType);
+  var forceTv = mt === "tv" || (!!(season && episode) && !mt);
 
-  var tmdbPromise = mediaType === "movie"
+  var tmdbPromise = mt === "movie"
     ? tmdbLookup("movie", tmdbId).then(function(r) { return r || getTmdbInfoAuto(tmdbId); })
     : forceTv
       ? tmdbLookup("tv", tmdbId).then(function(r) { return r || { type: "", title: "", original: "", year: "", raw: null }; })
@@ -1207,76 +1415,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
         : tmdb.title;
 
       return resolvePageUrl(type, tmdb, season, episode).then(function(page) {
-        var html = page && page.html;
-        if (!html) {
-          console.log("[PinoyMoviesHub] No PMH page/players found for \"" + tmdb.title + "\"");
-          return [];
-        }
-        var options = extractPlayerOptions(html);
-        if (!options.length) return [];
-
-        // Prefer real sources; only fall back to trailer posts when nothing else exists.
-        var realOptions = [];
-        var trailerOptions = [];
-        var oi;
-        for (oi = 0; oi < options.length; oi++) {
-          if (/trailer/i.test(options[oi].label || "")) trailerOptions.push(options[oi]);
-          else realOptions.push(options[oi]);
-        }
-        var chosen = realOptions.length ? realOptions : trailerOptions;
-
-        return Promise.all(chosen.slice(0, 8).map(function(player) {
-          return withLaneDeadline(callDooPlayerAPI(player, page.url).then(function(embedUrl) {
-            if (!embedUrl) return null;
-            var host = hostOf(embedUrl);
-            var extractor = null;
-
-            if (isMixdrop(host)) {
-              extractor = extractMixdropDirect(embedUrl);
-            } else if (isByse(host)) {
-              extractor = extractByseDirect(embedUrl);
-            } else if (isDoodFamily(host)) {
-              extractor = extractDoodDirect(embedUrl);
-            } else {
-              // Unknown host: content-sniff for a mixdrop-style player
-              // (auto-covers future mirror domains), then try the Byse API
-              // shape (covers rebranded domains), else give up.
-              extractor = extractMixdropDirect(embedUrl).then(function(direct) {
-                return direct || extractByseDirect(embedUrl);
-              });
-            }
-
-            return extractor.then(function(direct) {
-              if (direct && direct.url) {
-                return buildStream(displayTitle, player, {
-                  url: direct.url,
-                  headers: direct.headers,
-                  quality: direct.quality
-                }, meta, host);
-              }
-              // Extraction unavailable (captcha-gated dood, dead video,
-              // unknown SPA): skip the player. Nuvio has no webview on any
-              // platform, so an embed URL could never play anyway.
-              return null;
-            });
-          }, LANE_TIMEOUT_MS));
-        })).then(function(results) {
-          var streams = [];
-          var i;
-          for (i = 0; i < results.length; i++) {
-            if (results[i]) streams.push(results[i]);
-          }
-          // v5.2.2: Byse first (plays everywhere), then Mixdrop, then Dood.
-          streams.sort(function(a, b) {
-            var pa = a._hostPriority === undefined ? 3 : a._hostPriority;
-            var pb = b._hostPriority === undefined ? 3 : b._hostPriority;
-            if (pa !== pb) return pa - pb;
-            return 0;
-          });
-          for (i = 0; i < streams.length; i++) delete streams[i]._hostPriority;
-          console.log("[PinoyMoviesHub] Returning", streams.length, "stream(s)");
-          return streams;
-        });
+        return extractStreamsFromPage(page, displayTitle, meta);
       });
     });
   }).catch(function(err) {

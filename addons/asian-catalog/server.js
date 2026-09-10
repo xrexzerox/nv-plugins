@@ -16,9 +16,6 @@
  *   ASIAN_KEEP_UNMATCHED    "=0" drops titles that fail TMDB matching instead
  *                           of showing them as asian:<slug> fallback rows
  *
- * v3.1.0: POST /relay supported here too (host-allowlisted binary relay used
- * by the cinejoy plugin when its "Worker Relay" setting points at this URL).
- *
  * Then add  http://<host>:<port>/manifest.json  in Nuvio (Settings -> Addons).
  */
 
@@ -41,26 +38,14 @@ const server = http.createServer((req, res) => {
       if (req.method === 'OPTIONS') {
         res.writeHead(204, {
           'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Methods': 'GET, OPTIONS',
           'Access-Control-Allow-Headers': '*',
           'Access-Control-Max-Age': '86400'
         });
         res.end();
         return;
       }
-      let response;
-      if (req.method === 'POST' && req.url.replace(/\/+$/, '').split('?')[0] === '/relay') {
-        const chunks = [];
-        for await (const ch of req) chunks.push(ch);
-        const bodyText = Buffer.concat(chunks).toString('utf8');
-        const fakeReq = {
-          method: 'POST',
-          text: async () => bodyText
-        };
-        response = await Core.relayHandler(fakeReq, env);
-      } else {
-        response = await Core.handle(req.url, env);
-      }
+      const response = await Core.handle(req.url, env);
       const headers = {};
       response.headers.forEach((v, k) => { headers[k] = v; });
       const text = await response.text();
