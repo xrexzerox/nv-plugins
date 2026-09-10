@@ -1,31 +1,53 @@
 /**
- * Miruro - Nuvio provider (v1.0.0)
+ * Miruro - Nuvio provider (v2.0.0)
  *
  * Anime (and anime movies) from miruro.tv - the mirror ring also answers on
  * miruro.to / miruro.ru / miruro.bz. User request 2026-09-11: "create scraper
- * for https://www.miruro.tv/".
+ * for https://www.miruro.tv/"; 2026-09-11 follow-up: "not fetching anime
+ * seasons and episodes".
  *
- * The site addresses everything by AniList id, so TMDB ids (what Nuvio sends)
- * are mapped with a graphql.anilist.co title/year search; multi-season TMDB
- * entries are flattened to AniList absolute episode numbers via TMDB season
- * episode counts (same approach as vidnest-anime).
+ * v1.0.0 relied on the anixo.buzz relay - that relay is now BROKEN upstream:
+ * it answers every query (any malId / title / episode / track) with one and
+ * the same cached stream token (verified byte-identical playlists for
+ * different episodes on 2026-09-11). AniList GraphQL was also down the same
+ * day (403 "temporarily disabled"), which killed the pipe lane's id mapping
+ * and left only the constant relay - every anime episode played the same
+ * video. That is exactly the reported "seasons and episodes not fetching".
  *
- * Lane A (primary, no Cloudflare): the anixo.buzz relay.
- *   GET https://anixo.buzz/api/stream/resolve?anilistId=&episode=&track=sub|dub&server=1|2
- *     -> { success, server, streamUrl, subtitles:[{url,label,default}] }
- *   streamUrl is a master m3u8 (/api/stream/m3u8?t=..&h=1) with RESOLUTION
- *   variants - parsed so every variant becomes its own labeled row. Verified
- *   end-to-end from a datacenter IP on 2026-09-11 (sub + dub + movies).
+ * v2.0.0 replaces the relay with the MegaPlay chain it used to front
+ * (megaplay.buzz is the site the anixo notice names as its origin; it is
+ * reachable from datacenter IPs and devices alike):
  *
- * Lane B (fail-soft): the site's own /api/secure/pipe endpoint.
+ * Lane A (primary): MegaPlay file resolution.
+ *   1. embed page  GET https://megaplay.buzz/stream/mal/{malId}/{ep}/{sub|dub}
+ *      (same for /ani/{anilistId}/...) - the server resolves its own content
+ *      id server-side. Player div carries data-id="NNNNNN" (the stable file
+ *      id for that episode+language; title says "File NNNN - MegaPlay").
+ *      Error pages (rate limit / unmapped MAL id) print "Error Code: NNN".
+ *   2. sources     GET https://megaplay.buzz/stream/getSourcesNew?id={fileId}
+ *      (XMLHttpRequest header required) ->
+ *      { sources:{file: master.m3u8}, tracks:[{file,label,kind}], intro, outro }
+ *      master.m3u8 has RESOLUTION variants (1080p/360p observed) -> parsed so
+ *      every useful variant becomes a row; tracks become English/Tagalog subs.
+ *      The m3u8 CDN (megap.shiora / megap.akirax hosts) is Cloudflare
+ *      fronted but serves devices; referer megaplay.buzz is attached.
+ *
+ * Lane B (fail-soft, device-only): the site's own /api/secure/pipe endpoint.
  *   GET {origin}/api/secure/pipe?e=base64url({path,method,query,body})
  *   Response header x-obfuscated: "2" = base64url -> XOR(key) -> gunzip -> JSON.
- *   "episodes" gives {providers:{<name>:{episodes:{sub:[...],dub:[...]}}}} and
- *   "sources" gives {streams:[{url,quality,...}],subtitles:[...]} per episode.
- *   Cloudflare blocks datacenter IPs here (sandbox blocked 2026-09-11), so this
- *   lane targets the user's device connection and every failure is silent.
- *   Decompression uses a small embedded inflate (DEFLATE) since Nuvio's JS
- *   runtime has no zlib.
+ *   Cloudflare blocks datacenter IPs here, so this lane targets the user's
+ *   device connection and every failure is silent. Decompression uses a small
+ *   embedded inflate (DEFLATE) since Nuvio's JS runtime has no zlib.
+ *
+ * TMDB -> anime id mapping (season-aware):
+ *   - AniList GraphQL title/year search (also feeds the pipe lane's anilistId)
+ *   - Kitsu /api/edge (include=mappings -> myanimelist + anilist ids) works
+ *     even while AniList is down
+ *   - Jikan (api.jikan.moe) as the last title fallback
+ *   For TMDB season 2+ a season-specific entry is searched first ("title
+ *   season N" / "title Nth season" validated by the season's air year on
+ *   TMDB). When no season entry exists the base entry is used with an
+ *   absolute episode number computed from TMDB season episode counts.
  *
  * Language policy (pack-wide): sub lanes (original audio + en subs) and dub
  * lanes (English dub) are emitted; subtitles are filtered to English +
@@ -34,7 +56,9 @@
  */
 
 var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
-var ANIXO_BASE = "https://anixo.buzz";
+var MEGAPLAY_BASE = "https://megaplay.buzz";
+var KITSU_BASE = "https://kitsu.io/api/edge";
+var JIKAN_BASE = "https://api.jikan.moe/v4";
 var MIRURO_ORIGINS = [
   "https://www.miruro.ru",
   "https://www.miruro.to",
@@ -78,6 +102,24 @@ function cacheKey(tmdbId, mediaType, season, episode) {
 }
 
 function hasTimers() { return typeof setTimeout === "function"; }
+
+// Paced queue for third-party mapping APIs (Kitsu/Jikan throttle bursts).
+var _mapLastReq = 0;
+function mapGap() {
+  return new Promise(function (resolve) {
+    var now = Date.now();
+    var wait = _mapLastReq + 450 - now;
+    if (wait < 0) wait = 0;
+    _mapLastReq = now + wait;
+    if (!hasTimers() || !wait) resolve(null);
+    else setTimeout(resolve, wait);
+  });
+}
+
+// Mapping cache: the same show's episodes reuse one TMDB->anime resolution
+// (6h TTL) so browsing N episodes costs ONE mapping burst, not N.
+var MAP_CACHE_TTL = 6 * 60 * 60 * 1000;
+var _mapCache = _muState.mapCache || (_muState.mapCache = {});
 
 function fetchText(url, headers, timeoutMs) {
   var opts = { method: "GET", redirect: "follow", headers: headers || {} };
@@ -390,25 +432,139 @@ function pipeLanes(anilistId, epNumber, makeRow) {
   }).catch(function () { return []; });
 }
 
-// ------------------------------------------------------------- anixo lane
+// ----------------------------------------------------------- megaplay lane
 
-function anixoFetch(params, epNumber, track, server) {
-  var url = ANIXO_BASE + "/api/stream/resolve?" + params +
-    "&episode=" + encodeURIComponent(epNumber) + "&track=" + track + "&server=" + server;
-  return fetchJson(url, {
-    "User-Agent": COMMON_UA,
-    "Accept": "application/json",
-    "Referer": ANIXO_BASE + "/"
-  }, 12000).then(function (data) {
-    if (!data || !data.success || !data.streamUrl) return null;
-    return {
-      streamUrl: String(data.streamUrl),
-      serverName: String(data.server || ("Server " + server)),
-      subtitles: (data.subtitles || []).filter(function (s) {
-        return s && s.url && /^https?:/i.test(String(s.url));
-      })
+// MegaPlay rate-limits aggressive scraping with decoy/error pages, so all
+// embed+sources calls go through one paced queue (min gap between requests).
+var _mpLastReq = 0;
+function mpGap() {
+  return new Promise(function (resolve) {
+    var now = Date.now();
+    var wait = _mpLastReq + 600 - now;
+    if (wait < 0) wait = 0;
+    _mpLastReq = now + wait;
+    if (!hasTimers() || !wait) resolve(null);
+    else setTimeout(resolve, wait);
+  });
+}
+
+var MP_FILE_CACHE_TTL = 30 * 60 * 1000;
+var _mpFileCache = _muState.mpFiles || (_muState.mpFiles = {});
+
+/**
+ * Resolve the stable MegaPlay "file id" (data-id on the player div) for one
+ * episode+language. Tries the mal route first, then the ani route. Returns
+ * a Promise for the file id string or null. Never rejects.
+ */
+function mpFileId(malId, anilistId, epNumber, lang) {
+  var cacheKey = (malId || "a" + anilistId) + ":" + epNumber + ":" + lang;
+  var hit = _mpFileCache[cacheKey];
+  if (hit && Date.now() - hit.ts < MP_FILE_CACHE_TTL) {
+    return Promise.resolve(hit.id);
+  }
+  var routes = [];
+  if (malId) routes.push("mal/" + encodeURIComponent(malId));
+  if (anilistId) routes.push("ani/" + encodeURIComponent(anilistId));
+  var idx = 0;
+  function attempt() {
+    if (idx >= routes.length) return Promise.resolve(null);
+    var path = routes[idx++] + "/" + encodeURIComponent(epNumber) + "/" + lang;
+    return mpGap().then(function () {
+      return fetchText(MEGAPLAY_BASE + "/stream/" + path, {
+        "User-Agent": COMMON_UA,
+        "Accept": "text/html,*/*",
+        "Referer": MEGAPLAY_BASE + "/"
+      }, 10000);
+    }).then(function (html) {
+      // error / decoy pages carry "Error Code: NNN" and no player div
+      if (!html || html.indexOf("Error Code:") !== -1) return attempt();
+      var m = html.match(/id="megaplay-player"[^>]*data-id="(\d+)"/) ||
+              html.match(/data-id="(\d+)"/) ||
+              html.match(/<title>File (\d+) - MegaPlay/);
+      if (!m) return attempt();
+      _mpFileCache[cacheKey] = { ts: Date.now(), id: m[1] };
+      return m[1];
+    }).catch(function () { return attempt(); });
+  }
+  return attempt();
+}
+
+var MP_SRC_CACHE_TTL = 10 * 60 * 1000;
+var _mpSrcCache = _muState.mpSources || (_muState.mpSources = {});
+
+/** sources JSON for a file id: {file, tracks}. Fail-soft. */
+function mpSources(fileId) {
+  var hit = _mpSrcCache[fileId];
+  if (hit && Date.now() - hit.ts < MP_SRC_CACHE_TTL) {
+    return Promise.resolve(hit.data);
+  }
+  return mpGap().then(function () {
+    return fetchJson(MEGAPLAY_BASE + "/stream/getSourcesNew?id=" + encodeURIComponent(fileId), {
+      "User-Agent": COMMON_UA,
+      "Accept": "application/json",
+      "Referer": MEGAPLAY_BASE + "/",
+      "X-Requested-With": "XMLHttpRequest"
+    }, 10000);
+  }).then(function (data) {
+    if (!data || !data.sources || !data.sources.file ||
+        !/^https?:\/\//i.test(String(data.sources.file))) return null;
+    var out = {
+      file: String(data.sources.file),
+      tracks: Array.isArray(data.tracks) ? data.tracks : []
     };
+    _mpSrcCache[fileId] = { ts: Date.now(), data: out };
+    return out;
   }).catch(function () { return null; });
+}
+
+/**
+ * Lane A: MegaPlay sub+dub rows for one episode. Both languages share the
+ * same file-id resolution; each language that resolves becomes its own rows
+ * (master m3u8 variants labeled by height) with English/Tagalog subtitles.
+ */
+function megaplayLanes(animeIds, epNumber, makeRow) {
+  if (!animeIds || (!animeIds.malId && !animeIds.anilistId)) return Promise.resolve([]);
+  var langs = ["sub", "dub"];
+  var rows = [];
+  var chain = Promise.resolve();
+  langs.forEach(function (lang) {
+    chain = chain.then(function () {
+      return mpFileId(animeIds.malId, animeIds.anilistId, epNumber, lang)
+        .then(function (fileId) {
+          if (!fileId) return;
+          return mpSources(fileId).then(function (src) {
+            if (!src) return;
+            var lane = lang === "dub" ? "Dub" : "Sub";
+            var label = "MegaPlay " + (lang === "dub" ? "Dub" : "Sub");
+            var subs = src.tracks.filter(function (t) {
+              return t && t.file && /^https?:/i.test(String(t.file)) &&
+                /(english|filipino|tagalog)/i.test(String(t.label || t.language || ""));
+            }).slice(0, 6).map(function (t) {
+              var l = String(t.label || t.language || "English");
+              var isTl = /filipino|tagalog/i.test(l);
+              return {
+                url: String(t.file),
+                language: isTl ? "tl" : "en",
+                name: isTl ? "Tagalog / Filipino" : l
+              };
+            });
+            return hlsVariants(src.file, MEGAPLAY_BASE + "/").then(function (variants) {
+              var added = [];
+              if (variants.length) {
+                variants.forEach(function (v) { added.push(makeRow(v.url, "", label, lang, v.height)); });
+              } else {
+                added.push(makeRow(src.file, "", label, lang, 0));
+              }
+              if (subs.length) {
+                added.forEach(function (r) { if (!r.subtitles) r.subtitles = subs; });
+              }
+              added.forEach(function (r) { rows.push(r); });
+            });
+          });
+        }).catch(function () {});
+    });
+  });
+  return chain.then(function () { return rows; });
 }
 
 /** Fetch a master m3u8 and return [{url, quality}] variants (max 4, best first). */
@@ -437,60 +593,7 @@ function hlsVariants(masterUrl, referer) {
     }).catch(function () { return []; });
 }
 
-function anixoLanes(animeIds, title, epNumber, makeRow) {
-  // resolve params: MAL id is the reliable key ("ani" space == MAL); title
-  // is the fallback that keeps working through AniList outages.
-  var paramSets = [];
-  if (animeIds && animeIds.malId) paramSets.push("malId=" + encodeURIComponent(animeIds.malId));
-  if (animeIds && animeIds.anilistId) paramSets.push("anilistId=" + encodeURIComponent(animeIds.anilistId));
-  if (title) paramSets.push("title=" + encodeURIComponent(title));
-  var jobs = [];
-  paramSets.forEach(function (params) {
-    [["sub", 1], ["sub", 2], ["dub", 1], ["dub", 2]].forEach(function (combo) {
-      jobs.push(anixoFetch(params, epNumber, combo[0], combo[1]));
-    });
-  });
-  return Promise.all(jobs).then(function (results) {
-    var rows = [];
-    var seen = {};
-    var chain = Promise.resolve();
-    results.forEach(function (res) {
-      if (!res) return;
-      chain = chain.then(function () {
-        return hlsVariants(res.streamUrl, ANIXO_BASE + "/").then(function (variants) {
-          if (variants.length) {
-            variants.forEach(function (v) {
-              if (seen[v.url]) return;
-              seen[v.url] = 1;
-              rows.push(makeRow(v.url, "", "Anixo " + res.serverName, null, v.height));
-            });
-          } else if (!seen[res.streamUrl]) {
-            seen[res.streamUrl] = 1;
-            rows.push(makeRow(res.streamUrl, "", "Anixo " + res.serverName, null, 0));
-          }
-          var subs = res.subtitles.filter(function (s) {
-            return /(english|filipino|tagalog)/i.test(String(s.label || s.language || ""));
-          }).slice(0, 4).map(function (s) {
-            var isTl = /filipino|tagalog/i.test(String(s.label || s.language || ""));
-            return {
-              url: String(s.url),
-              language: isTl ? "tl" : "en",
-              name: isTl ? "Tagalog / Filipino" : String(s.label || "English")
-            };
-          });
-          if (subs.length) {
-            rows.forEach(function (r) {
-              if (r._anixo && !r.subtitles) r.subtitles = subs;
-            });
-          }
-        });
-      }).catch(function () {});
-    });
-    return chain.then(function () { return rows; });
-  });
-}
-
-// ---------------------------------------------------- TMDB -> AniList map
+// ---------------------------------------------------- TMDB -> anime map
 
 function tmdbInfo(tmdbId, mediaType) {
   var endpoint = mediaType === "tv" ? "tv" : "movie";
@@ -498,10 +601,24 @@ function tmdbInfo(tmdbId, mediaType) {
   return fetchJson(url, null, 10000).then(function (data) {
     if (!data) throw new Error("tmdb unreachable");
     var title = mediaType === "tv" ? (data.name || data.original_name) : (data.title || data.original_title);
+    var original = mediaType === "tv" ? (data.original_name || data.name) : (data.original_title || data.title);
     var date = mediaType === "tv" ? data.first_air_date : data.release_date;
     if (!title) throw new Error("tmdb: no title");
-    return { title: title, year: date ? parseInt(String(date).split("-")[0], 10) : null };
+    return {
+      title: title,
+      original: original || title,
+      year: date ? parseInt(String(date).split("-")[0], 10) : null
+    };
   });
+}
+
+/** Air year of one TMDB season (for validating season-specific entries). */
+function tmdbSeasonYear(tmdbId, season) {
+  return fetchJson("https://api.themoviedb.org/3/tv/" + tmdbId + "/season/" + season + "?api_key=" + TMDB_API_KEY, null, 9000)
+    .then(function (d) {
+      var a = d && d.air_date ? String(d.air_date).split("-")[0] : null;
+      return a ? parseInt(a, 10) : null;
+    }).catch(function () { return null; });
 }
 
 function anilistSearchPost(title, year) {
@@ -516,7 +633,7 @@ function anilistSearchPost(title, year) {
     }).then(function (res) { return res.json(); });
   }
   return new Promise(function (resolve, reject) {
-    var timer = setTimeout(function () { reject(new Error("anilist timeout")); }, 10000);
+    var timer = setTimeout(function () { reject(new Error("anilist timeout")); }, 8000);
     fetch("https://graphql.anilist.co", {
       method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" }, body: body
     }).then(function (res) {
@@ -526,26 +643,193 @@ function anilistSearchPost(title, year) {
   });
 }
 
-/**
- * Returns {anilistId, malId} or null. Both ids matter: the miruro pipe is
- * AniList-addressed, while the anixo relay's "ani" id space is actually MAL
- * (its own embed page maps ani/20 -> "Naruto", i.e. MAL 20). GraphQL is also
- * AniList's outage surface - when it fails we fall back to anixo's title
- * resolver, which needs no id at all.
- */
-function mapTMDBToAnime(title, year) {
-  return anilistSearchPost(title, year).then(function (data) {
-    if (data && data.data && data.data.Media && data.data.Media.id) {
-      return { anilistId: data.data.Media.id, malId: data.data.Media.idMal || null };
-    }
-    // retry without the year (TMDB/AniList season-year mismatches)
-    return anilistSearchPost(title, null).then(function (d2) {
-      if (d2 && d2.data && d2.data.Media && d2.data.Media.id) {
-        return { anilistId: d2.data.Media.id, malId: d2.data.Media.idMal || null };
+function anilistFromPost(data) {
+  if (data && data.data && data.data.Media && data.data.Media.id) {
+    return {
+      anilistId: data.data.Media.id,
+      malId: data.data.Media.idMal || null,
+      via: "anilist"
+    };
+  }
+  return null;
+}
+
+function asciiFold(s) {
+  var t = String(s || "");
+  // NFD-decompose diacritics (u+016B -> u+0304 -> strip) so macron'd titles
+  // like "Shippuden" (TMDB) match "Shippuuden" romaji (Kitsu/MAL).
+  if (typeof t.normalize === "function") {
+    try { t = t.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); } catch (e) {}
+  }
+  return t;
+}
+
+function normTitleForMatch(s) {
+  return asciiFold(s).toLowerCase()
+    .replace(/[\u2018\u2019\u201c\u201d']/g, "")
+    .replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+// romaji variants: "shippuuden" == "shippuden" once doubled vowels collapse
+function collapseRomaji(s) {
+  return String(s || "").replace(/([aeou])\1+/g, "$1").replace(/ou/g, "o");
+}
+
+function yearClose(a, b) {
+  return a && b && Math.abs(parseInt(a, 10) - parseInt(b, 10)) <= 1;
+}
+
+/** Kitsu title search -> {malId, anilistId} via the mappings relationship. */
+function kitsuSearch(query, year) {
+  var url = KITSU_BASE + "/anime?filter[text]=" + encodeURIComponent(query) +
+    "&page[limit]=5&include=mappings";
+  return mapGap().then(function () {
+    return fetchJson(url, { "User-Agent": COMMON_UA, "Accept": "application/vnd.api+json" }, 10000);
+  }).then(function (data) {
+      if (!data || !Array.isArray(data.data) || !data.data.length) return null;
+      var mapIds = {};
+      (data.included || []).forEach(function (inc) {
+        if (inc && inc.type === "mappings" && inc.attributes) {
+          var site = String(inc.attributes.externalSite || "");
+          if (site === "myanimelist/anime") mapIds[inc.id] = { mal: inc.attributes.externalId };
+          else if (site === "anilist/anime") mapIds[inc.id] = { ali: inc.attributes.externalId };
+        }
+      });
+      var want = normTitleForMatch(query.replace(/\s+(season|2nd|3rd|4th|5th)\b.*$/i, " "));
+      var wantR = collapseRomaji(want);
+      var best = null;
+      for (var i = 0; i < data.data.length && !best; i++) {
+        var a = data.data[i];
+        var attrs = a.attributes || {};
+        var start = attrs.startDate ? parseInt(String(attrs.startDate).split("-")[0], 10) : null;
+        var yearOk = year ? (start ? yearClose(start, year) : true) : true;
+        var titles = [attrs.canonicalTitle, attrs.titles && attrs.titles.en,
+          attrs.titles && attrs.titles.en_jp, attrs.titles && attrs.titles.ja_jp];
+        var titleOk = titles.some(function (t) {
+          var nt = normTitleForMatch(t);
+          if (!nt) return false;
+          if (nt.indexOf(want) !== -1 || want.indexOf(nt) !== -1) return true;
+          var cn = collapseRomaji(nt);
+          return wantR.length > 3 && cn === wantR;
+        });
+        if (!titleOk || !yearOk) continue;
+        var malId = null, aliId = null;
+        var rels = a.relationships && a.relationships.mappings && a.relationships.mappings.data;
+        if (Array.isArray(rels)) {
+          rels.forEach(function (rr) {
+            if (mapIds[rr.id]) {
+              if (mapIds[rr.id].mal) malId = mapIds[rr.id].mal;
+              if (mapIds[rr.id].ali) aliId = mapIds[rr.id].ali;
+            }
+          });
+        }
+        if (malId || aliId) best = { anilistId: aliId, malId: malId, via: "kitsu" };
+      }
+      return best;
+    }).catch(function () { return null; });
+}
+
+/** Jikan (MyAnimeList) title search -> {malId}. Last title fallback. */
+function jikanSearch(query, year) {
+  var url = JIKAN_BASE + "/anime?q=" + encodeURIComponent(query) + "&limit=5&sfw=true";
+  return mapGap().then(function () {
+    return fetchJson(url, { "User-Agent": COMMON_UA, "Accept": "application/json" }, 10000);
+  }).then(function (data) {
+      if (!data || !Array.isArray(data.data) || !data.data.length) return null;
+      var want = normTitleForMatch(query.replace(/\s+(season|2nd|3rd|4th|5th)\b.*$/i, " "));
+      var wantR = collapseRomaji(want);
+      for (var i = 0; i < data.data.length; i++) {
+        var a = data.data[i];
+        var yr = a.year || (a.aired && a.aired.from ? parseInt(String(a.aired.from).split("-")[0], 10) : null);
+        var yearOk = year ? (yr ? yearClose(yr, year) : true) : true;
+        var titles = [a.title, a.title_english, a.title_japanese];
+        var titleOk = titles.some(function (t) {
+          var nt = normTitleForMatch(t);
+          if (!nt) return false;
+          if (nt.indexOf(want) !== -1 || want.indexOf(nt) !== -1) return true;
+          var cn = collapseRomaji(nt);
+          return wantR.length > 3 && cn === wantR;
+        });
+        if (titleOk && yearOk && a.mal_id) return { anilistId: null, malId: a.mal_id, via: "jikan" };
       }
       return null;
+    }).catch(function () { return null; });
+}
+
+var ORDINALS = { 2: "2nd", 3: "3rd", 4: "4th", 5: "5th", 6: "6th", 7: "7th", 8: "8th", 9: "9th" };
+
+/**
+ * Season-aware mapping: TMDB ids arrive with a season number. For season 2+
+ * a season-specific MAL/AniList entry is searched first (validated with the
+ * TMDB season air year); when none is found the caller falls back to the
+ * base entry with an absolute episode number.
+ *
+ * Returns {anilistId, malId, matched: "season"|"base"|null, via}.
+ * Results are cached per (tmdbId, isTv, season) with a 6h TTL.
+ */
+function mapTMDBToAnime(tmdbId, isTv, info, season) {
+  season = parseInt(season || 1, 10);
+  var mapKey = (isTv ? "tv" : "mv") + ":" + tmdbId + ":" + season;
+  var hit = _mapCache[mapKey];
+  if (hit && Date.now() - hit.ts < MAP_CACHE_TTL) {
+    return Promise.resolve(hit.res);
+  }
+  return mapTMDBToAnimeUncached(tmdbId, isTv, info, season).then(function (res) {
+    if (res) _mapCache[mapKey] = { ts: Date.now(), res: res };
+    return res;
+  });
+}
+
+function mapTMDBToAnimeUncached(tmdbId, isTv, info, season) {
+  season = parseInt(season || 1, 10);
+  var base = info.original || info.title;
+  if (!isTv || season <= 1) {
+    // S1 / movie: AniList first (gives both ids for pipe lane), Kitsu, Jikan
+    return anilistSearchPost(info.title, info.year)
+      .then(anilistFromPost)
+      .catch(function () { return null; })
+      .then(function (r) {
+        if (r) return r;
+        return anilistSearchPost(info.title, null).then(anilistFromPost).catch(function () { return null; });
+      })
+      .then(function (r) {
+        if (r) return r;
+        return kitsuSearch(info.title, info.year).then(function (k) { return k || jikanSearch(info.title, info.year); });
+      })
+      .then(function (r) { return r ? { anilistId: r.anilistId, malId: r.malId, via: r.via, matched: "base" } : null; });
+  }
+  // S2+: try a season-specific entry (Jikan/Kitsu handle "... 2nd Season"
+  // titles well; AniList search is too fuzzy for seasons). Keep the matrix
+  // small (<=3 searches): the mapping APIs throttle rapid bursts.
+  return tmdbSeasonYear(tmdbId, season).then(function (sYear) {
+    var ord = ORDINALS[season] || season;
+    var cands = [];
+    if (sYear) {
+      cands.push({ q: base + " season " + season, y: sYear });
+      cands.push({ q: base + " " + ord + " season", y: sYear });
+    }
+    if (info.year && info.year !== sYear) {
+      cands.push({ q: base + " season " + season, y: info.year });
+    }
+    var chain = Promise.resolve(null);
+    cands.forEach(function (c) {
+      chain = chain.then(function (r) {
+        if (r) return r;
+        return jikanSearch(c.q, c.y).then(function (j) { return j || kitsuSearch(c.q, c.y); });
+      });
     });
-  }).catch(function () { return null; });
+    return chain.then(function (r) {
+      if (r) return { anilistId: r.anilistId, malId: r.malId, via: r.via, matched: "season" };
+      // season entry not found -> base entry + absolute episode (caller)
+      return anilistSearchPost(info.title, info.year).then(anilistFromPost).catch(function () { return null; })
+        .then(function (r2) {
+          if (r2) return { anilistId: r2.anilistId, malId: r2.malId, via: r2.via, matched: "base" };
+          return kitsuSearch(info.title, info.year).then(function (k) {
+            return k ? { anilistId: k.anilistId, malId: k.malId, via: k.via, matched: "base" } : null;
+          });
+        });
+    });
+  });
 }
 
 /** Multi-season TMDB entries: absolute episode number across seasons. */
@@ -573,7 +857,10 @@ function absoluteEpisode(tmdbId, season, episode) {
 function getStreams(tmdbId, mediaType, season, episode) {
   try { tmdbId = String(tmdbId); } catch (e) { tmdbId = ""; }
   if (!tmdbId) return Promise.resolve([]);
-  var isTv = mediaType === "tv";
+  // NuvioTV legacy paths may pass "series"/"show" verbatim (see asianhub.js)
+  var isTv = mediaType === "tv" || mediaType === "series" || mediaType === "show";
+  season = parseInt(season || 1, 10) || 1;
+  episode = parseInt(episode || 1, 10) || 1;
   var key = cacheKey(tmdbId, mediaType, season, episode);
   var hit = _muState.cache[key];
   if (hit && Date.now() - hit.ts < CACHE_TTL) return Promise.resolve(hit.streams);
@@ -602,20 +889,32 @@ function getStreams(tmdbId, mediaType, season, episode) {
       title: name,
       url: url,
       quality: q,
-      headers: { Referer: /^https?:\/\/[^\/]*anixo/i.test(url) ? ANIXO_BASE + "/" : "https://www.miruro.to/" },
-      _anixo: sourceName.indexOf("Anixo") === 0
+      headers: { Referer: MEGAPLAY_BASE + "/" },
+      _megaplay: sourceName.indexOf("MegaPlay") === 0
     };
   }
 
   var run = tmdbInfo(tmdbId, isTv ? "tv" : "movie").then(function (info) {
-    // mapTMDBToAnime never rejects (null on outage/no-match) - anixo's title
-    // resolver keeps Lane A alive even while AniList is down.
-    return mapTMDBToAnime(info.title, info.year).then(function (animeIds) {
-      if (animeIds) console.log("[Miruro] anilist " + animeIds.anilistId + " / mal " + animeIds.malId);
-      else console.log("[Miruro] no mapping - anixo title fallback");
-      var epP = isTv ? absoluteEpisode(tmdbId, season, episode) : Promise.resolve(1);
+    // mapTMDBToAnime never rejects (null on total mapping outage)
+    return mapTMDBToAnime(tmdbId, isTv, info, isTv ? season : 1).then(function (animeIds) {
+      if (animeIds) {
+        console.log("[Miruro] mapped via " + animeIds.via + " (" + animeIds.matched + "): " +
+          "anilist " + animeIds.anilistId + " / mal " + animeIds.malId);
+      } else {
+        console.log("[Miruro] no mapping from any source");
+      }
+      var epP;
+      if (!isTv) {
+        epP = Promise.resolve(1);
+      } else if (animeIds && animeIds.matched === "season") {
+        // season-specific MAL/AniList entry: episode numbers restart at 1
+        epP = Promise.resolve(episode);
+      } else {
+        // base entry only: flatten multi-season TMDB to absolute episode
+        epP = absoluteEpisode(tmdbId, season, episode);
+      }
       return epP.then(function (epNumber) {
-        var a = anixoLanes(animeIds, info.title, epNumber, makeRow);
+        var a = megaplayLanes(animeIds, epNumber, makeRow);
         var b = animeIds && animeIds.anilistId
           ? pipeLanes(animeIds.anilistId, epNumber, makeRow)
           : Promise.resolve([]);
