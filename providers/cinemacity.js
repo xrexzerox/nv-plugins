@@ -1,14 +1,21 @@
-// cinemacity.js v4.2.0
+// cinemacity.js v5.0.0
+// v5.0.0: language-aware extraction. The site's PlayerJS data carries
+// language markers on its file entries ("eng", "italian/ita", "sub", and for
+// some titles Filipino markers "tagalog"/"filipino"/"tl dub"/"fil dub").
+// v5 policy (user requirement: English movies/TV, grab Tagalog/Filipino dub
+// when the site has it):
+//   1. classify every entry by its title text / file URL
+//   2. emit English rows first
+//   3. emit "CinemaCity | Tagalog Dub" rows when tagalog/filipino markers
+//      exist (dub beats subs; a tagalog-marked entry is a dub print)
+//   4. Italian / Hindi / Arabic entries only as last resort
+//   5. "sub"-only variants skipped unless nothing else exists
 // v4.2.0: third retry identity (Googlebot). The site's Cloudflare sits in
 // front of DLE with a managed challenge: desktop Chrome -> 403, mobile
 // Android -> 403 on some edges. WordPress/DLE hosts commonly allow-list the
-// Google crawler, so the escalation now ends with a Googlebot UA before
-// giving up (same 3-step ladder the asian-catalog addon uses successfully).
-// v4.1.0: the site sits behind a Cloudflare managed challenge. The old fetch
-// ignored response codes, so a challenge page was parsed as if it were real
-// markup ("Found 0 script tags" / no anchors). Now: challenge/403 detection,
-// automatic retry with a mobile browser identity (mobile IPs are rarely
-// challenged), and clean fail-soft so other providers still load.
+// Google crawler, so the escalation ends with a Googlebot UA before giving
+// up (same 3-step ladder the asian-catalog addon uses successfully).
+// v4.1.0: challenge/403 detection, automatic mobile retry, clean fail-soft.
 var MAIN_URL = "https://cinemacity.cc";
 var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
@@ -120,9 +127,8 @@ function findScriptsInHtml(html) {
 
 // Walks a string/object/array literal from its opening bracket to the
 // MATCHING closing bracket (quote-aware). DLE season trees are nested
-// arrays — the old lazy regex /\[.*?\]/ truncated at the inner "]",
-// JSON.parse always died and TV silently returned zero streams (the
-// long-standing "not working" bug).
+// arrays - the old lazy regex truncated at the inner "]" and JSON.parse
+// always died (the long-standing TV bug).
 function extractBalanced(str, startIdx, openCh, closeCh) {
   var depth = 0, inStr = null, esc = false;
   for (var i = startIdx; i < str.length; i++) {
@@ -141,6 +147,56 @@ function extractBalanced(str, startIdx, openCh, closeCh) {
     }
   }
   return null;
+}
+
+// ------------------------------------------------------------- v5 language
+
+var LANG_MARKERS = {
+  tagalog: /tagalog|filipino|pilipino|\btl[\s._-]*(?:dub)?\b|\bfil[\s._-]*dub\b/i,
+  english: /\beng(?:lish)?\b|\bengl\b/i,
+  italian: /italian|italiano|\bita\b/i,
+  hindi: /hindi/i,
+  arabic: /arab(?:ic)?/i,
+  subtitleOnly: /\bsub(?:s|title)?s?\b/i
+};
+
+// Classify a PlayerJS entry by its title text and file url.
+// Returns "tagalog" | "english" | "italian" | "hindi" | "arabic" | "sub" | "unknown".
+function classifyEntry(entry) {
+  var hay = ((entry && entry.title) ? String(entry.title) : "") + " " + ((entry && entry.file) ? String(entry.file) : "");
+  if (LANG_MARKERS.tagalog.test(hay)) return "tagalog";
+  if (LANG_MARKERS.english.test(hay) && !LANG_MARKERS.subtitleOnly.test(hay)) return "english";
+  if (LANG_MARKERS.italian.test(hay)) return "italian";
+  if (LANG_MARKERS.hindi.test(hay)) return "hindi";
+  if (LANG_MARKERS.arabic.test(hay)) return "arabic";
+  if (LANG_MARKERS.subtitleOnly.test(hay)) return "sub";
+  return "unknown";
+}
+
+function langRank(cls) {
+  // English first, Tagalog dub right after, then unknown (unlabeled is
+  // usually the site default), Italian/Hindi/Arabic last, sub-only dropped
+  // unless nothing else.
+  switch (cls) {
+    case "english": return 0;
+    case "tagalog": return 1;
+    case "unknown": return 2;
+    case "italian": return 3;
+    case "hindi": return 4;
+    case "arabic": return 5;
+    case "sub": return 9;
+    default: return 8;
+  }
+}
+
+function langLabel(cls) {
+  if (cls === "tagalog") return "Tagalog Dub";
+  if (cls === "english") return "English";
+  if (cls === "italian") return "Italian";
+  if (cls === "hindi") return "Hindi";
+  if (cls === "arabic") return "Arabic";
+  if (cls === "sub") return "Subbed";
+  return "";
 }
 
 function getStreams(tmdbId, mediaType, season, episode) {
@@ -173,8 +229,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
           var a = anchors[i];
           if (a.href.indexOf(".html") === -1) continue;
           var foundTitle = a.text.split("(")[0].trim();
-          if (foundTitle.toLowerCase() === animeTitle.toLowerCase() || 
-              foundTitle.toLowerCase().indexOf(animeTitle.toLowerCase()) !== -1 || 
+          if (foundTitle.toLowerCase() === animeTitle.toLowerCase() ||
+              foundTitle.toLowerCase().indexOf(animeTitle.toLowerCase()) !== -1 ||
               animeTitle.toLowerCase().indexOf(foundTitle.toLowerCase()) !== -1) {
             mediaUrl = a.href;
             if (mediaUrl.indexOf("http") !== 0) mediaUrl = MAIN_URL + mediaUrl;
@@ -273,62 +329,60 @@ function getStreams(tmdbId, mediaType, season, episode) {
         }
 
         var streams = [];
-        var addStream = function(url, title, quality) {
+        var seenUrls = {};
+        var addStream = function(url, title, quality, cls) {
           if (!url || url.indexOf("http") !== 0 || url.length < 15) return;
+          if (seenUrls[url]) return;
+          seenUrls[url] = 1;
+          var tag = langLabel(cls);
           streams.push({
-            name: "CinemaCity",
-            title: title,
+            name: tag ? "CinemaCity | " + tag : "CinemaCity",
+            title: title + (tag ? " | " + tag : ""),
             url: url,
             quality: quality || extractQuality(url),
-            headers: Object.assign({}, MOBILE_HEADERS, { Referer: "https://cinemacity.cc/" })
+            headers: Object.assign({}, MOBILE_HEADERS, { Referer: "https://cinemacity.cc/" }),
+            _rank: langRank(cls)
           });
         };
 
-        var processStr = function(str, title) {
-          console.log("[CinemaCity] Processing file string, length:", str.length);
-
+        // Turn one PlayerJS entry into stream row(s) (v4.2.0 logic + v5 label).
+        var processStr = function(str, title, cls) {
           if (str.indexOf(".urlset/master.m3u8") !== -1) {
             // PlayerJS multi-file format: the CDN endpoint .urlset/master.m3u8
-            // dynamically generates an HLS master playlist combining video+audio+subs.
-            // The individual MP4s in the string are demuxed tracks (video-only, no audio).
-            // Only the HLS master URL produces a properly playable stream.
-            addStream(str, title, "Auto");
-            console.log("[CinemaCity] Added HLS Auto stream");
+            // dynamically generates an HLS master playlist combining
+            // video+audio+subs. Individual MP4s are demuxed tracks.
+            addStream(str, title, "Auto", cls);
           } else if (str.indexOf("[") !== -1) {
-            // Quality-labeled direct URLs: [360p]url1,[720p]url2
             var urls = str.split(",");
             urls.forEach(function(u) {
               var m = u.match(/\[(.*?)\](.*)/);
-              if (m) addStream(m[2], title, m[1]);
-              else addStream(u, title, extractQuality(u));
+              if (m) addStream(m[2], title, m[1], cls);
+              else addStream(u, title, extractQuality(u), cls);
             });
           } else {
-            // Single direct URL
-            addStream(str, title, extractQuality(str));
+            addStream(str, title, extractQuality(str), cls);
           }
-          console.log("[CinemaCity] Returning", streams.length, "streams");
         };
+
+        // v5: collect candidate entries (each carries a language class), then
+        // emit in langRank order. Sub-only rows only if nothing else exists.
+        var candidates = [];
 
         if (mediaType === "movie") {
           if (Array.isArray(fileData)) {
-            var obj = null;
-            for (var i = 0; i < fileData.length; i++) {
-              if (!fileData[i].folder && fileData[i].file) {
-                obj = fileData[i];
-                break;
+            fileData.forEach(function(item) {
+              if (item && !item.folder && item.file) {
+                candidates.push({ file: item.file, cls: classifyEntry(item) });
               }
-            }
-            if (!obj && fileData.length > 0) obj = fileData[0];
-            if (obj && obj.file) {
-              console.log("[CinemaCity] File data is array with", fileData.length, "items");
-              processStr(obj.file, animeTitle);
+            });
+            if (!candidates.length && fileData.length > 0 && fileData[0] && fileData[0].file) {
+              candidates.push({ file: fileData[0].file, cls: "unknown" });
             }
           } else if (typeof fileData === "string") {
-            processStr(fileData, animeTitle);
+            candidates.push({ file: fileData, cls: "unknown" });
           }
         } else {
           if (Array.isArray(fileData)) {
-            console.log("[CinemaCity] TV file data has", fileData.length, "items");
             var sLabel = "Season " + season;
             var sObj = null;
             for (var i = 0; i < fileData.length; i++) {
@@ -341,23 +395,43 @@ function getStreams(tmdbId, mediaType, season, episode) {
             if (sObj && sObj.folder) {
               console.log("[CinemaCity] Found season with", sObj.folder.length, "episodes");
               var eLabel = "Episode " + episode;
-              var eObj = null;
+              var eLabel2 = "Eps " + episode;
+              var epEntries = [];
               for (var j = 0; j < sObj.folder.length; j++) {
                 var etitle = sObj.folder[j].title || "";
-                if (etitle.indexOf(eLabel) !== -1 || etitle.indexOf("E" + episode) !== -1) {
-                  eObj = sObj.folder[j];
-                  break;
+                if (etitle.indexOf(eLabel) !== -1 || etitle.indexOf(eLabel2) !== -1 ||
+                    etitle.indexOf("E" + episode) !== -1) {
+                  epEntries.push(sObj.folder[j]);
                 }
               }
-              if (eObj && eObj.file) {
-                console.log("[CinemaCity] Found episode file");
-                processStr(eObj.file, animeTitle + " S" + season + "E" + episode);
-              }
+              if (!epEntries.length) epEntries = [sObj.folder[episode - 1]];
+              epEntries.forEach(function(eObj) {
+                if (eObj && eObj.file) {
+                  candidates.push({ file: eObj.file, cls: classifyEntry(eObj) });
+                }
+              });
             }
           }
         }
 
-        resolve(streams);
+        if (!candidates.length) {
+          console.log("[CinemaCity] No candidate entries");
+          resolve([]);
+          return;
+        }
+
+        candidates.forEach(function(c) {
+          processStr(c.file, animeTitle + (mediaType === "tv" ? " S" + season + "E" + episode : ""), c.cls);
+        });
+
+        // Rank: english -> tagalog -> unknown -> other langs; "sub" only if empty.
+        streams.sort(function(a, b) { return (a._rank || 8) - (b._rank || 8); });
+        var keep = streams.filter(function(s) { return s._rank < 9; });
+        if (!keep.length) keep = streams.filter(function(s) { return s._rank === 9; });
+        keep.forEach(function(s) { delete s._rank; });
+
+        console.log("[CinemaCity] Returning", keep.length, "streams (lang-ranked)");
+        resolve(keep);
       })
       .catch(function(error) {
         console.error("[CinemaCity] Error:", error);

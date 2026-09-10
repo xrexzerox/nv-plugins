@@ -406,6 +406,7 @@ function parseStremioStreams(sourceName, text, ctx) {
     var filipino = isFilipinoRelease(release);
     if (!ctx.isTagalogOriginal && !filipino && ctx.keepAllLanguages !== true) return;
     var seeders = parseSeeders(label);
+    if (!seeders) return; // never offer torrents without seeders (user rule)
     var size = parseSizeText(label);
     var tracker = parseTracker(label);
     var quality = parseQuality(release);

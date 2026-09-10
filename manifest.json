@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "3.16.0",
-  "description": "Canonical Nuvio provider collection. v3.10.0: device-transport fix-all — cinejoy 1.4.0 documents the binary chain (api.shegu.st/g accepts ONLY raw octet-stream bodies — every text variant 404s — and replies binary; NuvioTVSmart now ships a base64 binary transport in its plugin worker + network service so the chain works on webOS/Tizen; mobile unchanged, fail-soft) — pinoyhub 5.5.0 + asianhub 2.3.0 webOS adaptation: headerless-playability probe (ranged GET, zero custom headers) emits Mixdrop/Dood direct links WITHOUT Referer when the CDN serves bytes headerless (webOS players can never send headers), fail-closed to the historical Referer row otherwise; asianhub adds the Mixdrop family extractor for kissasian's /v/3/ mxdrop server (packed eval -> MDCore.wurl -> direct mp4) — animotvslash 5.1.0 fixes slug-404s with a site search fallback + macron transliteration (TMDB 'Shippūden' vs site 'shippuuden') — cinemacity 4.2.0 adds a Googlebot third retry identity for the CF managed challenge.",
+  "version": "4.0.0",
+  "description": "Canonical Nuvio provider collection. v4.0.0 BFS wave (bestfreestreaming.org review, review-not-merge honored): NEW site-anchored scrapers zoechip/himovies/moviesjoy/hdtoday (FMovies-family platform, shared id space, per-episode server chain -> vixsrc.to + vidsrcme.ru + primesrc.me backends), movish (TMDB-keyed player-sources API, direct dlproxy mp4s) and vixsrc (direct token-HLS lanes for any TMDB id); netmirror 5.0.0 (English + Tagalog/Filipino caption priority, Tagalog-dub audio lanes from fallback HLS, subtitle filter setting); cinemacity 5.0.0 (English first + Tagalog/Filipino dub detection, Italian demoted); torrents 1.3.0 + tagalogtorrents 1.3.0 (torrents without seeders are never surfaced).",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -498,8 +498,8 @@
     {
       "id": "torrents",
       "name": "Torrents",
-      "description": "Torrentio + TorrentsDB magnets for Nuvio native debrid. All swarms kept, incl. giant REMUX (Streamline port of CineStream).",
-      "version": "1.2.0",
+      "description": "Torrentio + TorrentsDB lanes; v1.3.0 drops torrents with no (or unreadable) seeder counts entirely - only >=20-seeder offers are surfaced",
+      "version": "1.3.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -562,8 +562,8 @@
     {
       "id": "cinemacity",
       "name": "CinemaCity",
-      "description": "CinemaCity (DLE) streams - CF challenge retries now escalate desktop->mobile->Googlebot; fail-soft preserved",
-      "version": "4.2.0",
+      "description": "CinemaCity v5: language-aware PlayerJS extraction - English entries first, Tagalog/Filipino dub entries emitted as CinemaCity | Tagalog Dub rows when the site carries them, Italian/Hindi/Arabic last-resort, sub-only variants dropped; 3-identity UA ladder kept as CF fallback",
+      "version": "5.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -796,8 +796,8 @@
     {
       "id": "netmirror",
       "name": "NetMirror",
-      "description": "NetMirror provider",
-      "version": "4.0.0",
+      "description": "NetMirror v5: captions sorted English + Tagalog/Filipino first with optional subtitle filter (all | en+fil | en); Tagalog-dub audio-group lanes parsed from the fallbackHls master playlist (variant rows emitted as NetMirror | Tagalog Dub); 3-base mirror fallback + custom base setting",
+      "version": "5.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -860,8 +860,8 @@
     {
       "id": "tagalogtorrents",
       "name": "TagalogTorrents",
-      "description": "Tagalog/Filipino titles via torrent lanes (Torrentio, TorrentsDB, TPB) for P2P and debrid users; fail-soft parallel lanes",
-      "version": "1.2.0",
+      "description": "Tagalog torrent lanes; v1.3.0 drops torrents without seeders entirely (no more seeder-unknown rows)",
+      "version": "1.3.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -877,6 +877,132 @@
         "tl",
         "fil",
         "en"
+      ]
+    },
+    {
+      "id": "zoechip",
+      "name": "Zoechip",
+      "description": "Zoechip site-anchored (zoechip.bz, FMovies-family): search + per-episode server chain, backends VixCloud (vixsrc.to HLS), AKCloud (vidsrcme.ru signed player), PrimeSrc (imdb API); UpCloud lane covered by dedicated Vidfast provider",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/zoechip.js",
+      "enabled": true,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=zoechip.bz&sz=128",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "himovies",
+      "name": "HiMovies",
+      "description": "HiMovies site-anchored (himovies.ac) - shares the FMovies-family platform and id space with Zoechip/MoviesJoy/HDToday; same server chain (VixCloud/AKCloud/PrimeSrc verified live)",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/himovies.js",
+      "enabled": true,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=himovies.ac&sz=128",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "moviesjoy",
+      "name": "MoviesJoy",
+      "description": "MoviesJoy site-anchored (moviesjoy.bz) - same FMovies-family platform as Zoechip/HiMovies/HDToday; per-episode server chain with VixCloud/AKCloud/PrimeSrc extraction",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/moviesjoy.js",
+      "enabled": true,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=moviesjoy.bz&sz=128",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "hdtoday",
+      "name": "HDToday",
+      "description": "HDToday site-anchored (hdtoday24.at, domain rotates - BASE_CANDIDATES carries mirrors + baseUrl setting) - FMovies-family server chain, VixCloud/AKCloud/PrimeSrc extraction",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/hdtoday.js",
+      "enabled": true,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=hdtoday24.at&sz=128",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "movish",
+      "name": "Movish",
+      "description": "Movish (movish.to) - Vidstack app with TMDB-id-keyed player-sources API: /player-sources/{server}/{type}/{tmdbId} returns direct dlproxy mp4/HLS rows, quality-labeled; no site search needed",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/movish.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=movish.to&sz=128",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "vixsrc",
+      "name": "VixSrc",
+      "description": "VixSrc (vixsrc.to) direct lanes for any TMDB id: window.masterPlaylist token HLS; the same backend Zoechip/HiMovies/MoviesJoy/HDToday expose as their VixCloud server",
+      "version": "1.0.0",
+      "author": "Streamline",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/vixsrc.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=vixsrc.to&sz=128",
+      "contentLanguage": [
+        "en",
+        "it"
       ]
     }
   ]

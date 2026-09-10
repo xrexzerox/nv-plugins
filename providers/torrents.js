@@ -543,7 +543,7 @@ function stremioTorrents(sourceName, api, ctx) {
       const label = s.title || s.description || s.name || "";
       const seedM = String(label).match(/[👤👥]\s*(\d+)/);
       const seeders = seedM ? parseInt(seedM[1], 10) : 0;
-      if (seeders && seeders < 20)
+      if (!seeders || seeders < 20)
         return;
       const meta = parseMeta(label + " " + (s.name || ""));
       const rt = richTitle(sourceName, line1 || "\u{1F3AC} " + label.split("\n")[0].slice(0, 80), meta, "MKV");
