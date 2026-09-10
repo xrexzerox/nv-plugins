@@ -4,7 +4,31 @@
  * Supports: Movies & TV Shows
  * Language: Filipino / Tagalog / English
  * Author: xrexzerox
- * Version: 5.5.0
+ * Version: 5.6.0
+ *
+ * v5.6.0 changelog (series-args hardening — the app-side ground truth):
+ *  - ROOT CAUSE (NuvioMobile cmp-rewrite PluginRuntime.kt): the app calls
+ *    getStreams(<tmdbId:String>, <"movie"|"tv">, <season:Int?>, <episode:Int?>)
+ *    and EVERY season/episode field is nullable with default null. Confirmed
+ *    0-stream shapes for series: (a) IMDb tt-id reaching the plugin when the
+ *    app cannot resolve it (TmdbService.ensureTmdbId returns null without an
+ *    app TMDB key), (b) season/episode undefined (show-level play, local-id
+ *    catalog path), (c) zero-padded strings "01"/"S01" breaking the 1x1 URL
+ *    guess and the numerando equality check, (d) type aliases like "tvshow"
+ *    corrupting the legacy-shift branch. Movies pass none of these — exactly
+ *    the reported "movies show streams, series don't" symptom.
+ *  - FIX (a): tt-ids are resolved via TMDB find API (external_source=imdb_id)
+ *    using the plugin's own key — no app settings involved. Both movie and
+ *    tv results accepted; resolved type pins the lookup branch.
+ *  - FIX (b): a TV request without season/episode now defaults to S1E1
+ *    (same convention as the app's own scraper test runner) instead of
+ *    returning an empty row. Logged loudly in console for traceability.
+ *  - FIX (c): season/episode are parseInt-normalized ("01"->"1", "S01"->"1")
+ *    so the /episodes/<slug>-1x1 guess and numerando matching always use
+ *    canonical unpadded numbers.
+ *  - FIX (d): "tvshow"/"tv_show" join series/show as TV aliases, and the
+ *    legacy 3-arg shift only fires when the mediaType slot is truly numeric
+ *    (a string alias no longer gets swallowed into the season slot).
  *
  * v5.5.0 changelog (NuvioTVSmart webOS adaptation - Mixdrop/Dood TV-safe):
  *  - NEW: headerless-playability probe. Mixdrop direct mp4s and Dood
@@ -110,6 +134,29 @@
 var PROVIDER_NAME = "PinoyMoviesHub";
 var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 var BASE_URL = "https://pinoymovieshub.win";
+
+/**
+ * v5.6.0: resolve an IMDb tt-id to a TMDB id via the find API. The app can
+ * hand us tt-ids when it has no TMDB key configured (PluginRepository
+ * resolvePluginTmdbId falls back to the raw id); every tmdb-based lookup
+ * would 404 on "tv/tt...". The plugin owns its key, so it self-serves.
+ */
+function resolveImdbToTmdb(imdbId) {
+  var url = "https://api.themoviedb.org/3/find/" + encodeURIComponent(imdbId) +
+    "?api_key=" + TMDB_API_KEY + "&external_source=imdb_id";
+  return fetchJson(url, { timeoutMs: 15000 }).then(function(data) {
+    if (!data || typeof data !== "object") return null;
+    var tv = (data.tv_results || [])[0];
+    var mv = (data.movie_results || [])[0];
+    if (tv && tv.id) {
+      return { tmdbId: String(tv.id), type: "tv", title: tv.name || tv.original_name || "" };
+    }
+    if (mv && mv.id) {
+      return { tmdbId: String(mv.id), type: "movie", title: mv.title || mv.original_title || "" };
+    }
+    return null;
+  });
+}
 
 var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
@@ -1318,13 +1365,20 @@ function getStreams(tmdbId, mediaType, season, episode) {
   //   getStreams(tmdbId, season, episode)               -> mediaType undefined
   //   getStreams(tmdbId, mediaType, season, episode)    -> Nuvio contract (4 args)
   // NuvioTVSmart's local-id plugin path passes the catalog type verbatim
-  // ("series"), so normalize before the legacy-shift check.
+  // ("series"), and the app normalizes series/show/other->tv itself
+  // (PluginModels.normalizePluginType) — but older builds may leak other
+  // aliases, so normalize every known TV name before the legacy-shift check.
   var mt = String(mediaType === undefined || mediaType === null ? "" : mediaType).toLowerCase();
-  if (mt === "series" || mt === "show") mt = "tv";
+  if (mt === "series" || mt === "show" || mt === "tvshow" || mt === "tv_show") mt = "tv";
   if (mt !== "movie" && mt !== "tv") {
-    // shift: mediaType slot actually held season (or nothing)
-    episode = season;
-    season = mediaType;
+    // Legacy 3-arg shift ONLY when the mediaType slot held a number
+    // (v5.6.0: a string alias like "tvshow" must not be swallowed into the
+    // season slot — that produced season="" and a silent empty row).
+    var slotRaw = String(mediaType === undefined || mediaType === null ? "" : mediaType);
+    if (/^[0-9]+$/.test(slotRaw)) {
+      episode = season;
+      season = mediaType;
+    }
     mt = "";
   }
 
@@ -1335,11 +1389,44 @@ function getStreams(tmdbId, mediaType, season, episode) {
   tmdbId = tmdbId.replace(/^tmdb:/i, "").trim();
   season = (season === undefined || season === null || season === "") ? "" : String(season).replace(/^s/i, "").replace(/[^0-9]/g, "");
   episode = (episode === undefined || episode === null || episode === "") ? "" : String(episode).replace(/^e/i, "").replace(/[^0-9]/g, "");
+  // v5.6.0: canonical unpadded numbers ("01"->"1"). Zero-padded values
+  // broke BOTH the /episodes/<slug>-01x01 direct guess (404) and the
+  // numerando equality (parseInt(m[1],10) === "01" is false) -> 0 streams.
+  if (season !== "") season = String(parseInt(season, 10));
+  if (episode !== "") episode = String(parseInt(episode, 10));
 
   console.log("[PinoyMoviesHub] === START tmdbId=" + tmdbId + " type=" + mt + " S" + season + "E" + episode + " ===");
 
   if (!tmdbId) return Promise.resolve([]);
 
+  // v5.6.0: IMDb tt-id tolerance. The app hands raw tt-ids when it cannot
+  // resolve them (no TMDB key -> ensureTmdbId returns null). Resolve with
+  // the plugin's own TMDB key and continue with the numeric id; the found
+  // type pins the movie/tv branch deterministically.
+  if (/^tt[0-9]+/i.test(tmdbId)) {
+    console.log("[PinoyMoviesHub] IMDb id " + tmdbId + " -> resolving via TMDB find");
+    return resolveImdbToTmdb(tmdbId).then(function(hit) {
+      if (!hit) {
+        console.log("[PinoyMoviesHub] IMDb id not found on TMDB -> no streams");
+        return [];
+      }
+      console.log("[PinoyMoviesHub] resolved " + tmdbId + " -> tmdb " + hit.tmdbId + " (" + hit.type + ") " + hit.title);
+      return getStreamsCore(hit.tmdbId, hit.type, season, episode);
+    }).catch(function(err) {
+      console.error("[PinoyMoviesHub] imdb resolve error:", (err && err.message) || err);
+      return [];
+    });
+  }
+
+  return getStreamsCore(tmdbId, mt, season, episode);
+}
+
+/**
+ * v5.6.0: the id/type-normalized core. `mt` is "movie", "tv", "" (auto)
+ * or ""-with-numeric season (legacy 3-arg). All shapes pre-verified by
+ * getStreams before entering here.
+ */
+function getStreamsCore(tmdbId, mt, season, episode) {
   // asian-catalog fallback rows (asian:<slug>): skip TMDB entirely.
   //   v5.4.0: pmh- rows resolve DIRECTLY against pinoymovieshub's own URL
   //   structure (the tail slug IS the site's page slug); search flow only
@@ -1359,8 +1446,16 @@ function getStreams(tmdbId, mediaType, season, episode) {
       : catalogId.title;
     console.log("[PinoyMoviesHub] catalog fallback id -> title=\"" + catalogId.title + "\" type=" + catType + " source=" + (catalogId.source || "generic"));
     if (catIsSeries && (!season || !episode)) {
-      console.log("[PinoyMoviesHub] TV show requires season and episode");
-      return Promise.resolve([]);
+      // v5.6.0: the app CAN pass undefined season/episode for shows
+      // (show-level play, local-id catalog paths — all nullable Int? with
+      // default null in NuvioMobile). Default to S1E1 like the app's own
+      // scraper test runner does, instead of returning an empty row.
+      season = season || "1";
+      episode = episode || "1";
+      console.log("[PinoyMoviesHub] no season/episode from app -> defaulting S1E1");
+      catMeta.season = season;
+      catMeta.episode = episode;
+      catDisplay = catalogId.title + " S" + season + "E" + episode;
     }
     var directPageP = resolvePageUrlDirect(catalogId.slug, catType, season, episode);
     return directPageP.then(function(page) {
@@ -1395,8 +1490,11 @@ function getStreams(tmdbId, mediaType, season, episode) {
     console.log("[PinoyMoviesHub] type=" + type + " | title=" + tmdb.title + " | year=" + tmdb.year);
 
     if (type === "tv" && (!season || !episode)) {
-      console.log("[PinoyMoviesHub] TV show requires season and episode");
-      return [];
+      // v5.6.0: default missing S/E to S1E1 (nullable Int? app contract) —
+      // an empty row helped nobody; S1E1 is what the app itself probes.
+      season = season || "1";
+      episode = episode || "1";
+      console.log("[PinoyMoviesHub] no season/episode from app -> defaulting S1E1");
     }
 
     var epPromise = type === "tv"
