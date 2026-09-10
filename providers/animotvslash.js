@@ -1,4 +1,10 @@
 // providers/animotvslash.js
+// v5.4.0 (2026-09-11): user-requested quality whitelist - "filter
+// animotvslash.js 480/720/1080p/auto only". finishStreams now keeps ONLY
+// Auto (adaptive master) + 480p + 720p + 1080p rows; everything else
+// (240p/360p/1440p/4K/CAM labels the site may serve) is dropped before the
+// streams leave the provider. The Auto master is kept because the site's
+// own player picks from the same variant ladder and Nuvio's player adapts.
 // v5.3.0 (2026-09-10): asian-catalog v4.0.0 pairing — DIRECT lane for
 // source-scoped catalog rows:
 //   - asian:an-<slug> (TMDB-unmatched rows of the animo-latest catalog)
@@ -337,6 +343,19 @@ function parseHlsVariants(masterUrl) {
 function variantRank(name) {
   var m = String(name || '').match(/(\d{3,4})/);
   return m ? parseInt(m[1], 10) : 0;
+}
+
+// v5.4.0: user-requested quality whitelist - 480p / 720p / 1080p / Auto only.
+// Empty labels are kept (the Auto/adaptive rows never carry a number);
+// every other label must contain 480 / 720 / 1080 to survive - anything
+// else (240p, 360p, 1440p, 2160p, 4K, word labels) is dropped.
+function animoQualityAllowed(q) {
+  var s = String(q == null ? '' : q).trim().toLowerCase();
+  if (!s || s === 'auto') return true;
+  var m = s.match(/(\d{3,4})/);
+  if (!m) return false;
+  var n = parseInt(m[1], 10);
+  return n === 480 || n === 720 || n === 1080;
 }
 
 async function getEmbedUrl(postId, pageHtml, episodeNum) {
@@ -879,8 +898,14 @@ async function finishStreams(pageResult, tmdbData, mediaType, seasonNum, episode
         // removed — embed URLs are unplayable in Nuvio native players and only
         // cluttered the stream list (same cleanup as pinoyhub v5.1.0).
 
-        console.log(`[animotvslash] Returning ${streams.length} stream(s)`);
-        return streams;
+        // v5.4.0: quality whitelist - 480p/720p/1080p/Auto only (user request).
+        const kept = [];
+        for (let si = 0; si < streams.length; si++) {
+            if (animoQualityAllowed(streams[si].quality)) kept.push(streams[si]);
+        }
+        console.log(`[animotvslash] Returning ${kept.length} stream(s) ` +
+            `after 480/720/1080p/auto filter (dropped ${streams.length - kept.length})`);
+        return kept;
 }
 
 /**

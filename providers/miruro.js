@@ -1,5 +1,19 @@
 /**
- * Miruro - Nuvio provider (v2.0.0)
+ * Miruro - Nuvio provider (v2.1.0)
+ *
+ * v2.1.0 (2026-09-11) "still dont fetches stream": the v2.0.0 code worked in
+ * every desktop/Node runtime but returned ZERO rows in Nuvio's mobile JS
+ * runtime (Hermes). Root cause: b64urlEncode() used the legacy global
+ * unescape(), which Hermes does not implement. pipeRequest() called it
+ * SYNCHRONOUSLY, so a ReferenceError was thrown before any promise existed,
+ * unwound through pipeLanes() into the getStreams() chain and the outer
+ * .catch() returned [] - killing the WORKING MegaPlay lanes too. Reproduced
+ * in an unescape-less sandbox: 0 rows; fixed: rows return. Changes:
+ *   - b64urlEncode() now does manual UTF-8 encoding (no unescape/escape,
+ *     no Buffer) - Hermes/QuickJS/browser/Node all safe.
+ *   - pipeRequest() can no longer throw synchronously (try/catch -> reject).
+ *   - MegaPlay sub+dub file lookups run in parallel (paced queue still
+ *     spaces the HTTP calls) to halve wall-clock on device connections.
  *
  * Anime (and anime movies) from miruro.tv - the mirror ring also answers on
  * miruro.to / miruro.ru / miruro.bz. User request 2026-09-11: "create scraper
@@ -147,17 +161,29 @@ function fetchJson(url, headers, timeoutMs) {
 }
 
 function b64urlEncode(str) {
-  // base64url without Node Buffer (QuickJS-safe): encodeURIComponent trick
-  var bytes = [];
-  var utf8 = unescape(encodeURIComponent(str));
-  for (var i = 0; i < utf8.length; i++) bytes.push(utf8.charCodeAt(i));
+  // base64url with NO runtime extras: manual UTF-8 encoding. The old
+  // encodeURIComponent+unescape trick died on Hermes (no unescape global)
+  // and the synchronous ReferenceError zeroed the whole provider (v2.1.0).
+  var s = String(str);
+  var bytes = [], i, c;
+  for (i = 0; i < s.length; i++) {
+    c = s.charCodeAt(i);
+    if (c < 0x80) bytes.push(c);
+    else if (c < 0x800) bytes.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
+      var c2 = s.charCodeAt(++i);
+      var cp = 0x10000 + ((c & 0x3ff) << 10) + (c2 & 0x3ff);
+      bytes.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63),
+                 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));
+    } else bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+  }
   var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-  var out = [], n, i2;
-  for (i = 0; i < bytes.length; i += 3) {
-    n = (bytes[i] << 16) + ((bytes[i + 1] || 0) << 8) + (bytes[i + 2] || 0);
+  var out = [], n, j;
+  for (j = 0; j < bytes.length; j += 3) {
+    n = (bytes[j] << 16) + ((bytes[j + 1] || 0) << 8) + (bytes[j + 2] || 0);
     out.push(chars.charAt((n >> 18) & 63), chars.charAt((n >> 12) & 63));
-    out.push(i + 1 < bytes.length ? chars.charAt((n >> 6) & 63) : "");
-    out.push(i + 2 < bytes.length ? chars.charAt(n & 63) : "");
+    out.push(j + 1 < bytes.length ? chars.charAt((n >> 6) & 63) : "");
+    out.push(j + 2 < bytes.length ? chars.charAt(n & 63) : "");
   }
   // unpadded base64url (matches Node's base64url and the site's own encoder)
   return out.join("");
@@ -336,6 +362,18 @@ function pipeDecode(encodedStr, obfHeader) {
 }
 
 function pipeRequest(path, query) {
+  // v2.1.0: everything before the first .then() is inside try/catch so this
+  // function can NEVER throw synchronously (a sync throw here used to unwind
+  // into getStreams and take the healthy MegaPlay lanes down with it).
+  try {
+    return pipeRequestInner(path, query);
+  } catch (e) {
+    console.log("[Miruro] pipe setup failed: " + (e && e.message ? e.message : e));
+    return Promise.reject(e);
+  }
+}
+
+function pipeRequestInner(path, query) {
   var payload = { path: path, method: "GET", query: query, body: null };
   var enc = b64urlEncode(JSON.stringify(payload));
   var idx = 0;
@@ -526,11 +564,12 @@ function megaplayLanes(animeIds, epNumber, makeRow) {
   if (!animeIds || (!animeIds.malId && !animeIds.anilistId)) return Promise.resolve([]);
   var langs = ["sub", "dub"];
   var rows = [];
-  var chain = Promise.resolve();
-  langs.forEach(function (lang) {
-    chain = chain.then(function () {
-      return mpFileId(animeIds.malId, animeIds.anilistId, epNumber, lang)
-        .then(function (fileId) {
+  // v2.1.0: both languages resolve in parallel - the shared paced queue
+  // (mpGap) still spaces the actual HTTP calls, but the wall clock halves,
+  // which matters on device connections where every hop is slower.
+  return Promise.all(langs.map(function (lang) {
+    return mpFileId(animeIds.malId, animeIds.anilistId, epNumber, lang)
+      .then(function (fileId) {
           if (!fileId) return;
           return mpSources(fileId).then(function (src) {
             if (!src) return;
@@ -562,9 +601,7 @@ function megaplayLanes(animeIds, epNumber, makeRow) {
             });
           });
         }).catch(function () {});
-    });
-  });
-  return chain.then(function () { return rows; });
+  })).then(function () { return rows; });
 }
 
 /** Fetch a master m3u8 and return [{url, quality}] variants (max 4, best first). */
