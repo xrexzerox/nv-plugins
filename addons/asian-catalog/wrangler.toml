@@ -1,0 +1,14 @@
+name = "asian-catalog"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# Optional configuration — uncomment / edit as needed.
+# [vars]
+# PINOY_SITE = "https://pinoymovieshub.win"
+# KISSASIAN_SITE = "https://kissasian.cam"
+# VIEWASIAN_SITE = "https://viewasian.lol"
+# ASIAN_PAGE_LIMIT = "20"
+# ASIAN_KEEP_UNMATCHED = "1"
+#
+# Secrets (better via `npx wrangler secret put TMDB_API_KEY`):
+# TMDB_API_KEY = ""

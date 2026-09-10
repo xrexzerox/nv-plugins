@@ -1,0 +1,309 @@
+{
+  "id": "community.asian.catalog",
+  "version": "3.2.0",
+  "name": "Asian Catalog",
+  "description": "Organized Asian catalogs: Pinoy movies & series (pinoymovieshub), Asian dramas (kissasian.cam /series/ + viewasian.lol) and Asian movies/series directories by language (TMDB). Fallback rows carry source-scoped ids (asian:ks-/va-/pmh-<slug>) the paired plugins resolve straight to the sites' real episode/movie pages.",
+  "logo": "https://pinoymovieshub.win/wp-content/uploads/2025/04/cropped-favicon-11-192x192.png",
+  "resources": [
+    "catalog"
+  ],
+  "types": [
+    "movie",
+    "series"
+  ],
+  "idPrefixes": [
+    "tmdb:",
+    "asian:"
+  ],
+  "catalogs": [
+    {
+      "type": "movie",
+      "id": "pinoy-movies",
+      "name": "Pinoy Movies",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "pinoy-series",
+      "name": "Pinoy Series",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pinoy-movies-genre",
+      "name": "Pinoy Movies by Genre",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "genre",
+          "options": [
+            "Action",
+            "Adventure",
+            "Animation",
+            "Anthology Series",
+            "BL Series",
+            "Comedy",
+            "Concert",
+            "Crime",
+            "Documentary",
+            "Drama",
+            "Family",
+            "Fantasy",
+            "History",
+            "Horror",
+            "Indie",
+            "LGBTQ",
+            "Music",
+            "Musical",
+            "Mystery",
+            "Romance",
+            "Science Fiction",
+            "Short Films",
+            "Sports",
+            "Stageplay",
+            "Tagalog Dubbed",
+            "Teleserye",
+            "Thriller",
+            "War",
+            "Wattpad",
+            "Web Series"
+          ]
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "pinoy-series-genre",
+      "name": "Pinoy Series by Genre",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "genre",
+          "options": [
+            "Action",
+            "Adventure",
+            "Animation",
+            "Anthology Series",
+            "BL Series",
+            "Comedy",
+            "Concert",
+            "Crime",
+            "Documentary",
+            "Drama",
+            "Family",
+            "Fantasy",
+            "History",
+            "Horror",
+            "Indie",
+            "LGBTQ",
+            "Music",
+            "Musical",
+            "Mystery",
+            "Romance",
+            "Science Fiction",
+            "Short Films",
+            "Sports",
+            "Stageplay",
+            "Tagalog Dubbed",
+            "Teleserye",
+            "Thriller",
+            "War",
+            "Wattpad",
+            "Web Series"
+          ]
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "asian-series",
+      "name": "Asian Series (KissAsian)",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "asian-series-genre",
+      "name": "Asian Series by Genre (KissAsian)",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "genre",
+          "options": [
+            "Action",
+            "Comedy",
+            "Crime",
+            "Documentary",
+            "Drama",
+            "Fantasy",
+            "Historical",
+            "Horror",
+            "Life",
+            "Mature",
+            "Music",
+            "Mystery",
+            "Romance",
+            "Sci-Fi",
+            "Supernatural",
+            "Thriller",
+            "War",
+            "Wuxia",
+            "Youth"
+          ]
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "asian-series-viewasian",
+      "name": "Asian Series (ViewAsian)",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "asian-series-viewasian-genre",
+      "name": "Asian Series by Genre (ViewAsian)",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "genre",
+          "options": [
+            "Action",
+            "Adventure",
+            "Business",
+            "Comedy",
+            "Crime",
+            "Documentary",
+            "Drama",
+            "Friendship",
+            "Historical",
+            "Horror",
+            "Life",
+            "Medical",
+            "Melodrama",
+            "Music",
+            "Mystery",
+            "Political",
+            "Romance",
+            "School",
+            "Sci-Fi",
+            "Supernatural",
+            "Thriller",
+            "War",
+            "Youth",
+            "Korean",
+            "Chinese",
+            "Japanese"
+          ]
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "asian-movies",
+      "name": "Asian Movies",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "asian-series-trending",
+      "name": "Asian Series Trending",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "asian-movies-genre",
+      "name": "Asian Movies by Genre",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "genre",
+          "options": [
+            "Action",
+            "Adventure",
+            "Animation",
+            "Comedy",
+            "Crime",
+            "Documentary",
+            "Drama",
+            "Family",
+            "Fantasy",
+            "History",
+            "Horror",
+            "Music",
+            "Mystery",
+            "Romance",
+            "Sci-Fi",
+            "Thriller",
+            "War"
+          ]
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    }
+  ],
+  "behaviorHints": {
+    "configurable": false
+  }
+}
