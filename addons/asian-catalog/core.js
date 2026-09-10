@@ -1,5 +1,19 @@
 /**
- * Asian Catalog — Stremio-protocol catalog addon engine (v4.0.0)
+ * Asian Catalog — Stremio-protocol catalog addon engine (v4.1.0)
+ *
+ * v4.1.0 (2026-09-10, deployed-worker status "degraded: kisskh 403"):
+ * the deployed CF worker confirmed kisskh.co/.ovh/.nl ALL Cloudflare-403
+ * from the worker's datacenter egress (free CORS proxies were probed too —
+ * allorigins/codetabs/r.jina.ai/cors.lol/whateverorigin either receive the
+ * same challenge page or error out; clone domains kisskh.org/.asia/.cc are
+ * unrelated WordPress sites, not the real API). Instead of serving 7 EMPTY
+ * KissKH catalogs, each section now falls back to a TMDB-curated rescue
+ * list that mirrors the section's intent, with full metadata and real
+ * `tmdb:` ids the paired plugins already resolve on-device (kisskh.js strips
+ * the prefix, TMDB->title, searches kisskh over the device's residential
+ * egress — the lane that works). When any mirror IS reachable the rescue is
+ * never consulted. /health reports sources.kisskh.mode = 'api' |
+ * 'tmdb-rescue' so the operator can tell the two apart.
  *
  * v4.0.0 (2026-09-10, user request): the catalog directory now mirrors the
  * REAL sections of each source website (the user enumerated them 1:1 from
@@ -47,11 +61,13 @@
  *      site, so they would only duplicate rows and were not added.)
  *
  * 4. kisskh — JSON API (kisskh.nl -> kisskh.ovh -> kisskh.co rotation).
- *    Datacenter egresses are Cloudflare-challenged (verified 403/timeout
- *    from this sandbox), but Cloudflare-worker-to-CF-hosted-site requests
- *    often pass and device/residential egresses always did (the paired
- *    plugin streams from kisskh daily). Every catalog is fail-soft: an
- *    unreachable API yields an empty row set + a /health hint, never a 500.
+ *    Datacenter egresses are Cloudflare-challenged (verified 403 from the
+ *    DEPLOYED worker on 2026-09-10 — no transport lane exists from that
+ *    runtime). v4.1.0: when every mirror fails, the 7 KissKH catalogs are
+ *    auto-served from TMDB rescue lists (see KISSKH_TMDB_RESCUE below) with
+ *    full metadata; streams still resolve on devices. Every catalog stays
+ *    fail-soft: an unreachable API + failing rescue yields an empty row set
+ *    + a /health hint, never a 500.
  *      Latest Update  -> /api/DramaList/List/{page}?type=KC&sub=0&sort=latest
  *      Top K-Drama    -> type=K&sort=rate (popular fallback)
  *      Top C-Drama    -> type=C&sort=rate (popular fallback)
@@ -101,7 +117,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '4.0.0';
+  var VERSION = '4.1.0';
   var ADDON_ID = 'community.asian.catalog';
   var ADDON_NAME = 'Asian Catalog';
 
@@ -1146,6 +1162,122 @@
 
   var kisskhActiveHost = null;
 
+  // v4.1.0 TMDB RESCUE ------------------------------------------------------
+  // When all mirrors are CF-challenged there is NO transport lane to the
+  // real API from datacenter runtimes (direct + free CORS proxies probed
+  // 2026-09-10: allorigins/codetabs/r.jina.ai/cors.lol/whateverorigin all
+  // receive the same challenge or error; kisskh.org/.asia/.cc are unrelated
+  // WordPress clones, not this API). The 7 KissKH catalogs then fall back
+  // to TMDB-curated lists that mirror each section's intent:
+  //
+  //   kisskh-latest      -> TMDB trending TV this week ("Latest Update")
+  //   kisskh-top-kdrama  -> discover TV origin=KR by popularity
+  //   kisskh-top-cdrama  -> discover TV origin=CN|TW|HK by popularity
+  //   kisskh-hollywood   -> discover TV origin=US by popularity
+  //   kisskh-hollywood-movies -> discover MOVIES origin=US by popularity
+  //   kisskh-anime       -> discover TV genre=16 (animation) origin=JP
+  //   kisskh-upcoming    -> discover TV origin=KR|CN|TW|HK with
+  //                         first_air_date >= today ("Upcomming")
+  //
+  // Rows are emitted in the SAME shape as normally TMDB-matched rows (id
+  // `tmdb:<id>`, overview, year, rating, backdrop) — kisskh.js v4.3.0 strips
+  // the `tmdb:` prefix and resolves them on-device by title-searching the
+  // real kisskh API over the device's residential egress. The direct lane
+  // (asian:kh-<dramaId>) is untouched and keeps working whenever the API is
+  // reachable (then the rescue is never consulted).
+
+  var kisskhRescueState = { engaged: false, ts: 0, catalog: '' };
+
+  function kisskhMarkRescue(catalogId) {
+    kisskhRescueState.engaged = true;
+    kisskhRescueState.ts = Date.now();
+    kisskhRescueState.catalog = String(catalogId || '');
+  }
+
+  var KISSKH_TMDB_RESCUE = {
+    'kisskh-latest':           { kind: 'tv', path: '/trending/tv/week', q: '' },
+    'kisskh-top-kdrama':       { kind: 'tv', path: '/discover/tv', q: 'with_origin_country=KR&sort_by=popularity.desc&include_null_first_air_dates=false' },
+    'kisskh-top-cdrama':       { kind: 'tv', path: '/discover/tv', q: 'with_origin_country=CN|TW|HK&sort_by=popularity.desc&include_null_first_air_dates=false' },
+    'kisskh-hollywood':        { kind: 'tv', path: '/discover/tv', q: 'with_origin_country=US&sort_by=popularity.desc&include_null_first_air_dates=false' },
+    'kisskh-hollywood-movies': { kind: 'movie', path: '/discover/movie', q: 'with_origin_country=US&sort_by=popularity.desc' },
+    'kisskh-anime':            { kind: 'tv', path: '/discover/tv', q: 'with_genres=16&with_origin_country=JP&sort_by=popularity.desc&include_null_first_air_dates=false' },
+    'kisskh-upcoming':         { kind: 'tv', path: '/discover/tv', q: 'with_origin_country=KR|CN|TW|HK&sort_by=popularity.desc&include_null_first_air_dates=false', upcoming: true }
+  };
+
+  function kisskhRescueUrl(cfg, spec, page) {
+    var q = 'api_key=' + encodeURIComponent(cfg.tmdbKey) + '&page=' + page;
+    if (spec.upcoming) {
+      var d = new Date(cfg.nowFn());
+      var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+      q += '&first_air_date.gte=' + d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate());
+    }
+    if (spec.q) {
+      // encode the VALUES (e.g. "CN|TW|HK" -> CN%7CTW%7CHK) but keep the
+      // k=v&k=v structure intact for strict proxies/CDNs
+      q += '&' + spec.q.split('&').map(function (kv) {
+        var eq = kv.indexOf('=');
+        return eq === -1 ? kv : kv.substring(0, eq) + '=' + encodeURIComponent(kv.substring(eq + 1));
+      }).join('&');
+    }
+    return 'https://api.themoviedb.org/3' + spec.path + '?' + q;
+  }
+
+  // TMDB record -> meta, identical to toMeta()'s TMDB-matched branch (no
+  // re-resolution needed — the row IS a TMDB record).
+  function tmdbRowToMetaDirect(cfg, r, forcedKind) {
+    if (!r || r.id === undefined || r.id === null) return null;
+    var type;
+    if (forcedKind === 'movie') type = 'movie';
+    else if (forcedKind === 'tv') type = 'series';
+    else if (r.media_type === 'movie') type = 'movie';
+    else if (r.media_type === 'tv') type = 'series';
+    else return null;
+    var name = r.name || r.title || r.original_name || r.original_title || '';
+    if (!String(name).trim()) return null;
+    var meta = {
+      id: 'tmdb:' + r.id,
+      type: type,
+      name: cleanDisplayName(name),
+      poster: tmdbImg('w342', r.poster_path || ''),
+      posterShape: 'poster'
+    };
+    var bg = tmdbImg('w780', r.backdrop_path || '');
+    if (bg) meta.background = bg;
+    if (r.overview) meta.description = r.overview;
+    var yr = String(r.release_date || r.first_air_date || '').split('-')[0];
+    if (yr) meta.releaseInfo = yr;
+    if (typeof r.vote_average === 'number' && r.vote_average > 0) {
+      meta.imdbRating = Math.round(r.vote_average * 10) / 10;
+    }
+    return meta;
+  }
+
+  // Rescue page for a KissKH catalog (or TMDB multi-search when the catalog
+  // was asked to search). Applies the catalog's type filter, dedupes ids.
+  function kisskhTmdbRescuePage(cfg, def, page, search) {
+    var spec = search
+      ? { kind: '', path: '/search/multi', q: '' }
+      : (KISSKH_TMDB_RESCUE[def.id] || null);
+    if (!spec) return Promise.resolve([]);
+    var url = kisskhRescueUrl(cfg, spec, search ? 1 : page);
+    if (search) url += '&query=' + encodeURIComponent(search) + '&include_adult=false';
+    return fetchJson(cfg, url, 12000).then(function (data) {
+      var rows = data && Array.isArray(data.results) ? data.results : [];
+      var out = [];
+      var seen = {};
+      for (var i = 0; i < rows.length; i++) {
+        var meta = tmdbRowToMetaDirect(cfg, rows[i], spec.kind || '');
+        if (!meta || seen[meta.id]) continue;
+        if (def.type === 'movie' && meta.type !== 'movie') continue;
+        if (def.type === 'series' && meta.type !== 'series') continue;
+        seen[meta.id] = true;
+        out.push(meta);
+      }
+      if (out.length) kisskhMarkRescue(def.id);
+      return out;
+    });
+  }
+
   function kisskhFetchJson(cfg, path) {
     var preferred = kisskhActiveHost ? [kisskhActiveHost] : [];
     var hosts = preferred.concat(cfg.kisskhHosts.filter(function (h) {
@@ -1244,13 +1376,23 @@
 
   function kisskhPageMetas(cfg, def, page, extras) {
     var search = String(extras.search || '').trim();
+    var listPromise;
     if (search) {
-      return kisskhSearchRaw(cfg, search).then(function (rows) {
+      listPromise = kisskhSearchRaw(cfg, search).then(function (rows) {
+        return kisskhItemsToMetas(cfg, rows, def.type);
+      });
+    } else {
+      listPromise = kisskhListRaw(cfg, def, page).then(function (rows) {
         return kisskhItemsToMetas(cfg, rows, def.type);
       });
     }
-    return kisskhListRaw(cfg, def, page).then(function (rows) {
-      return kisskhItemsToMetas(cfg, rows, def.type);
+    // v4.1.0: every mirror failed (CF-challenged datacenter egress) — serve
+    // the section from the TMDB rescue list instead of an empty page. If the
+    // rescue itself fails, degrade to empty (fail-soft contract).
+    return listPromise.catch(function () {
+      return kisskhTmdbRescuePage(cfg, def, page, search).catch(function () {
+        return [];
+      });
     });
   }
 
@@ -1501,7 +1643,7 @@
       id: ADDON_ID,
       version: VERSION,
       name: ADDON_NAME,
-      description: 'Asian catalogs mirroring each site\'s real sections: pinoymovieshub.win (New Releases / Recently Added Movies / Series / Featured / Coming Soon / 17 genre sections), kissasian.cam (Hot Series Update / Latest Release / Recommendation genres), viewasian.lol (Recently Drama, Movie and Kshow), kisskh API (Latest Update / Top K+C-Drama / Hollywood / Anime / Upcoming) and animotvslash.org (Latest Release). Rows carry full TMDB metadata; fallback rows carry source-scoped ids (asian:pmh-/ks-/va-/kh-/an-) the paired plugins resolve straight to the sites\' real pages.',
+      description: 'Asian catalogs mirroring each site\'s real sections: pinoymovieshub.win (New Releases / Recently Added Movies / Series / Featured / Coming Soon / 17 genre sections), kissasian.cam (Hot Series Update / Latest Release / Recommendation genres), viewasian.lol (Recently Drama, Movie and Kshow), kisskh API (Latest Update / Top K+C-Drama / Hollywood / Anime / Upcoming; auto-rescued from TMDB lists when the API is CF-blocked) and animotvslash.org (Latest Release). Rows carry full TMDB metadata; fallback rows carry source-scoped ids (asian:pmh-/ks-/va-/kh-/an-) the paired plugins resolve straight to the sites\' real pages.',
       logo: cfg.pinoySite + PINOY_ICON,
       resources: ['catalog'],
       types: ['movie', 'series'],
@@ -1555,10 +1697,13 @@
       })],
       ['kisskh', timeProbe(function () {
         var def = { id: 'kisskh-latest', type: 'series', mode: 'list' };
+        kisskhRescueState.engaged = false;
+        kisskhRescueState.catalog = '';
         return kisskhPageMetas(cfg, def, 1, {}).then(function (metas) {
           return {
             ok: metas.length > 0, items: metas.length,
-            error: metas.length ? undefined : 'API unreachable or returned 0 rows (datacenter egress is commonly CF-challenged by kisskh; device playback is unaffected)'
+            mode: kisskhRescueState.engaged ? 'tmdb-rescue' : 'api',
+            error: metas.length ? undefined : 'kisskh API unreachable AND the TMDB rescue returned 0 rows (check TMDB_API_KEY; device playback is unaffected)'
           };
         });
       })],
@@ -1597,7 +1742,11 @@
         if (!sources.kissasian.ok) hints.push('kissasian.cam unreachable from this runtime (site up but likely blocking this worker\'s egress — verified live from residential/other datacenter IPs). KissAsian catalogs fall back to serve-stale cache; device-side playback is unaffected (the plugin runs on the client).');
         if (!sources.viewasian.ok) hints.push('viewasian.lol unreachable from this runtime (site down or IP blocked). ViewAsian catalog may be empty; set VIEWASIAN_SITE to an alternate mirror.');
         if (!sources.animotvslash.ok) hints.push('animotvslash.org unreachable from this runtime (site down or IP blocked). AnimeTVSlash catalog may be empty; set ANIMO_SITE to an alternate mirror.');
-        if (!sources.kisskh.ok) hints.push('kisskh API unreachable from this runtime (nl/ovh/co all rotate-failed — kisskh Cloudflare-challenges most datacenter egresses). KissKH catalogs stay EMPTY here but streams still work on devices via the paired plugin; if a compatible mirror appears set KISSKH_HOSTS (comma-separated).');
+        if (!sources.kisskh.ok) {
+          hints.push('kisskh API unreachable AND the TMDB rescue returned 0 rows — KissKH catalogs are EMPTY. Check TMDB_API_KEY (rescue lists) and KISSKH_HOSTS (comma-separated API mirrors); device playback is unaffected either way.');
+        } else if (sources.kisskh.mode === 'tmdb-rescue') {
+          hints.push('kisskh API is Cloudflare-challenged from this runtime (nl/ovh/co all 403 — verified from the deployed worker; free CORS proxies get the same page). KissKH catalogs are AUTO-SERVED from TMDB rescue lists with full metadata; the paired plugins resolve streams on-device. Set KISSKH_HOSTS to a working mirror to switch back to live kisskh lists.');
+        }
         if (!sources.tmdb.ok) hints.push('TMDB failed — check TMDB_API_KEY and outbound access; metadata enrichment is degraded.');
         if (okCount > 0 && okCount < sourceCount) hints.push('Partial outage: only ' + okCount + '/' + sourceCount + ' sources healthy — affected catalogs fall back to serve-stale cache.');
       }
@@ -1687,7 +1836,7 @@
       '<li><b>Pinoy Movies Hub</b> — <a href="' + cfg.pinoySite + '">' + cfg.pinoySite.replace(/^https:\/\//, '') + '</a> (New Releases, Recently Added Movies, Series, Featured, Coming Soon, 17 genre sections)</li>' +
       '<li><b>KissAsian</b> — <a href="' + cfg.kissasianSite + '">' + cfg.kissasianSite.replace(/^https:\/\//, '') + '</a> (Hot Series Update, Latest Release, Recommendation genres)</li>' +
       '<li><b>ViewAsian</b> — <a href="' + cfg.viewasianSite + '">' + cfg.viewasianSite.replace(/^https:\/\//, '') + '</a> (Recently Drama, Movie and Kshow)</li>' +
-      '<li><b>KissKH</b> — JSON API via ' + cfg.kisskhHosts.join(' / ') + ' (Latest Update, Top K/C-Drama, Hollywood, Anime, Upcoming)</li>' +
+      '<li><b>KissKH</b> — JSON API via ' + cfg.kisskhHosts.join(' / ') + ' (Latest Update, Top K/C-Drama, Hollywood, Anime, Upcoming; auto-rescued from TMDB lists when every mirror is CF-blocked)</li>' +
       '<li><b>AnimeTVSlash</b> — <a href="' + cfg.animoSite + '">' + cfg.animoSite.replace(/^https:\/\//, '') + '</a> (Latest Release)</li>' +
       '</ul>' +
       '<p>Add this manifest URL in Nuvio (Settings &rarr; Addons): <b>' + (cfg.__selfUrl || 'https://your-deployment') + '/manifest.json</b></p>' +
@@ -1783,6 +1932,11 @@
     vaPageMetas: vaPageMetas,
     animoPageMetas: animoPageMetas,
     kisskhPageMetas: kisskhPageMetas,
+    // v4.1.0 rescue test hooks
+    kisskhRescueState: kisskhRescueState,
+    KISSKH_TMDB_RESCUE: KISSKH_TMDB_RESCUE,
+    kisskhRescueUrl: kisskhRescueUrl,
+    tmdbRowToMetaDirect: tmdbRowToMetaDirect,
     getCatalogMetas: getCatalogMetas,
     healthReport: healthReport
   };

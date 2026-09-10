@@ -1,8 +1,19 @@
-# Asian Catalog (community.asian.catalog) — v4.0.0
+# Asian Catalog (community.asian.catalog) — v4.1.0
 
 Stremio-protocol **catalog addon** for Nuvio (NuvioMobile + NuvioTVSmart). The
 directory now **mirrors each website's real sections** (user enumerated them from
 the sites on 2026-09-10; every path below was fetched and verified live that day).
+
+**v4.1.0 (2026-09-10)**: the deployed worker confirmed kisskh.co/.ovh/.nl ALL
+Cloudflare-403 its datacenter egress (free CORS proxies get the same challenge
+page — there is no transport lane to the real API from that runtime). The 7
+KissKH catalogs now **auto-rescue**: when every mirror fails they are served
+from TMDB-curated lists that mirror each section's intent, with full metadata
+and real `tmdb:` ids the paired plugins resolve on-device (kisskh.js strips the
+prefix, gets the title from TMDB and searches kisskh over the device's
+residential egress — the lane that works). `/health` reports
+`sources.kisskh.mode = 'api' | 'tmdb-rescue'` so you can always tell which lane
+served the rows.
 
 ## The directory (21 catalogs, grouped by source)
 
@@ -55,11 +66,32 @@ home sections' own see-all links).
 | KissKH Anime | series | `type=A&sort=latest` |
 | KissKH Upcoming | series | `type=KC&sort=latest&status=Upcoming` (ongoing fallback) |
 
-kisskh Cloudflare-challenges datacenter egresses. Every request rotates
-nl → ovh → co (first success pinned) and every catalog is **fail-soft** — an
-unreachable API yields an empty row set + a `/health` hint, never a 500.
-Device-side playback is unaffected (the paired plugin runs on the client).
+kisskh Cloudflare-challenges datacenter egresses (verified from the DEPLOYED
+worker on 2026-09-10: nl/ovh/co all 403). Every request rotates
+nl → ovh → co (first success pinned). **TMDB rescue (v4.1.0)** — when every
+mirror fails, the sections fall back to TMDB lists that mirror the section's
+intent, never empty:
+
+| Catalog | Live API | TMDB rescue (API blocked) |
+|---------|----------|---------------------------|
+| KissKH Latest Update | `/api/DramaList/List/{page}?type=KC&sub=0&sort=latest` | `/trending/tv/week` |
+| KissKH Top K-Drama | `type=K&sort=rate` (popular fallback) | `/discover/tv?with_origin_country=KR&sort_by=popularity.desc` |
+| KissKH Top C-Drama | `type=C&sort=rate` (popular fallback) | `/discover/tv?with_origin_country=CN\|TW\|HK&sort_by=popularity.desc` |
+| KissKH Hollywood | `type=H&sort=latest` (TV rows) | `/discover/tv?with_origin_country=US&sort_by=popularity.desc` |
+| KissKH Hollywood Movies | `type=H&sort=latest` (Movie rows) | `/discover/movie?with_origin_country=US&sort_by=popularity.desc` |
+| KissKH Anime | `type=A&sort=latest` | `/discover/tv?with_genres=16&with_origin_country=JP&sort_by=popularity.desc` |
+| KissKH Upcoming | `type=KC&sort=latest&status=Upcoming` (ongoing fallback) | `/discover/tv?with_origin_country=KR\|CN\|TW\|HK&first_air_date.gte=today` |
+
+Rescue rows are emitted in the SAME shape as normally TMDB-matched rows
+(`tmdb:<id>`, overview, year, rating, backdrop) — the paired plugins already
+resolve those on-device. The direct lane (`asian:kh-<dramaId>`) is untouched
+and the rescue is never consulted while any mirror works. Every catalog stays
+**fail-soft** (rescue failure = empty rows + `/health` hint, never a 500).
 Param candidates are tried in order at runtime, so untestable params self-heal.
+Probed and rejected for rescue duty (2026-09-10): free CORS proxies
+(allorigins, codetabs, r.jina.ai, cors.lol, whateverorigin — all receive the
+same CF challenge or error) and the kisskh.org/.asia/.cc WordPress clones
+(different engine, incompatible ids).
 
 ### AnimeTVSlash — animotvslash.org
 
@@ -115,9 +147,9 @@ Optional env/vars: `TMDB_API_KEY`, `PINOY_SITE`, `KISSASIAN_SITE`,
 
 ## Tests
 
-- `node test-catalog.js` — 58-check offline regression suite (manifest shape,
+- `node test-catalog.js` — 72-check offline regression suite (manifest shape,
   all five parsers with fixtures, genre label mapping, meta shapes, page-URL
-  builders via canned fetch, routing).
+  builders via canned fetch, the v4.1.0 kisskh TMDB rescue, routing).
 - `node ../scripts/verify-asian-catalog-workerd.mjs` — boots the actual
   `worker-bundle.js` in miniflare/workerd with canned upstreams and asserts
   health (6 sources up), manifest (21 catalogs) and seven catalog endpoints.

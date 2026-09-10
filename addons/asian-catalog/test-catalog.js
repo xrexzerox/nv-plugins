@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * Asian Catalog v4.0.0 — offline regression suite (no network).
+ * Asian Catalog v4.1.0 — offline regression suite (no network).
  * Run: node test-catalog.js
  * Covers: manifest shape (21 catalogs), all five site parsers (fixtures
  * inline), genre label -> real slug mapping, meta shapes (TMDB-enriched +
  * source-scoped fallbacks), page-URL builders via canned fetch, request
- * routing (search/genre/skip/404).
+ * routing (search/genre/skip/404), and the v4.1.0 kisskh TMDB rescue
+ * (all mirrors CF-blocked -> sections still populate with full metadata).
  */
 'use strict';
 require('./core.js');
@@ -23,10 +24,11 @@ const cfg = Core.makeConfig({ __fetchFn: () => Promise.reject(new Error('offline
 
 (async () => {
 // ---------------------------------------------------------------- manifest
-section('manifest shape (v4.0.0, 21 catalogs mirroring the site sections)');
+section('manifest shape (v4.1.0, 21 catalogs mirroring the site sections)');
 {
   const man = Core.manifest(cfg);
-  ok('version 4.0.0', man.version === '4.0.0', man.version);
+  ok('version 4.1.0', man.version === '4.1.0', man.version);
+  ok('description mentions TMDB rescue', /auto-rescued from TMDB/.test(man.description), man.description.slice(0, 80));
   ok('id community.asian.catalog', man.id === 'community.asian.catalog');
   ok('types movie+series', man.types.join(',') === 'movie,series');
   ok('idPrefixes tmdb+asian', man.idPrefixes.join(',') === 'tmdb:,asian:');
@@ -272,6 +274,64 @@ section('kisskh list + search + type split (canned fetch)');
   ok('relative poster resolved against active host', ser[0].poster === 'https://kisskh.nl/upload/qq.jpg', ser[0].poster);
 }
 
+// ---------------------------------------------------------------- rescue
+section('kisskh TMDB rescue (v4.1.0: every mirror CF-blocked)');
+{
+  const requested = [];
+  const TV_ROWS = { results: [
+    { id: 215720, name: 'Queen of Tears', original_name: '눈물의 여왕', first_air_date: '2024-03-09', poster_path: '/qot.jpg', backdrop_path: '/qotb.jpg', overview: 'A queen and her husband.', vote_average: 8.4 },
+    { id: 219246, name: 'Lovely Runner', first_air_date: '2024-04-08', poster_path: '/lr.jpg', overview: 'Time travel romance.', vote_average: 8.6 }
+  ] };
+  const MOVIE_ROWS = { results: [
+    { id: 100, title: 'Hollywood Movie', release_date: '2025-07-01', poster_path: '/hw.jpg', overview: 'Boom.', vote_average: 7.1 }
+  ] };
+  const MULTI_ROWS = { results: [
+    { id: 215720, media_type: 'tv', name: 'Queen of Tears', first_air_date: '2024-03-09', poster_path: '/qot.jpg', overview: 'A queen.', vote_average: 8.4 },
+    { id: 555, media_type: 'person', name: 'Some Actor', profile_path: '/a.jpg' }
+  ] };
+  const cfgR = Core.makeConfig({});
+  cfgR.fetchFn = function (url) {
+    const u = String(url);
+    requested.push(u);
+    if (u.indexOf('kisskh') !== -1) return Promise.resolve(new Response('<html>Just a moment...</html>', { status: 403 }));
+    if (u.indexOf('/trending/tv/week') !== -1) return Promise.resolve(new Response(JSON.stringify(TV_ROWS), { status: 200 }));
+    if (u.indexOf('/discover/tv') !== -1) return Promise.resolve(new Response(JSON.stringify(TV_ROWS), { status: 200 }));
+    if (u.indexOf('/discover/movie') !== -1) return Promise.resolve(new Response(JSON.stringify(MOVIE_ROWS), { status: 200 }));
+    if (u.indexOf('/search/multi') !== -1) return Promise.resolve(new Response(JSON.stringify(MULTI_ROWS), { status: 200 }));
+    return Promise.reject(new Error('offline'));
+  };
+  Core.resetCaches();
+  Core.kisskhRescueState.engaged = false;
+  const defs = Core.catalogDefinitions();
+
+  const kd = await Core.getCatalogMetas(cfgR, defs.find(d => d.id === 'kisskh-top-kdrama'), {});
+  ok('kdrama rescue: populated', kd.length === 2, kd.map(m => m.id));
+  ok('kdrama rescue: real tmdb: ids', kd.every(m => /^tmdb:\d+$/.test(m.id)), kd.map(m => m.id));
+  ok('kdrama rescue: full metadata', kd[0].description === 'A queen and her husband.' && kd[0].releaseInfo === '2024' && kd[0].imdbRating === 8.4 && kd[0].poster.indexOf('image.tmdb.org') !== -1 && !!kd[0].background, kd[0]);
+  ok('rescue state engaged', Core.kisskhRescueState.engaged === true && Core.kisskhRescueState.catalog === 'kisskh-top-kdrama');
+
+  const reqUrl = requested.find(u => u.indexOf('/discover/tv') !== -1) || '';
+  ok('kdrama rescue URL: origin KR + popularity', /with_origin_country=KR&sort_by=popularity\.desc&include_null_first_air_dates=false/.test(reqUrl), reqUrl);
+
+  const mv = await Core.getCatalogMetas(cfgR, defs.find(d => d.id === 'kisskh-hollywood-movies'), {});
+  ok('hollywood-movies rescue: movie rows', mv.length === 1 && mv[0].type === 'movie' && mv[0].id === 'tmdb:100', mv.map(m => m.id));
+  ok('hollywood-movies rescue URL: discover/movie origin US', requested.some(u => u.indexOf('/discover/movie?') !== -1 && u.indexOf('with_origin_country=US') !== -1));
+
+  const up = await Core.getCatalogMetas(cfgR, defs.find(d => d.id === 'kisskh-upcoming'), {});
+  const upUrl = requested.find(u => u.indexOf('first_air_date.gte=') !== -1) || '';
+  ok('upcoming rescue URL: future first_air_date.gte', /first_air_date\.gte=\d{4}-\d{2}-\d{2}/.test(upUrl) && upUrl.indexOf('with_origin_country=KR%7CCN%7CTW%7CHK') !== -1, upUrl);
+  ok('upcoming rescue: rows served', up.length === 2, up.map(m => m.id));
+
+  const srch = await Core.getCatalogMetas(cfgR, defs.find(d => d.id === 'kisskh-latest'), { search: 'queen of tears' });
+  ok('search rescue: /search/multi used', requested.some(u => u.indexOf('/search/multi?') !== -1 && u.indexOf('query=queen%20of%20tears') !== -1));
+  ok('search rescue: person rows dropped, tv kept', srch.length === 1 && srch[0].id === 'tmdb:215720', srch.map(m => m.id));
+
+  const failCfg = Core.makeConfig({});
+  failCfg.fetchFn = function () { return Promise.reject(new Error('down')); };
+  const empty = await Core.kisskhPageMetas(failCfg, defs.find(d => d.id === 'kisskh-anime'), 1, {});
+  ok('total failure stays fail-soft (empty, not 500)', Array.isArray(empty) && empty.length === 0, empty);
+}
+
 // ---------------------------------------------------------------- routing
 section('handle(): routing + extras');
 {
@@ -279,10 +339,11 @@ section('handle(): routing + extras');
   ok('unknown catalog 404', r404.status === 404);
   const rJson = await Core.handle('/manifest.json', {});
   const man = await rJson.json();
-  ok('manifest served', man.version === '4.0.0' && man.catalogs.length === 21);
+  ok('manifest served', man.version === '4.1.0' && man.catalogs.length === 21);
   const health = await (await Core.handle('/health', {})).json();
   ok('health shape', !!health.status && typeof health.sources === 'object');
   ok('health probes 6 sources', Object.keys(health.sources).length === 6, Object.keys(health.sources));
+  ok('health kisskh probe reports mode', health.sources.kisskh && (health.sources.kisskh.mode === 'api' || health.sources.kisskh.mode === 'tmdb-rescue'), health.sources.kisskh);
 }
 
 console.log(`\n${pass} pass / ${fail} fail`);

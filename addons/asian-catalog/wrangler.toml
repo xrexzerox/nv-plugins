@@ -9,8 +9,12 @@ compatibility_date = "2024-11-01"
 # VIEWASIAN_SITE = "https://viewasian.lol"
 # ANIMO_SITE = "https://animotvslash.org"
 # KISSKH_HOSTS = "https://kisskh.nl,https://kisskh.ovh,https://kisskh.co"
+#   ^ v4.1.0: when every mirror is CF-blocked the 7 KissKH catalogs are
+#     auto-served from TMDB rescue lists (mode 'tmdb-rescue' in /health).
+#     Add a working mirror here to switch back to the live kisskh lists.
 # ASIAN_PAGE_LIMIT = "20"
 # ASIAN_KEEP_UNMATCHED = "1"
 #
 # Secrets (better via `npx wrangler secret put TMDB_API_KEY`):
 # TMDB_API_KEY = ""
+#   ^ also powers the v4.1.0 kisskh TMDB rescue — keep it valid.

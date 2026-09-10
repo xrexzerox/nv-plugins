@@ -1,6 +1,6 @@
 {
   "name": "NV Plugins",
-  "version": "3.15.0",
+  "version": "3.16.0",
   "description": "Canonical Nuvio provider collection. v3.10.0: device-transport fix-all — cinejoy 1.4.0 documents the binary chain (api.shegu.st/g accepts ONLY raw octet-stream bodies — every text variant 404s — and replies binary; NuvioTVSmart now ships a base64 binary transport in its plugin worker + network service so the chain works on webOS/Tizen; mobile unchanged, fail-soft) — pinoyhub 5.5.0 + asianhub 2.3.0 webOS adaptation: headerless-playability probe (ranged GET, zero custom headers) emits Mixdrop/Dood direct links WITHOUT Referer when the CDN serves bytes headerless (webOS players can never send headers), fail-closed to the historical Referer row otherwise; asianhub adds the Mixdrop family extractor for kissasian's /v/3/ mxdrop server (packed eval -> MDCore.wurl -> direct mp4) — animotvslash 5.1.0 fixes slug-404s with a site search fallback + macron transliteration (TMDB 'Shippūden' vs site 'shippuuden') — cinemacity 4.2.0 adds a Googlebot third retry identity for the CF managed challenge.",
   "author": "xrexzerox",
   "scrapers": [
