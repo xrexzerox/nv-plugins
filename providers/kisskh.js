@@ -1,14 +1,44 @@
 /**
  * KissKH Nuvio Plugin - Auto-detect Movie/TV by TMDB ID
- * Domain: kisskh.ovh
+ * Domains: kisskh.nl (primary, proven working on mobile ISPs) ->
+ *          kisskh.ovh -> kisskh.co (auto-failover per request)
  * Supports: Movies & TV Shows (Asian dramas)
- * 
+ *
  * Entry point signatures:
  *   Movie: getStreams("1007757")
  *   TV:    getStreams("287011", "1", "1")
  */
 
-var MAIN_URL = "https://kisskh.ovh";
+var MAIN_URL = "https://kisskh.nl";
+var KISSKH_HOSTS = ["https://kisskh.nl", "https://kisskh.ovh", "https://kisskh.co"];
+var kisskhActiveHost = null;
+
+// Rotate across kisskh mirrors: first success wins and is pinned for the
+// rest of the session. Every API call goes through this helper.
+function kisskhApi(path, headers) {
+    var preferred = kisskhActiveHost ? [kisskhActiveHost] : [];
+    var hosts = preferred.concat(KISSKH_HOSTS.filter(function (h) {
+        return preferred.indexOf(h) === -1;
+    }));
+    function attempt(i) {
+        if (i >= hosts.length) {
+            return Promise.reject(new Error("All KissKH hosts failed (nl/ovh/co)"));
+        }
+        var host = hosts[i];
+        return fetchJson(host + path, headers).then(function (data) {
+            kisskhActiveHost = host;
+            return data;
+        }).catch(function (e) {
+            log("Host " + host + " failed: " + e.message + " - trying next mirror");
+            return attempt(i + 1);
+        });
+    }
+    return attempt(0);
+}
+
+function kisskhBase() {
+    return kisskhActiveHost || MAIN_URL;
+}
 var GOOGLE_SCRIPT_API = "https://script.google.com/macros/s/AKfycbzn8B31PuDxzaMa9_CQ0VGEDasFqfzI5bXvjaIZH4DM8DNq9q6xj1ALvZNz_JT3jF0suA/exec";
 var TMDB_API_KEY = "b030404650f279792a8d3287232358e3";
 
@@ -328,9 +358,8 @@ function generateKey(epsId) {
 }
 
 function getVideoSources(epsId, key) {
-    var videoApi = MAIN_URL + "/api/DramaList/Episode/" + epsId + ".png?err=false&ts=&time=&kkey=" + key;
     log("Fetching video sources");
-    return fetchJson(videoApi).then(function(sources) {
+    return kisskhApi("/api/DramaList/Episode/" + epsId + ".png?err=false&ts=&time=&kkey=" + key).then(function(sources) {
         if (!sources) throw new Error("Empty response from video API");
         log("Video API keys: " + Object.keys(sources).join(", "));
         return sources;
@@ -338,9 +367,8 @@ function getVideoSources(epsId, key) {
 }
 
 function searchKisskh(title) {
-    var searchUrl = MAIN_URL + "/api/DramaList/Search?q=" + encodeURIComponent(title) + "&type=0";
     log("Searching KissKH: " + title);
-    return fetchJson(searchUrl).then(function(searchList) {
+    return kisskhApi("/api/DramaList/Search?q=" + encodeURIComponent(title) + "&type=0").then(function(searchList) {
         if (!searchList || !Array.isArray(searchList) || searchList.length === 0) {
             throw new Error("No KissKH results for: " + title);
         }
@@ -375,7 +403,7 @@ function searchKisskh(title) {
 }
 
 function getDramaDetail(dramaId) {
-    var url = MAIN_URL + "/api/DramaList/Drama/" + dramaId + "?isq=false";
+    var url = kisskhBase() + "/api/DramaList/Drama/" + dramaId + "?isq=false";
     return fetchJson(url).then(function(detail) {
         if (!detail || !detail.episodes || detail.episodes.length === 0) {
             throw new Error("No episodes found for drama " + dramaId);
@@ -459,8 +487,8 @@ function sourcesToStreams(sources, dramaTitle, epTitle, epNumber) {
     var displayTitle = dramaTitle || "KissKH";
     var displayEp = epTitle || ("Episode " + epNumber);
     var baseHeaders = {
-        "Origin": MAIN_URL,
-        "Referer": MAIN_URL + "/",
+        "Origin": kisskhBase(),
+        "Referer": kisskhBase() + "/",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     };
 

@@ -126,7 +126,7 @@ var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 var KISSASIAN_BASE = "https://kissasian.cam";
 var JUSTPLAY_BASE = "https://justplay.cam";
 var VIEWASIAN_BASE = "https://viewasian.lol";
-var KISSKH_BASES = ["https://kisskh.co", "https://kisskh.ovh"];
+var KISSKH_BASES = ["https://kisskh.nl", "https://kisskh.co", "https://kisskh.ovh"];
 var KISSKH_KEY_API = "https://script.google.com/macros/s/AKfycbzn8B31PuDxzaMa9_CQ0VGEDasFqfzI5bXvjaIZH4DM8DNq9q6xj1ALvZNz_JT3jF0suA/exec";
 
 var HEADERS = {
@@ -1321,8 +1321,8 @@ function viewasianLane(tmdb, isSeries, season, episode) {
 // ===== SOURCE 3: KissKH (kisskh.co API, kisskh.ovh fallback) =====
 // Ported from providers/kisskh.js v4.0.0 (proven on devices). KissKH is
 // Cloudflare-challenged from datacenter IPs but serves Nuvio clients
-// normally; kisskh.co (user-requested) is tried first, kisskh.ovh is the
-// automatic fallback when a request errors or is challenged.
+// normally; kisskh.nl (proven working on mobile ISPs) is tried first, then
+// kisskh.co, kisskh.ovh as automatic fallbacks when a request errors.
 
 function kisskhFetchJson(path) {
   var idx = 0;
@@ -1331,6 +1331,9 @@ function kisskhFetchJson(path) {
     var base = KISSKH_BASES[idx++];
     return fetchJson(base + path, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(data) {
       if (data) return data;
+      return attempt();
+    }).catch(function(e) {
+      // network/HTTP failure on this mirror - fall through to the next one
       return attempt();
     });
   }
