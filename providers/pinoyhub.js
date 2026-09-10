@@ -4,7 +4,15 @@
  * Supports: Movies & TV Shows
  * Language: Filipino / Tagalog / English
  * Author: xrexzerox
- * Version: 5.6.0
+ * Version: 5.7.0
+ *
+ * v5.7.0 changelog (asian-catalog v4.0.0 pairing):
+ *  - parseAsianCatalogId recognises the new source prefixes kh- (KissKH,
+ *    owned by the AsianHub plugin) and an- (AnimeTVSlash, owned by the
+ *    animotvslash plugin). Both are skipped FAST here (empty result) so
+ *    catalog rows never trigger a pointless/false pinoymovieshub search.
+ *  - nvv copy stays at 5.6.0 (frozen by owner request); the only effect
+ *    there is a few wasted seconds on kh-/an- ids, never a wrong stream.
  *
  * v5.6.0 changelog (series-args hardening — the app-side ground truth):
  *  - ROOT CAUSE (NuvioMobile cmp-rewrite PluginRuntime.kt): the app calls
@@ -1242,7 +1250,7 @@ function parseAsianCatalogId(rawId) {
   if (!m) return null;
   var tail = m[1].replace(/\.json$/i, "").split("/")[0].trim().toLowerCase();
   if (!tail || !/^[a-z0-9][a-z0-9-]*$/i.test(tail)) return null;
-  var pm = tail.match(/^(ks|va|pmh)-([a-z0-9][a-z0-9-]*)$/);
+  var pm = tail.match(/^(ks|va|pmh|kh|an)-([a-z0-9][a-z0-9-]*)$/);
   if (pm) {
     if (!pm[2]) return null;
     var stitle = pm[2].replace(/-+/g, " ").replace(/\s+/g, " ").trim();
@@ -1435,6 +1443,13 @@ function getStreamsCore(tmdbId, mt, season, episode) {
   if (catalogId) {
     if (catalogId.source === "ks" || catalogId.source === "va") {
       console.log("[PinoyMoviesHub] asian:" + catalogId.source + "- id -> handled by AsianHub plugin, skipping");
+      return Promise.resolve([]);
+    }
+    // v5.7.0: kh- (KissKH lane of AsianHub) and an- (AnimeTVSlash plugin)
+    // rows are not this plugin's content - skipping avoids false-matching
+    // an unrelated pinoy title for drama/anime ids.
+    if (catalogId.source === "kh" || catalogId.source === "an") {
+      console.log("[PinoyMoviesHub] asian:" + catalogId.source + "- id -> handled by another plugin, skipping");
       return Promise.resolve([]);
     }
     var catIsSeries = mt === "tv" || !!(season && episode);

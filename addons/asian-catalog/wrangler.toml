@@ -4,9 +4,11 @@ compatibility_date = "2024-11-01"
 
 # Optional configuration — uncomment / edit as needed.
 # [vars]
-# PINOY_SITE = "https://pinoymovieshub.win"
+# PINOY_SITE = "https://pinoymovieshub.win"      # canonical mirror (verified 2026-09-10)
 # KISSASIAN_SITE = "https://kissasian.cam"
 # VIEWASIAN_SITE = "https://viewasian.lol"
+# ANIMO_SITE = "https://animotvslash.org"
+# KISSKH_HOSTS = "https://kisskh.nl,https://kisskh.ovh,https://kisskh.co"
 # ASIAN_PAGE_LIMIT = "20"
 # ASIAN_KEEP_UNMATCHED = "1"
 #

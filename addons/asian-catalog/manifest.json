@@ -1,8 +1,8 @@
 {
   "id": "community.asian.catalog",
-  "version": "3.2.0",
+  "version": "4.0.0",
   "name": "Asian Catalog",
-  "description": "Organized Asian catalogs: Pinoy movies & series (pinoymovieshub), Asian dramas (kissasian.cam /series/ + viewasian.lol) and Asian movies/series directories by language (TMDB). Fallback rows carry source-scoped ids (asian:ks-/va-/pmh-<slug>) the paired plugins resolve straight to the sites' real episode/movie pages.",
+  "description": "Asian catalogs mirroring each site's real sections: pinoymovieshub.win (New Releases / Recently Added Movies / Series / Featured / Coming Soon / 17 genre sections incl. Rated R & Wattpad Presents), kissasian.cam (Hot Series Update / Latest Release / Recommendation genres Fantasy-Friendship-Law-Romance-Sports), viewasian.lol (Recently Drama, Movie and Kshow), kisskh API (Latest Update / Top K+C-Drama / Hollywood / Anime / Upcoming) and animotvslash.org (Latest Release). Rows carry full TMDB metadata (poster, backdrop, overview, year, rating); fallback rows carry source-scoped ids (asian:pmh-/ks-/va-/kh-/an-) the paired plugins resolve straight to the sites' real pages.",
   "logo": "https://pinoymovieshub.win/wp-content/uploads/2025/04/cropped-favicon-11-192x192.png",
   "resources": [
     "catalog"
@@ -18,8 +18,30 @@
   "catalogs": [
     {
       "type": "movie",
+      "id": "pinoy-new-releases",
+      "name": "Pinoy New Releases",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "pinoy-new-releases-tv",
+      "name": "Pinoy New Releases • Series",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
       "id": "pinoy-movies",
-      "name": "Pinoy Movies",
+      "name": "Pinoy Recently Added Movies",
       "pageSize": 20,
       "extra": [
         {
@@ -46,6 +68,39 @@
     },
     {
       "type": "movie",
+      "id": "pinoy-featured",
+      "name": "Pinoy Featured (Movies)",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "pinoy-featured-tv",
+      "name": "Pinoy Featured • Series",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pinoy-coming-soon",
+      "name": "Pinoy Coming Soon",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
       "id": "pinoy-movies-genre",
       "name": "Pinoy Movies by Genre",
       "pageSize": 20,
@@ -54,35 +109,22 @@
           "name": "genre",
           "options": [
             "Action",
-            "Adventure",
             "Animation",
-            "Anthology Series",
-            "BL Series",
             "Comedy",
             "Concert",
+            "Digitally Restored",
             "Crime",
             "Documentary",
             "Drama",
-            "Family",
             "Fantasy",
-            "History",
             "Horror",
             "Indie",
-            "LGBTQ",
-            "Music",
-            "Musical",
-            "Mystery",
             "Romance",
-            "Science Fiction",
-            "Short Films",
+            "Rated R",
             "Sports",
             "Stageplay",
             "Tagalog Dubbed",
-            "Teleserye",
-            "Thriller",
-            "War",
-            "Wattpad",
-            "Web Series"
+            "Wattpad Presents"
           ]
         },
         {
@@ -100,35 +142,22 @@
           "name": "genre",
           "options": [
             "Action",
-            "Adventure",
             "Animation",
-            "Anthology Series",
-            "BL Series",
             "Comedy",
             "Concert",
+            "Digitally Restored",
             "Crime",
             "Documentary",
             "Drama",
-            "Family",
             "Fantasy",
-            "History",
             "Horror",
             "Indie",
-            "LGBTQ",
-            "Music",
-            "Musical",
-            "Mystery",
             "Romance",
-            "Science Fiction",
-            "Short Films",
+            "Rated R",
             "Sports",
             "Stageplay",
             "Tagalog Dubbed",
-            "Teleserye",
-            "Thriller",
-            "War",
-            "Wattpad",
-            "Web Series"
+            "Wattpad Presents"
           ]
         },
         {
@@ -138,8 +167,22 @@
     },
     {
       "type": "series",
+      "id": "asian-series-hot",
+      "name": "KissAsian Hot Series Update",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
       "id": "asian-series",
-      "name": "Asian Series (KissAsian)",
+      "name": "KissAsian Latest Release",
       "pageSize": 20,
       "extra": [
         {
@@ -153,31 +196,17 @@
     {
       "type": "series",
       "id": "asian-series-genre",
-      "name": "Asian Series by Genre (KissAsian)",
+      "name": "KissAsian by Genre",
       "pageSize": 20,
       "extra": [
         {
           "name": "genre",
           "options": [
-            "Action",
-            "Comedy",
-            "Crime",
-            "Documentary",
-            "Drama",
             "Fantasy",
-            "Historical",
-            "Horror",
-            "Life",
-            "Mature",
-            "Music",
-            "Mystery",
+            "Friendship",
+            "Law",
             "Romance",
-            "Sci-Fi",
-            "Supernatural",
-            "Thriller",
-            "War",
-            "Wuxia",
-            "Youth"
+            "Sports"
           ]
         },
         {
@@ -188,7 +217,7 @@
     {
       "type": "series",
       "id": "asian-series-viewasian",
-      "name": "Asian Series (ViewAsian)",
+      "name": "ViewAsian Recently Drama, Movie and Kshow",
       "pageSize": 20,
       "extra": [
         {
@@ -201,50 +230,8 @@
     },
     {
       "type": "series",
-      "id": "asian-series-viewasian-genre",
-      "name": "Asian Series by Genre (ViewAsian)",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "genre",
-          "options": [
-            "Action",
-            "Adventure",
-            "Business",
-            "Comedy",
-            "Crime",
-            "Documentary",
-            "Drama",
-            "Friendship",
-            "Historical",
-            "Horror",
-            "Life",
-            "Medical",
-            "Melodrama",
-            "Music",
-            "Mystery",
-            "Political",
-            "Romance",
-            "School",
-            "Sci-Fi",
-            "Supernatural",
-            "Thriller",
-            "War",
-            "Youth",
-            "Korean",
-            "Chinese",
-            "Japanese"
-          ]
-        },
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "movie",
-      "id": "asian-movies",
-      "name": "Asian Movies",
+      "id": "kisskh-latest",
+      "name": "KissKH Latest Update",
       "pageSize": 20,
       "extra": [
         {
@@ -257,8 +244,36 @@
     },
     {
       "type": "series",
-      "id": "asian-series-trending",
-      "name": "Asian Series Trending",
+      "id": "kisskh-top-kdrama",
+      "name": "KissKH Top K-Drama",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "kisskh-top-cdrama",
+      "name": "KissKH Top C-Drama",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "kisskh-hollywood",
+      "name": "KissKH Hollywood",
       "pageSize": 20,
       "extra": [
         {
@@ -271,31 +286,51 @@
     },
     {
       "type": "movie",
-      "id": "asian-movies-genre",
-      "name": "Asian Movies by Genre",
+      "id": "kisskh-hollywood-movies",
+      "name": "KissKH Hollywood Movies",
       "pageSize": 20,
       "extra": [
         {
-          "name": "genre",
-          "options": [
-            "Action",
-            "Adventure",
-            "Animation",
-            "Comedy",
-            "Crime",
-            "Documentary",
-            "Drama",
-            "Family",
-            "Fantasy",
-            "History",
-            "Horror",
-            "Music",
-            "Mystery",
-            "Romance",
-            "Sci-Fi",
-            "Thriller",
-            "War"
-          ]
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "kisskh-anime",
+      "name": "KissKH Anime",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "kisskh-upcoming",
+      "name": "KissKH Upcoming",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "animo-latest",
+      "name": "AnimeTVSlash Latest Release",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
         },
         {
           "name": "skip"

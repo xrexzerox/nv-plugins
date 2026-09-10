@@ -24,29 +24,24 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// core.js
+// addons/asian-catalog/core.js
 var require_core = __commonJS({
-  "core.js"(exports) {
+  "addons/asian-catalog/core.js"(exports) {
     (function(global) {
       "use strict";
-      var VERSION = "3.2.0";
+      var VERSION = "4.0.0";
       var ADDON_ID = "community.asian.catalog";
       var ADDON_NAME = "Asian Catalog";
       var PINOY_SITE_DEFAULT = "https://pinoymovieshub.win";
       var KISSASIAN_SITE_DEFAULT = "https://kissasian.cam";
       var VIEWASIAN_SITE_DEFAULT = "https://viewasian.lol";
+      var ANIMO_SITE_DEFAULT = "https://animotvslash.org";
+      var KISSKH_HOSTS_DEFAULT = ["https://kisskh.nl", "https://kisskh.ovh", "https://kisskh.co"];
       var DEFAULT_TMDB_KEY = "439c478a771f35c05022f9feabcca01c";
       var PINOY_ICON = "/wp-content/uploads/2025/04/cropped-favicon-11-192x192.png";
       var KS_ICON = "/wp-content/uploads/2024/03/cropped-favicon-1-1-192x192.png";
       var VA_ICON = "/wp-content/uploads/2024/09/logo.png";
-      var ASIAN_LANGS = ["ko", "zh", "ja", "th", "tl"];
-      var ASIAN_LANG_LABELS = {
-        ko: "Korean",
-        zh: "Chinese",
-        ja: "Japanese",
-        th: "Thai",
-        tl: "Filipino"
-      };
+      var ANIMO_ICON = "/wp-content/uploads/2024/03/cropped-favicon-1-1-192x192.png";
       var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
       var MOBILE_UA = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36";
       var BASE_HEADERS = {
@@ -67,13 +62,12 @@ var require_core = __commonJS({
       var BUFFER_TTL = 30 * 60 * 1e3;
       var RESOLVED_TTL = 24 * 60 * 60 * 1e3;
       var RESOLVED_NULL_TTL = 6 * 60 * 60 * 1e3;
-      var TERMS_TTL = 6 * 60 * 60 * 1e3;
       var pageCache = /* @__PURE__ */ new Map();
       var resolvedCache = /* @__PURE__ */ new Map();
       var buffers = /* @__PURE__ */ new Map();
       var bufferInflight = /* @__PURE__ */ new Map();
       var tmdbInflight = /* @__PURE__ */ new Map();
-      var CACHE_CAPS = { page: 250, resolved: 4e3, buffers: 80, terms: 20 };
+      var CACHE_CAPS = { page: 250, resolved: 4e3, buffers: 120 };
       function cachePrune(map, cap) {
         if (map.size <= cap)
           return;
@@ -104,10 +98,19 @@ var require_core = __commonJS({
             fetchRef = fetch;
           }
         }
+        var khHosts = String(env.KISSKH_HOSTS || "").split(",").map(function(s) {
+          return s.trim().replace(/\/+$/, "");
+        }).filter(function(s) {
+          return /^https?:\/\//.test(s);
+        });
+        if (!khHosts.length)
+          khHosts = KISSKH_HOSTS_DEFAULT.slice();
         return {
           pinoySite: String(env.PINOY_SITE || PINOY_SITE_DEFAULT).replace(/\/+$/, ""),
           kissasianSite: String(env.KISSASIAN_SITE || KISSASIAN_SITE_DEFAULT).replace(/\/+$/, ""),
           viewasianSite: String(env.VIEWASIAN_SITE || VIEWASIAN_SITE_DEFAULT).replace(/\/+$/, ""),
+          animoSite: String(env.ANIMO_SITE || ANIMO_SITE_DEFAULT).replace(/\/+$/, ""),
+          kisskhHosts: khHosts,
           tmdbKey: String(env.TMDB_API_KEY || DEFAULT_TMDB_KEY),
           pageLimit: Math.min(Math.max(isFinite(limit) && limit > 0 ? limit : PAGE_LIMIT_DEFAULT, 5), 50),
           maxSitePages: isFinite(maxPages) && maxPages > 0 ? maxPages : MAX_SITE_PAGES_DEFAULT,
@@ -442,16 +445,21 @@ var require_core = __commonJS({
         tmdbInflight.set(key, pending);
         return pending;
       }
-      var SOURCE_PREFIX = { ks: "ks", va: "va", pmh: "pmh" };
+      var SOURCE_PREFIX = { ks: "ks", va: "va", pmh: "pmh", kh: "kh", an: "an" };
       function fallbackIdTail(item) {
-        var tail = String(item.slug || "").trim();
-        if (!tail && item.url) {
-          tail = String(item.url).replace(/\/+$/, "").split("/").pop() || "";
-          tail = tail.replace(/\.(html?|json)$/i, "");
+        var tail = "";
+        if (item.sourceId !== void 0 && item.sourceId !== null && String(item.sourceId) !== "") {
+          tail = String(item.sourceId);
+        } else {
+          tail = String(item.slug || "").trim();
+          if (!tail && item.url) {
+            tail = String(item.url).replace(/\/+$/, "").split("/").pop() || "";
+            tail = tail.replace(/\.(html?|json)$/i, "");
+          }
+          if (!tail)
+            tail = cleanDisplayName(item.title);
+          tail = String(tail).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
         }
-        if (!tail)
-          tail = cleanDisplayName(item.title);
-        tail = String(tail).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
         var sp = SOURCE_PREFIX[item.source];
         if (sp && tail && tail.indexOf(sp + "-") !== 0)
           tail = sp + "-" + tail;
@@ -464,13 +472,17 @@ var require_core = __commonJS({
           name: cleanDisplayName(item.title),
           posterShape: "poster"
         };
-        var sitePoster = cleanPosterUrl(cfg.pinoySite, item.poster) || cleanPosterUrl(cfg.kissasianSite, item.poster) || cleanPosterUrl(cfg.viewasianSite, item.poster);
+        var sitePoster = cleanPosterUrl(cfg.pinoySite, item.poster) || cleanPosterUrl(cfg.kissasianSite, item.poster) || cleanPosterUrl(cfg.viewasianSite, item.poster) || cleanPosterUrl(cfg.animoSite, item.poster) || (/^https?:\/\//i.test(String(item.poster || "")) && !isPlaceholderPoster(item.poster) ? item.poster : "");
         if (sitePoster)
           meta.poster = sitePoster;
         if (item.description)
           meta.description = item.description;
         if (item.year)
           meta.releaseInfo = String(item.year);
+        var siteRating = parseFloat(item.rating);
+        if (isFinite(siteRating) && siteRating > 0 && siteRating <= 10) {
+          meta.imdbRating = Math.round(siteRating * 10) / 10;
+        }
         return meta;
       }
       function toMeta(cfg, item, tmdb) {
@@ -478,7 +490,7 @@ var require_core = __commonJS({
         var name = cleanDisplayName(item.title);
         if (!name)
           return null;
-        var sitePoster = cleanPosterUrl(cfg.pinoySite, item.poster) || cleanPosterUrl(cfg.kissasianSite, item.poster) || cleanPosterUrl(cfg.viewasianSite, item.poster);
+        var sitePoster = cleanPosterUrl(cfg.pinoySite, item.poster) || cleanPosterUrl(cfg.kissasianSite, item.poster) || cleanPosterUrl(cfg.viewasianSite, item.poster) || cleanPosterUrl(cfg.animoSite, item.poster) || (/^https?:\/\//i.test(String(item.poster || "")) && !isPlaceholderPoster(item.poster) ? item.poster : "");
         if (tmdb) {
           var meta = {
             id: "tmdb:" + tmdb.id,
@@ -495,8 +507,9 @@ var require_core = __commonJS({
           var rel = item.year || tmdb.year;
           if (rel)
             meta.releaseInfo = String(rel);
-          if (tmdb.rating)
-            meta.imdbRating = Math.round(tmdb.rating * 10) / 10;
+          var r = parseFloat(item.rating) || tmdb.rating || 0;
+          if (r > 0)
+            meta.imdbRating = Math.round(r * 10) / 10;
           return meta;
         }
         if (!cfg.keepUnmatched)
@@ -517,7 +530,6 @@ var require_core = __commonJS({
       }
       function parseListPage(cfg, html) {
         var items = [];
-        var featuredPosters = {};
         var seen = {};
         var re = /<article\b[^>]*>([\s\S]*?)<\/article>/g;
         var m;
@@ -526,15 +538,10 @@ var require_core = __commonJS({
           var whole = m[0];
           var idMatch = whole.match(/id=["']post-([\w-]+?)["']/);
           var postId = idMatch ? idMatch[1] : "";
+          if (postId.indexOf("featured-") === 0)
+            continue;
           var img = body.match(/<img[^>]*>/i);
           var poster = img ? attr(img[0], "src") : "";
-          if (postId.indexOf("featured-") === 0) {
-            var fid = postId.substring("featured-".length);
-            var fp = cleanPosterUrl(cfg.pinoySite, poster);
-            if (fp)
-              featuredPosters[fid] = fp;
-            continue;
-          }
           var link = body.match(/href=["'](https?:\/\/[^"']+)["']/i);
           if (!link)
             continue;
@@ -588,16 +595,72 @@ var require_core = __commonJS({
             description: desc
           });
         }
-        for (var i = 0; i < items.length; i++) {
-          var it = items[i];
-          if (isPlaceholderPoster(it.poster) && it.postId && featuredPosters[it.postId]) {
-            it.poster = featuredPosters[it.postId];
-          }
+        return items;
+      }
+      function parseFeaturedCarousel(cfg, html) {
+        var start = html.indexOf('id="featured-titles"');
+        if (start === -1)
+          return [];
+        var end = html.indexOf("<h2>", start);
+        if (end === -1)
+          end = html.length;
+        var seg = html.substring(start, end);
+        var items = [];
+        var seen = {};
+        var re = /<article id="post-featured-(\d+)" class="item ([\w-]+)"([\s\S]*?)<\/article>/g;
+        var m;
+        while ((m = re.exec(seg)) !== null) {
+          var postId = m[1];
+          var cls = m[2];
+          var body = m[3];
+          var link = body.match(/href=["'](https?:\/\/[^"']+)["']/i);
+          if (!link)
+            continue;
+          var url = decodeEntities(link[1]).replace(/[?#].*$/, "");
+          var kind = /\/movies\//i.test(url) ? "movie" : /\/series\//i.test(url) ? "series" : "";
+          if (!kind)
+            continue;
+          var img = body.match(/<img[^>]*>/i);
+          var poster = img ? attr(img[0], "src") : "";
+          var title = "";
+          var th = body.match(/<h3[^>]*>\s*<a[^>]*>([\s\S]*?)<\/a>/i);
+          if (th)
+            title = stripTags(th[1]);
+          if (!title && img)
+            title = stripTags(decodeEntities(attr(img[0], "alt") || ""));
+          if (!title)
+            continue;
+          var year = "";
+          var ym = body.match(/<span>\s*((?:19|20)\d{2})\s*<\/span>/i);
+          if (ym)
+            year = ym[1];
+          var rating = "";
+          var rm = body.match(/class=["']rating["']\s*>\s*([\d.]+)\s*</i);
+          if (rm)
+            rating = rm[1];
+          if (seen[url])
+            continue;
+          seen[url] = true;
+          items.push({
+            postId: "featured-" + postId,
+            slug: url.replace(/\/+$/, "").split("/").pop() || "",
+            url,
+            source: "pmh",
+            type: kind,
+            title: collapseWs(decodeEntities(title)),
+            year,
+            poster,
+            rating,
+            description: ""
+          });
         }
         return items;
       }
       function pinoyParseUrl(cfg, url) {
         return fetchTextWithRetry(cfg, url, 12e3).then(function(html) {
+          if (/id=["']featured-titles["']/.test(html) && url.replace(/\/+$/, "") === cfg.pinoySite) {
+            return parseFeaturedCarousel(cfg, html);
+          }
           return parseListPage(cfg, html);
         });
       }
@@ -611,14 +674,32 @@ var require_core = __commonJS({
           return out;
         });
       }
+      var PINOY_GENRE_SLUGS = {
+        "rated r": "sexy",
+        "wattpad presents": "wattpad"
+      };
+      function pinoyGenreSlug(label) {
+        var s = String(label || "").toLowerCase().trim();
+        if (PINOY_GENRE_SLUGS[s])
+          return PINOY_GENRE_SLUGS[s];
+        return slugifyGenre(s);
+      }
       function pinoyPageMetas(cfg, def, page, extras) {
         var url;
         var search = String(extras.search || "").trim();
         if (search) {
           url = page === 1 ? cfg.pinoySite + "/?s=" + encodeURIComponent(search) : cfg.pinoySite + "/page/" + page + "/?s=" + encodeURIComponent(search);
         } else if (def.mode === "genre" && extras.genre) {
-          var slug = slugifyGenre(extras.genre);
-          url = page === 1 ? cfg.pinoySite + "/genre/" + slug + "/" : cfg.pinoySite + "/genre/" + slug + "/page/" + page + "/";
+          var slug = pinoyGenreSlug(extras.genre);
+          url = page === 1 ? cfg.pinoySite + "/genre/" + slug : cfg.pinoySite + "/genre/" + slug + "/page/" + page;
+        } else if (def.mode === "newreleases") {
+          if (page > 1)
+            return Promise.resolve([]);
+          url = cfg.pinoySite + "/";
+        } else if (def.mode === "featured") {
+          url = page === 1 ? cfg.pinoySite + "/genre/featured" : cfg.pinoySite + "/genre/featured/page/" + page;
+        } else if (def.mode === "coming-soon") {
+          url = page === 1 ? cfg.pinoySite + "/genre/coming-soon" : cfg.pinoySite + "/genre/coming-soon/page/" + page;
         } else {
           var seg = def.type === "series" ? "/series" : "/movies";
           url = page === 1 ? cfg.pinoySite + seg + "/" : cfg.pinoySite + seg + "/page/" + page;
@@ -629,59 +710,13 @@ var require_core = __commonJS({
           return resolveBatch(cfg, items);
         });
       }
-      var KS_GENRE_CHIPS = [
-        "Action",
-        "Comedy",
-        "Crime",
-        "Documentary",
-        "Drama",
-        "Fantasy",
-        "Historical",
-        "Horror",
-        "Life",
-        "Mature",
-        "Music",
-        "Mystery",
-        "Romance",
-        "Sci-Fi",
-        "Supernatural",
-        "Thriller",
-        "War",
-        "Wuxia",
-        "Youth"
-      ];
-      function ksSlugToGenre(slug) {
-        var s = String(slug || "");
-        var map = {
-          action: "Action",
-          comedy: "Comedy",
-          crime: "Crime",
-          documentary: "Documentary",
-          drama: "Drama",
-          fantasy: "Fantasy",
-          historical: "Historical",
-          horror: "Horror",
-          life: "Life",
-          mature: "Mature",
-          music: "Music",
-          mystery: "Mystery",
-          romance: "Romance",
-          "sci-fi": "Sci-Fi",
-          supernatural: "Supernatural",
-          thriller: "Thriller",
-          war: "War",
-          wuxia: "Wuxia",
-          youth: "Youth"
-        };
-        return map[s] || s.charAt(0).toUpperCase() + s.slice(1);
-      }
       function ksParseListPage(cfg, html) {
         var items = [];
         var seen = {};
         var host = String(cfg.kissasianSite || "").replace(/^https?:\/\//, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         var reHref = new RegExp('href="https?://' + host + '/(?:series/)?([a-z0-9-]+)/"', "i");
         var reSeries = new RegExp('href="https?://' + host + "/series/", "i");
-        var re = /<article class="bs"[^>]*>([\s\S]*?)<\/article>/g;
+        var re = /<article class="(?:bs|stylefor)"[^>]*>([\s\S]*?)<\/article>/g;
         var m;
         while ((m = re.exec(html)) !== null) {
           var body = m[1];
@@ -712,8 +747,6 @@ var require_core = __commonJS({
           if (epm) {
             slug = epm[1];
             title = title.replace(/\s*[-\u2013\u2014]?\s*Episode\s*\d+.*$/i, "");
-          } else if (!isSeriesRow) {
-            continue;
           }
           if (seen[slug])
             continue;
@@ -730,6 +763,20 @@ var require_core = __commonJS({
           });
         }
         return items;
+      }
+      function ksParseHotSection(cfg, html) {
+        var start = html.indexOf("releases hothome");
+        if (start === -1)
+          start = html.indexOf("Hot Series Update");
+        if (start === -1)
+          return [];
+        var end = html.indexOf('class="bixbox"', start + 10);
+        if (end === -1)
+          end = html.indexOf("Latest Release", start + 10);
+        if (end === -1)
+          end = html.length;
+        var seg = html.substring(start, end);
+        return ksParseListPage(cfg, seg);
       }
       function ksParseUrl(cfg, url) {
         return fetchTextWithRetry(cfg, url, 12e3).then(function(html) {
@@ -752,47 +799,27 @@ var require_core = __commonJS({
           }).catch(function() {
             return [];
           });
+        } else if (def.mode === "hot") {
+          if (page === 1) {
+            return fetchPageCached(cfg, cfg.kissasianSite + "/home-hot", function(c, u) {
+              return fetchTextWithRetry(c, cfg.kissasianSite + "/", 12e3).then(function(html) {
+                return ksParseHotSection(c, html);
+              });
+            }).then(function(items) {
+              if (!items.length)
+                return [];
+              return resolveBatch(cfg, items);
+            });
+          }
+          url = cfg.kissasianSite + "/series/?status=&type=&order=update&page=" + (page - 1);
         } else {
-          url = page === 1 ? cfg.kissasianSite + "/series/" : cfg.kissasianSite + "/series/page/" + page + "/";
+          url = page === 1 ? cfg.kissasianSite + "/series/?status=&type=&order=update" : cfg.kissasianSite + "/series/?status=&type=&order=update&page=" + page;
         }
         return ksPageRaw(cfg, url).then(function(items) {
           if (!items.length)
             return [];
           return resolveBatch(cfg, items);
         });
-      }
-      var VA_GENRE_CHIPS = [
-        "Action",
-        "Adventure",
-        "Business",
-        "Comedy",
-        "Crime",
-        "Documentary",
-        "Drama",
-        "Friendship",
-        "Historical",
-        "Horror",
-        "Life",
-        "Medical",
-        "Melodrama",
-        "Music",
-        "Mystery",
-        "Political",
-        "Romance",
-        "School",
-        "Sci-Fi",
-        "Supernatural",
-        "Thriller",
-        "War",
-        "Youth",
-        "Korean",
-        "Chinese",
-        "Japanese"
-      ];
-      function vaGenreUrlPart(genre) {
-        var map = { korean: "country", chinese: "country", japanese: "country" };
-        var slug = slugifyGenre(genre);
-        return (map[slug] || "genre") + "/" + slug;
       }
       function vaParseListPage(cfg, html) {
         var items = [];
@@ -865,14 +892,6 @@ var require_core = __commonJS({
         var search = String(extras.search || "").trim();
         if (search) {
           url = page === 1 ? cfg.viewasianSite + "/?s=" + encodeURIComponent(search) : cfg.viewasianSite + "/page/" + page + "/?s=" + encodeURIComponent(search);
-        } else if (def.mode === "genre" && extras.genre) {
-          var part = vaGenreUrlPart(extras.genre);
-          url = page === 1 ? cfg.viewasianSite + "/" + part + "/" : cfg.viewasianSite + "/" + part + "/page/" + page + "/";
-          return vaPageRaw(cfg, url).then(function(items) {
-            return items.length ? resolveBatch(cfg, items) : [];
-          }).catch(function() {
-            return [];
-          });
         } else {
           url = page === 1 ? cfg.viewasianSite + "/" : cfg.viewasianSite + "/page/" + page + "/";
         }
@@ -882,124 +901,186 @@ var require_core = __commonJS({
           return resolveBatch(cfg, items);
         });
       }
-      var TMDB_MOVIE_GENRES = {
-        action: 28,
-        adventure: 12,
-        animation: 16,
-        comedy: 35,
-        crime: 80,
-        documentary: 99,
-        drama: 18,
-        family: 10751,
-        fantasy: 14,
-        history: 36,
-        horror: 27,
-        music: 10402,
-        mystery: 9648,
-        romance: 10749,
-        "sci-fi": 878,
-        thriller: 53,
-        war: 10752
-      };
-      var TMDB_GENRE_CHIPS = [
-        "Action",
-        "Adventure",
-        "Animation",
-        "Comedy",
-        "Crime",
-        "Documentary",
-        "Drama",
-        "Family",
-        "Fantasy",
-        "History",
-        "Horror",
-        "Music",
-        "Mystery",
-        "Romance",
-        "Sci-Fi",
-        "Thriller",
-        "War"
-      ];
-      function asianLangFilter() {
-        return encodeURIComponent(ASIAN_LANGS.join("|"));
-      }
-      function tmdbResultToMeta(cfg, r, type) {
-        var id = r && r.id;
-        if (!id)
-          return null;
-        var name = r.title || r.name || "";
-        if (!name)
-          return null;
-        var meta = {
-          id: "tmdb:" + id,
-          type,
-          name,
-          poster: tmdbImg("w342", r.poster_path || ""),
-          posterShape: "poster"
-        };
-        if (!meta.poster)
-          delete meta.poster;
-        var bg = tmdbImg("w780", r.backdrop_path || "");
-        if (bg)
-          meta.background = bg;
-        var year = String(r.release_date || r.first_air_date || "").split("-")[0] || "";
-        if (year)
-          meta.releaseInfo = year;
-        if (r.overview)
-          meta.description = r.overview;
-        if (typeof r.vote_average === "number" && r.vote_average > 0) {
-          meta.imdbRating = Math.round(r.vote_average * 10) / 10;
-        }
-        return meta;
-      }
-      function tmdbPageMetas(cfg, def, page, extras) {
-        var type = def.type;
-        var kind = type === "movie" ? "movie" : "tv";
-        var dateField = type === "movie" ? "primary_release_date" : "first_air_date";
-        var search = String(extras.search || "").trim();
-        var genreSlug = slugifyGenre(extras.genre || "");
-        var base = "https://api.themoviedb.org/3/";
-        var langFilter = "with_original_language=" + asianLangFilter();
-        var url;
-        if (search) {
-          url = base + "search/" + kind + "?api_key=" + encodeURIComponent(cfg.tmdbKey) + "&query=" + encodeURIComponent(search) + "&include_adult=false&page=" + page;
-          return fetchJson(cfg, url, 12e3).then(function(data) {
-            var out = [];
-            if (data && Array.isArray(data.results)) {
-              for (var i = 0; i < data.results.length; i++) {
-                var r = data.results[i];
-                if (ASIAN_LANGS.indexOf(r.original_language) === -1) {
-                  continue;
-                }
-                var m = tmdbResultToMeta(cfg, r, type);
-                if (m)
-                  out.push(m);
-              }
-            }
-            return out;
+      function animoParseListPage(cfg, html) {
+        var items = [];
+        var seen = {};
+        var host = String(cfg.animoSite || "").replace(/^https?:\/\//, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        var reHref = new RegExp('href="https?://' + host + '/(?:anime/)?([a-z0-9-]+)/"', "i");
+        var reAnime = new RegExp('href="https?://' + host + "/anime/", "i");
+        var re = /<article class="(?:bs|stylefor)"[^>]*>([\s\S]*?)<\/article>/g;
+        var m;
+        while ((m = re.exec(html)) !== null) {
+          var body = m[1];
+          var isSeriesRow = reAnime.test(body);
+          var link = body.match(reHref);
+          if (!link)
+            continue;
+          var slug = link[1];
+          if (slug === "feed" || slug === "list-mode" || slug === "page")
+            continue;
+          var img = body.match(/<img[^>]*>/i);
+          var poster = "";
+          if (img) {
+            poster = attr(img[0], "src") || attr(img[0], "data-original") || attr(img[0], "data-lazy-src");
+          }
+          var title = "";
+          var tm = body.match(/title="([^"]+)"/i);
+          if (tm)
+            title = stripTags(decodeEntities(tm[1]));
+          if (!title && img) {
+            var alt = attr(img[0], "alt") || attr(img[0], "title");
+            if (alt)
+              title = stripTags(decodeEntities(alt));
+          }
+          if (!title)
+            continue;
+          var epm = slug.match(/^(.*)-episode-\d+$/);
+          if (epm) {
+            slug = epm[1];
+            title = title.replace(/\s*[-\u2013\u2014]?\s*Episode\s*\d+.*$/i, "");
+          }
+          if (seen[slug])
+            continue;
+          seen[slug] = true;
+          items.push({
+            slug,
+            url: cfg.animoSite + "/anime/" + slug + "/",
+            source: "an",
+            type: "series",
+            title: collapseWs(title),
+            year: "",
+            poster,
+            description: ""
           });
         }
-        url = base + "discover/" + kind + "?api_key=" + encodeURIComponent(cfg.tmdbKey) + "&" + langFilter + "&include_adult=false&page=" + page;
-        if (def.mode === "genre" && genreSlug) {
-          var gid = TMDB_MOVIE_GENRES[genreSlug];
-          if (!gid)
-            return Promise.resolve([]);
-          url += "&with_genres=" + gid;
-        } else if (def.id === "asian-series-trending") {
-          url += "&sort_by=" + dateField + ".desc&vote_count.gte=3";
+        return items;
+      }
+      function animoParseUrl(cfg, url) {
+        return fetchTextWithRetry(cfg, url, 12e3).then(function(html) {
+          return animoParseListPage(cfg, html);
+        });
+      }
+      function animoPageRaw(cfg, url) {
+        return fetchPageCached(cfg, url, animoParseUrl);
+      }
+      function animoPageMetas(cfg, def, page, extras) {
+        var url;
+        var search = String(extras.search || "").trim();
+        if (search) {
+          url = page === 1 ? cfg.animoSite + "/?s=" + encodeURIComponent(search) : cfg.animoSite + "/page/" + page + "/?s=" + encodeURIComponent(search);
         } else {
-          url += "&sort_by=popularity.desc&vote_count.gte=5";
+          url = page === 1 ? cfg.animoSite + "/anime/?status=&type=&order=update" : cfg.animoSite + "/anime/?status=&type=&order=update&page=" + page;
         }
-        return fetchJson(cfg, url, 12e3).then(function(data) {
-          var out = [];
-          if (data && Array.isArray(data.results)) {
-            for (var i = 0; i < data.results.length; i++) {
-              var m = tmdbResultToMeta(cfg, data.results[i], type);
-              if (m)
-                out.push(m);
-            }
+        return animoPageRaw(cfg, url).then(function(items) {
+          if (!items.length)
+            return [];
+          return resolveBatch(cfg, items);
+        });
+      }
+      var kisskhActiveHost = null;
+      function kisskhFetchJson(cfg, path) {
+        var preferred = kisskhActiveHost ? [kisskhActiveHost] : [];
+        var hosts = preferred.concat(cfg.kisskhHosts.filter(function(h) {
+          return preferred.indexOf(h) === -1;
+        }));
+        function attempt(i) {
+          if (i >= hosts.length) {
+            return Promise.reject(new Error("all kisskh hosts failed (" + hosts.join(", ") + ")"));
           }
-          return out;
+          return fetchJson(cfg, hosts[i] + path, 12e3).then(function(data) {
+            kisskhActiveHost = hosts[i];
+            return data;
+          }).catch(function(err) {
+            if (i + 1 < hosts.length)
+              return attempt(i + 1);
+            throw err;
+          });
+        }
+        return attempt(0);
+      }
+      var KISSKH_SECTIONS = {
+        "kisskh-latest": ["type=KC&sub=0&sort=latest", "type=K&sub=0&sort=latest"],
+        "kisskh-top-kdrama": ["type=K&sub=0&sort=rate", "type=K&sub=0&sort=popular"],
+        "kisskh-top-cdrama": ["type=C&sub=0&sort=rate", "type=C&sub=0&sort=popular"],
+        "kisskh-hollywood": ["type=H&sub=0&sort=latest"],
+        "kisskh-anime": ["type=A&sub=0&sort=latest"],
+        "kisskh-upcoming": ["type=KC&sub=0&sort=latest&status=Upcoming", "type=KC&sub=0&sort=ongoing"]
+      };
+      function kisskhRowToItem(cfg, row) {
+        if (!row || row.id === void 0 || row.id === null)
+          return null;
+        var title = String(row.title || "").trim();
+        if (!title)
+          return null;
+        var poster = String(row.poster_path || "").trim();
+        if (poster) {
+          if (poster.indexOf("//") === 0)
+            poster = "https:" + poster;
+          else if (poster.charAt(0) === "/") {
+            poster = (kisskhActiveHost || cfg.kisskhHosts[0]) + poster;
+          }
+        }
+        return {
+          source: "kh",
+          sourceId: String(row.id),
+          type: String(row.type || "") === "Movie" ? "movie" : "series",
+          title: collapseWs(decodeEntities(title)),
+          year: String(row.release_date || "").split("-")[0] || "",
+          poster,
+          rating: row.rate !== void 0 && row.rate !== null ? String(row.rate) : "",
+          description: ""
+        };
+      }
+      function kisskhListRaw(cfg, def, page) {
+        var queries = KISSKH_SECTIONS[def.id] || ["type=KC&sub=0&sort=latest"];
+        function run(idx) {
+          if (idx >= queries.length)
+            return Promise.resolve([]);
+          var url = "/api/DramaList/List/" + page + "?" + queries[idx] + "&title=";
+          return kisskhFetchJson(cfg, url).then(function(data) {
+            var rows = data && Array.isArray(data.datas) ? data.datas : [];
+            if (!rows.length && idx + 1 < queries.length)
+              return run(idx + 1);
+            return rows;
+          }).catch(function(err) {
+            if (idx + 1 < queries.length)
+              return run(idx + 1);
+            throw err;
+          });
+        }
+        return run(0);
+      }
+      function kisskhSearchRaw(cfg, query) {
+        var url = "/api/DramaList/Search?q=" + encodeURIComponent(query) + "&type=0";
+        return kisskhFetchJson(cfg, url).then(function(list) {
+          return Array.isArray(list) ? list : [];
+        });
+      }
+      function kisskhItemsToMetas(cfg, rows, typeFilter) {
+        var items = [];
+        for (var i = 0; i < rows.length; i++) {
+          var it = kisskhRowToItem(cfg, rows[i]);
+          if (!it)
+            continue;
+          if (typeFilter === "movie" && it.type !== "movie")
+            continue;
+          if (typeFilter === "series" && it.type !== "series")
+            continue;
+          items.push(it);
+        }
+        if (!items.length)
+          return Promise.resolve([]);
+        return resolveBatch(cfg, items);
+      }
+      function kisskhPageMetas(cfg, def, page, extras) {
+        var search = String(extras.search || "").trim();
+        if (search) {
+          return kisskhSearchRaw(cfg, search).then(function(rows) {
+            return kisskhItemsToMetas(cfg, rows, def.type);
+          });
+        }
+        return kisskhListRaw(cfg, def, page).then(function(rows) {
+          return kisskhItemsToMetas(cfg, rows, def.type);
         });
       }
       function bufferStateKey(cfg, kind, ident) {
@@ -1037,11 +1118,15 @@ var require_core = __commonJS({
             }
             var page = buf.nextPage;
             var fetchPage = pageMetasFn(page);
-            var safeFetch = page === 1 ? fetchPage : fetchPage.catch(function() {
+            var safeFetch = fetchPage.catch(function() {
               return null;
             });
             return safeFetch.then(function(metas) {
-              if (!metas || !metas.length) {
+              if (page === 1) {
+                if (!metas || !metas.length) {
+                  return buf.items.slice(skip, skip + limit);
+                }
+              } else if (!metas || !metas.length) {
                 buf.exhausted = true;
                 return buf.items.slice(skip, skip + limit);
               }
@@ -1081,48 +1166,54 @@ var require_core = __commonJS({
           }
         );
       }
+      var PINOY_GENRE_CHIPS = [
+        "Action",
+        "Animation",
+        "Comedy",
+        "Concert",
+        "Digitally Restored",
+        "Crime",
+        "Documentary",
+        "Drama",
+        "Fantasy",
+        "Horror",
+        "Indie",
+        "Romance",
+        "Rated R",
+        "Sports",
+        "Stageplay",
+        "Tagalog Dubbed",
+        "Wattpad Presents"
+      ];
+      var KS_GENRE_CHIPS = ["Fantasy", "Friendship", "Law", "Romance", "Sports"];
       function catalogDefinitions() {
-        var pinoyGenres = [
-          "Action",
-          "Adventure",
-          "Animation",
-          "Anthology Series",
-          "BL Series",
-          "Comedy",
-          "Concert",
-          "Crime",
-          "Documentary",
-          "Drama",
-          "Family",
-          "Fantasy",
-          "History",
-          "Horror",
-          "Indie",
-          "LGBTQ",
-          "Music",
-          "Musical",
-          "Mystery",
-          "Romance",
-          "Science Fiction",
-          "Short Films",
-          "Sports",
-          "Stageplay",
-          "Tagalog Dubbed",
-          "Teleserye",
-          "Thriller",
-          "War",
-          "Wattpad",
-          "Web Series"
-        ];
         return [
-          // --- Pinoy Movies Hub (pinoymovieshub.win) ---
+          // --- Pinoy Movies Hub (pinoymovieshub.win) — 9 catalogs ---
+          {
+            type: "movie",
+            id: "pinoy-new-releases",
+            name: "Pinoy New Releases",
+            source: "pinoy",
+            mode: "newreleases",
+            description: "NEW RELEASES \u2014 the featured carousel on pinoymovieshub.win (movies)",
+            extra: [{ name: "skip" }]
+          },
+          {
+            type: "series",
+            id: "pinoy-new-releases-tv",
+            name: "Pinoy New Releases \u2022 Series",
+            source: "pinoy",
+            mode: "newreleases",
+            description: "NEW RELEASES \u2014 the featured carousel on pinoymovieshub.win (series)",
+            extra: [{ name: "skip" }]
+          },
           {
             type: "movie",
             id: "pinoy-movies",
-            name: "Pinoy Movies",
+            name: "Pinoy Recently Added Movies",
             source: "pinoy",
             mode: "archive",
-            description: "Latest Pinoy movies from pinoymovieshub.win",
+            description: "Recently Added Movies on pinoymovieshub.win",
             extra: [{ name: "search" }, { name: "skip" }]
           },
           {
@@ -1131,8 +1222,35 @@ var require_core = __commonJS({
             name: "Pinoy Series",
             source: "pinoy",
             mode: "archive",
-            description: "Latest Pinoy series and Tagalog-dubbed shows from pinoymovieshub.win",
+            description: "Series on pinoymovieshub.win (teleseryes, Tagalog-dubbed shows)",
             extra: [{ name: "search" }, { name: "skip" }]
+          },
+          {
+            type: "movie",
+            id: "pinoy-featured",
+            name: "Pinoy Featured (Movies)",
+            source: "pinoy",
+            mode: "featured",
+            description: "Featured movies on pinoymovieshub.win",
+            extra: [{ name: "skip" }]
+          },
+          {
+            type: "series",
+            id: "pinoy-featured-tv",
+            name: "Pinoy Featured \u2022 Series",
+            source: "pinoy",
+            mode: "featured",
+            description: "Featured series on pinoymovieshub.win",
+            extra: [{ name: "skip" }]
+          },
+          {
+            type: "movie",
+            id: "pinoy-coming-soon",
+            name: "Pinoy Coming Soon",
+            source: "pinoy",
+            mode: "coming-soon",
+            description: "Coming Soon on pinoymovieshub.win",
+            extra: [{ name: "skip" }]
           },
           {
             type: "movie",
@@ -1140,8 +1258,8 @@ var require_core = __commonJS({
             name: "Pinoy Movies by Genre",
             source: "pinoy",
             mode: "genre",
-            description: "Browse Pinoy movies by genre",
-            extra: [{ name: "genre", options: pinoyGenres }, { name: "skip" }]
+            description: "Browse Pinoy movies by genre (site sections: Action .. Wattpad Presents)",
+            extra: [{ name: "genre", options: PINOY_GENRE_CHIPS.slice() }, { name: "skip" }]
           },
           {
             type: "series",
@@ -1149,74 +1267,120 @@ var require_core = __commonJS({
             name: "Pinoy Series by Genre",
             source: "pinoy",
             mode: "genre",
-            description: "Browse Pinoy series by genre",
-            extra: [{ name: "genre", options: pinoyGenres }, { name: "skip" }]
+            description: "Browse Pinoy series by genre (site sections: Action .. Wattpad Presents)",
+            extra: [{ name: "genre", options: PINOY_GENRE_CHIPS.slice() }, { name: "skip" }]
           },
-          // --- KissAsian (kissasian.cam HTML, series) ---
+          // --- KissAsian (kissasian.cam) — 3 catalogs ---
+          {
+            type: "series",
+            id: "asian-series-hot",
+            name: "KissAsian Hot Series Update",
+            source: "kissasian",
+            mode: "hot",
+            description: "Hot Series Update \u2014 the hot block on kissasian.cam",
+            extra: [{ name: "search" }, { name: "skip" }]
+          },
           {
             type: "series",
             id: "asian-series",
-            name: "Asian Series (KissAsian)",
+            name: "KissAsian Latest Release",
             source: "kissasian",
             mode: "archive",
-            description: "Latest Asian dramas \u2014 Korean, Chinese, Japanese and more \u2014 from kissasian.cam",
+            description: "Latest Release \u2014 newest drama updates on kissasian.cam",
             extra: [{ name: "search" }, { name: "skip" }]
           },
           {
             type: "series",
             id: "asian-series-genre",
-            name: "Asian Series by Genre (KissAsian)",
+            name: "KissAsian by Genre",
             source: "kissasian",
             mode: "genre",
-            description: "Browse Asian dramas by genre on kissasian.cam",
+            description: "Recommendation tabs on kissasian.cam",
             extra: [{ name: "genre", options: KS_GENRE_CHIPS.slice() }, { name: "skip" }]
           },
-          // --- ViewAsian (viewasian.lol HTML, series) ---
+          // --- ViewAsian (viewasian.lol) — 1 catalog ---
           {
             type: "series",
             id: "asian-series-viewasian",
-            name: "Asian Series (ViewAsian)",
+            name: "ViewAsian Recently Drama, Movie and Kshow",
             source: "viewasian",
             mode: "archive",
-            description: "Latest Asian dramas \u2014 Korean, Chinese, Japanese, Thai \u2014 from viewasian.lol",
+            description: "Recently Drama, Movie and Kshow \u2014 the recent list on viewasian.lol",
+            extra: [{ name: "search" }, { name: "skip" }]
+          },
+          // --- KissKH (kisskh.nl/ovh/co API) — 7 catalogs ---
+          {
+            type: "series",
+            id: "kisskh-latest",
+            name: "KissKH Latest Update",
+            source: "kisskh",
+            mode: "list",
+            description: "Latest Update on kisskh (K-drama + C-drama API list)",
             extra: [{ name: "search" }, { name: "skip" }]
           },
           {
             type: "series",
-            id: "asian-series-viewasian-genre",
-            name: "Asian Series by Genre (ViewAsian)",
-            source: "viewasian",
-            mode: "genre",
-            description: "Browse Asian dramas by genre or country on viewasian.lol",
-            extra: [{ name: "genre", options: VA_GENRE_CHIPS.slice() }, { name: "skip" }]
-          },
-          // --- TMDB asian-language directory ---
-          {
-            type: "movie",
-            id: "asian-movies",
-            name: "Asian Movies",
-            source: "tmdb",
-            mode: "archive",
-            description: "Popular Korean, Chinese, Japanese, Thai and Filipino movies (official TMDB directory)",
+            id: "kisskh-top-kdrama",
+            name: "KissKH Top K-Drama",
+            source: "kisskh",
+            mode: "list",
+            description: "Top K-Drama on kisskh (rated)",
             extra: [{ name: "search" }, { name: "skip" }]
           },
           {
             type: "series",
-            id: "asian-series-trending",
-            name: "Asian Series Trending",
-            source: "tmdb",
-            mode: "archive",
-            description: "Newest and trending Asian series across all languages (official TMDB directory)",
+            id: "kisskh-top-cdrama",
+            name: "KissKH Top C-Drama",
+            source: "kisskh",
+            mode: "list",
+            description: "Top C-Drama on kisskh (rated)",
+            extra: [{ name: "search" }, { name: "skip" }]
+          },
+          {
+            type: "series",
+            id: "kisskh-hollywood",
+            name: "KissKH Hollywood",
+            source: "kisskh",
+            mode: "list",
+            description: "Hollywood series on kisskh",
             extra: [{ name: "search" }, { name: "skip" }]
           },
           {
             type: "movie",
-            id: "asian-movies-genre",
-            name: "Asian Movies by Genre",
-            source: "tmdb",
-            mode: "genre",
-            description: "Browse Asian movies by genre (official TMDB directory)",
-            extra: [{ name: "genre", options: TMDB_GENRE_CHIPS.slice() }, { name: "skip" }]
+            id: "kisskh-hollywood-movies",
+            name: "KissKH Hollywood Movies",
+            source: "kisskh",
+            mode: "list",
+            description: "Hollywood movies on kisskh",
+            extra: [{ name: "search" }, { name: "skip" }]
+          },
+          {
+            type: "series",
+            id: "kisskh-anime",
+            name: "KissKH Anime",
+            source: "kisskh",
+            mode: "list",
+            description: "Anime on kisskh",
+            extra: [{ name: "search" }, { name: "skip" }]
+          },
+          {
+            type: "series",
+            id: "kisskh-upcoming",
+            name: "KissKH Upcoming",
+            source: "kisskh",
+            mode: "list",
+            description: "Upcoming dramas on kisskh",
+            extra: [{ name: "skip" }]
+          },
+          // --- AnimeTVSlash (animotvslash.org) — 1 catalog ---
+          {
+            type: "series",
+            id: "animo-latest",
+            name: "AnimeTVSlash Latest Release",
+            source: "animo",
+            mode: "archive",
+            description: "Latest Release \u2014 newest anime updates on animotvslash.org",
+            extra: [{ name: "search" }, { name: "skip" }]
           }
         ];
       }
@@ -1225,7 +1389,7 @@ var require_core = __commonJS({
           id: ADDON_ID,
           version: VERSION,
           name: ADDON_NAME,
-          description: "Organized Asian catalogs: Pinoy movies & series (pinoymovieshub), Asian dramas (kissasian.cam /series/ + viewasian.lol) and Asian movies/series directories by language (TMDB). Fallback rows carry source-scoped ids (asian:ks-/va-/pmh-<slug>) the paired plugins resolve straight to the sites' real episode/movie pages.",
+          description: "Asian catalogs mirroring each site's real sections: pinoymovieshub.win (New Releases / Recently Added Movies / Series / Featured / Coming Soon / 17 genre sections), kissasian.cam (Hot Series Update / Latest Release / Recommendation genres), viewasian.lol (Recently Drama, Movie and Kshow), kisskh API (Latest Update / Top K+C-Drama / Hollywood / Anime / Upcoming) and animotvslash.org (Latest Release). Rows carry full TMDB metadata; fallback rows carry source-scoped ids (asian:pmh-/ks-/va-/kh-/an-) the paired plugins resolve straight to the sites' real pages.",
           logo: cfg.pinoySite + PINOY_ICON,
           resources: ["catalog"],
           types: ["movie", "series"],
@@ -1259,7 +1423,7 @@ var require_core = __commonJS({
             });
           })],
           ["kissasian", timeProbe(function() {
-            return ksPageRaw(cfg, cfg.kissasianSite + "/series/").then(function(items) {
+            return ksPageRaw(cfg, cfg.kissasianSite + "/series/?status=&type=&order=update").then(function(items) {
               return { ok: items.length > 0, items: items.length, error: items.length ? void 0 : "parsed 0 series rows (site markup changed?)" };
             });
           })],
@@ -1268,10 +1432,25 @@ var require_core = __commonJS({
               return { ok: items.length > 0, items: items.length, error: items.length ? void 0 : "parsed 0 series rows (site markup changed?)" };
             });
           })],
+          ["animotvslash", timeProbe(function() {
+            return animoPageRaw(cfg, cfg.animoSite + "/anime/?status=&type=&order=update").then(function(items) {
+              return { ok: items.length > 0, items: items.length, error: items.length ? void 0 : "parsed 0 anime rows (site markup changed?)" };
+            });
+          })],
+          ["kisskh", timeProbe(function() {
+            var def = { id: "kisskh-latest", type: "series", mode: "list" };
+            return kisskhPageMetas(cfg, def, 1, {}).then(function(metas) {
+              return {
+                ok: metas.length > 0,
+                items: metas.length,
+                error: metas.length ? void 0 : "API unreachable or returned 0 rows (datacenter egress is commonly CF-challenged by kisskh; device playback is unaffected)"
+              };
+            });
+          })],
           ["tmdb", timeProbe(function() {
-            var def = { type: "movie", id: "asian-movies", mode: "archive" };
-            return tmdbPageMetas(cfg, def, 1, {}).then(function(metas) {
-              return { ok: metas.length > 0, items: metas.length, error: metas.length ? void 0 : "discover returned 0 rows (check TMDB_API_KEY)" };
+            var url = "https://api.themoviedb.org/3/configuration?api_key=" + encodeURIComponent(cfg.tmdbKey);
+            return fetchJson(cfg, url, 12e3).then(function(data) {
+              return { ok: !!(data && data.images), items: 1, error: data && data.images ? void 0 : "unexpected configuration response (check TMDB_API_KEY)" };
             });
           })]
         ];
@@ -1303,13 +1482,17 @@ var require_core = __commonJS({
             hints.push("All probes fail with the same error (" + errors[0] + ") \u2014 likely a worker-code bug, not IP blocking. Redeploy the current worker-bundle.js (" + ADDON_NAME + " v" + VERSION + ").");
           } else {
             if (!sources.pinoymovieshub.ok)
-              hints.push("pinoymovieshub unreachable from this runtime (site down or IP blocked). Pinoy catalogs may be empty; set PINOY_SITE to an alternate mirror if the site moved.");
+              hints.push("pinoymovieshub unreachable from this runtime. Mirror check (2026-09-10): pinoymovieshub.win is the canonical host (pinoymovieshub.tv redirects to it; .org CF-blocks datacenter IPs; the rest are dead). Pinoy catalogs fall back to serve-stale cache.");
             if (!sources.kissasian.ok)
-              hints.push("kissasian.cam unreachable from this runtime (site up but likely blocking this worker's datacenter egress \u2014 verified live from residential/other datacenter IPs). KissAsian series catalogs fall back to serve-stale cache; set KISSASIAN_SITE if a compatible mirror appears. Device-side playback is unaffected (the plugin runs on the client).");
+              hints.push("kissasian.cam unreachable from this runtime (site up but likely blocking this worker's egress \u2014 verified live from residential/other datacenter IPs). KissAsian catalogs fall back to serve-stale cache; device-side playback is unaffected (the plugin runs on the client).");
             if (!sources.viewasian.ok)
-              hints.push("viewasian.lol unreachable from this runtime (site down or IP blocked). ViewAsian series catalogs may be empty; set VIEWASIAN_SITE to an alternate mirror.");
+              hints.push("viewasian.lol unreachable from this runtime (site down or IP blocked). ViewAsian catalog may be empty; set VIEWASIAN_SITE to an alternate mirror.");
+            if (!sources.animotvslash.ok)
+              hints.push("animotvslash.org unreachable from this runtime (site down or IP blocked). AnimeTVSlash catalog may be empty; set ANIMO_SITE to an alternate mirror.");
+            if (!sources.kisskh.ok)
+              hints.push("kisskh API unreachable from this runtime (nl/ovh/co all rotate-failed \u2014 kisskh Cloudflare-challenges most datacenter egresses). KissKH catalogs stay EMPTY here but streams still work on devices via the paired plugin; if a compatible mirror appears set KISSKH_HOSTS (comma-separated).");
             if (!sources.tmdb.ok)
-              hints.push("TMDB discover failed \u2014 check TMDB_API_KEY and outbound access; Asian Movies / Trending catalogs may be empty.");
+              hints.push("TMDB failed \u2014 check TMDB_API_KEY and outbound access; metadata enrichment is degraded.");
             if (okCount > 0 && okCount < sourceCount)
               hints.push("Partial outage: only " + okCount + "/" + sourceCount + " sources healthy \u2014 affected catalogs fall back to serve-stale cache.");
           }
@@ -1370,8 +1553,16 @@ var require_core = __commonJS({
           return function(page) {
             return vaPageMetas(cfg, def, page, extras);
           };
-        return function(page) {
-          return tmdbPageMetas(cfg, def, page, extras);
+        if (def.source === "animo")
+          return function(page) {
+            return animoPageMetas(cfg, def, page, extras);
+          };
+        if (def.source === "kisskh")
+          return function(page) {
+            return kisskhPageMetas(cfg, def, page, extras);
+          };
+        return function() {
+          return Promise.resolve([]);
         };
       }
       function getCatalogMetas(cfg, def, extras) {
@@ -1388,10 +1579,17 @@ var require_core = __commonJS({
       }
       function indexHtml(cfg) {
         var defs = catalogDefinitions();
+        var srcLabel = {
+          pinoy: "pinoymovieshub.win",
+          kissasian: "kissasian.cam",
+          viewasian: "viewasian.lol",
+          animo: "animotvslash.org",
+          kisskh: "kisskh API (nl/ovh/co)"
+        };
         var rows = defs.map(function(c) {
-          return "<tr><td>" + c.name + "</td><td><code>" + c.type + "</code></td><td>" + (c.source === "pinoy" ? "pinoymovieshub.win" : c.source === "kissasian" ? "kissasian.cam" : c.source === "viewasian" ? "viewasian.lol" : "TMDB") + "</td><td><code>/catalog/" + c.type + "/" + c.id + ".json</code></td></tr>";
+          return "<tr><td>" + c.name + "</td><td><code>" + c.type + "</code></td><td>" + (srcLabel[c.source] || c.source) + "</td><td><code>/catalog/" + c.type + "/" + c.id + ".json</code></td></tr>";
         }).join("");
-        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + ADDON_NAME + '</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 16px;color:#eee;background:#14141b}a{color:#7ab8ff}table{border-collapse:collapse;width:100%}td,th{border:1px solid #333;padding:8px;text-align:left;font-size:14px}code{color:#9ef}h2{margin-top:28px}</style></head><body><h1>' + ADDON_NAME + " <small>v" + VERSION + '</small></h1><p>Stremio-protocol catalog addon for Nuvio \u2014 organized directory:</p><ul><li><b>Pinoy Movies Hub</b> \u2014 <a href="' + cfg.pinoySite + '">' + cfg.pinoySite.replace(/^https:\/\//, "") + '</a> (movies, series, genres, search)</li><li><b>KissAsian</b> \u2014 <a href="' + cfg.kissasianSite + '">' + cfg.kissasianSite.replace(/^https:\/\//, "") + '</a> (Asian dramas: latest, genres, search)</li><li><b>ViewAsian</b> \u2014 <a href="' + cfg.viewasianSite + '">' + cfg.viewasianSite.replace(/^https:\/\//, "") + "</a> (Asian dramas: latest, genres, countries, search)</li><li><b>TMDB</b> \u2014 official Asian-language movie &amp; series directories (Korean, Chinese, Japanese, Thai, Filipino)</li></ul><p>Add this manifest URL in Nuvio (Settings &rarr; Addons): <b>" + (cfg.__selfUrl || "https://your-deployment") + '/manifest.json</b></p><p>Health probe: <a href="/health"><code>/health</code></a> (per-source status, latency, hints)</p><h2>Catalogs</h2><table><tr><th>Name</th><th>Type</th><th>Source</th><th>Endpoint</th></tr>' + rows + "</table><h2>Search examples</h2><p><code>/catalog/movie/pinoy-movies/search=hello love again.json</code><br><code>/catalog/series/asian-series/search=queen of tears.json</code><br><code>/catalog/series/asian-series-viewasian/search=crash landing on you.json</code><br><code>/catalog/movie/asian-movies/search=parasite.json</code> (TMDB, asian-language results only)</p><h2>Genre / country chips</h2><p><code>/catalog/series/asian-series-genre/genre=Romance.json</code><br><code>/catalog/series/asian-series-viewasian-genre/genre=Korean.json</code><br><code>/catalog/movie/asian-movies-genre/genre=Action&amp;skip=20.json</code><br><code>/catalog/series/pinoy-series-genre/genre=Tagalog Dubbed.json</code></p><p>Pair with the <b>PinoyMoviesHub</b> and <b>AsianHub</b> Nuvio plugins (xrexzerox/nv-plugins) for playable streams.</p></body></html>";
+        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + ADDON_NAME + '</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 16px;color:#eee;background:#14141b}a{color:#7ab8ff}table{border-collapse:collapse;width:100%}td,th{border:1px solid #333;padding:8px;text-align:left;font-size:14px}code{color:#9ef}h2{margin-top:28px}</style></head><body><h1>' + ADDON_NAME + " <small>v" + VERSION + `</small></h1><p>Stremio-protocol catalog addon for Nuvio \u2014 mirrors each site's real sections:</p><ul><li><b>Pinoy Movies Hub</b> \u2014 <a href="` + cfg.pinoySite + '">' + cfg.pinoySite.replace(/^https:\/\//, "") + '</a> (New Releases, Recently Added Movies, Series, Featured, Coming Soon, 17 genre sections)</li><li><b>KissAsian</b> \u2014 <a href="' + cfg.kissasianSite + '">' + cfg.kissasianSite.replace(/^https:\/\//, "") + '</a> (Hot Series Update, Latest Release, Recommendation genres)</li><li><b>ViewAsian</b> \u2014 <a href="' + cfg.viewasianSite + '">' + cfg.viewasianSite.replace(/^https:\/\//, "") + "</a> (Recently Drama, Movie and Kshow)</li><li><b>KissKH</b> \u2014 JSON API via " + cfg.kisskhHosts.join(" / ") + ' (Latest Update, Top K/C-Drama, Hollywood, Anime, Upcoming)</li><li><b>AnimeTVSlash</b> \u2014 <a href="' + cfg.animoSite + '">' + cfg.animoSite.replace(/^https:\/\//, "") + "</a> (Latest Release)</li></ul><p>Add this manifest URL in Nuvio (Settings &rarr; Addons): <b>" + (cfg.__selfUrl || "https://your-deployment") + '/manifest.json</b></p><p>Health probe: <a href="/health"><code>/health</code></a> (per-source status, latency, hints)</p><h2>Catalogs</h2><table><tr><th>Name</th><th>Type</th><th>Source</th><th>Endpoint</th></tr>' + rows + "</table><h2>Search examples</h2><p><code>/catalog/movie/pinoy-movies/search=hello love again.json</code><br><code>/catalog/series/asian-series/search=queen of tears.json</code><br><code>/catalog/series/kisskh-latest/search=queen of tears.json</code><br><code>/catalog/series/animo-latest/search=one piece.json</code></p><h2>Genre / section chips</h2><p><code>/catalog/series/asian-series-genre/genre=Romance.json</code><br><code>/catalog/series/pinoy-series-genre/genre=Tagalog Dubbed.json</code><br><code>/catalog/movie/pinoy-movies-genre/genre=Rated R&amp;skip=20.json</code> (site label for /genre/sexy)</p><p>Pair with the <b>PinoyMoviesHub</b>, <b>AsianHub</b> and <b>AnimeTVSlash</b> Nuvio plugins (xrexzerox/nv-plugins) for playable streams.</p></body></html>";
       }
       function handle(urlString, env) {
         var cfg = makeConfig(env || {});
@@ -1451,8 +1649,11 @@ var require_core = __commonJS({
         catalogDefinitions,
         // test hooks
         parseListPage,
+        parseFeaturedCarousel,
         ksParseListPage,
+        ksParseHotSection,
         vaParseListPage,
+        animoParseListPage,
         cleanTitleForSearch,
         cleanDisplayName,
         normalizeForCompare,
@@ -1461,11 +1662,12 @@ var require_core = __commonJS({
         pickBestTmdb,
         toMeta,
         slugifyGenre,
-        tmdbResultToMeta,
+        pinoyGenreSlug,
         pinoyPageMetas,
         ksPageMetas,
         vaPageMetas,
-        tmdbPageMetas,
+        animoPageMetas,
+        kisskhPageMetas,
         getCatalogMetas,
         healthReport
       };
@@ -1473,7 +1675,7 @@ var require_core = __commonJS({
   }
 });
 
-// worker.js
+// addons/asian-catalog/worker.js
 var import_core = __toESM(require_core());
 var Core = globalThis.AsianCatalogCore;
 var worker_default = {

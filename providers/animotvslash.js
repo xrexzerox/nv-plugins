@@ -1,5 +1,15 @@
 // providers/animotvslash.js
-// v5.2.0 (2026-09-10): app arg-shape hardening, same failure class as
+// v5.3.0 (2026-09-10): asian-catalog v4.0.0 pairing — DIRECT lane for
+// source-scoped catalog rows:
+//   - asian:an-<slug> (TMDB-unmatched rows of the animo-latest catalog)
+//     navigates the site's own page structure directly:
+//     /anime/{slug}/ -> real -episode-{n}/ link -> extract. Zero title
+//     searching (the same fix pinoyhub 5.4.0 / asianhub 2.2.0 got).
+//   - Generic asian:<slug> rows (stale CDN cache) also route here as an
+//     an- lane with the de-slugged title.
+//   - asian:kh-<id> rows are owned by the AsianHub kisskh lane -> skipped
+//     fast (no wasted TMDB/search work).
+// v5.2.0: app arg-shape hardening, same failure class as
 // pinoyhub 5.6.0 ("movies work / series don't"):
 //   - IMDb tt-id inputs (app without TMDB key) resolved via the TMDB find
 //     API with the authoritative movie/tv type pinned from the hit.
@@ -874,6 +884,77 @@ async function finishStreams(pageResult, tmdbData, mediaType, seasonNum, episode
 }
 
 /**
+ * v5.3.0: parse asian-catalog fallback ids (same contract as asianhub.js /
+ * pinoyhub.js). Returns { source, slug, title } or null.
+ *   asian:an-<slug>  -> this plugin's DIRECT lane (source 'an')
+ *   asian:kh-<id>    -> owned by AsianHub -> skip
+ *   asian:<slug>     -> generic legacy row -> treated as an an- lane here
+ */
+function parseAsianCatalogId(rawId) {
+  var s = String(rawId || "").trim();
+  var m = s.match(/^asian[:\/](.+)$/i);
+  if (!m) return null;
+  var tail = m[1].replace(/\.json$/i, "").split("/")[0].trim().toLowerCase();
+  if (!tail || !/^[a-z0-9][a-z0-9-]*$/i.test(tail)) return null;
+  var pm = tail.match(/^(an|kh)-([a-z0-9][a-z0-9-]*)$/);
+  if (pm) {
+    if (!pm[2]) return null;
+    var stitle = pm[2].replace(/-+/g, " ").replace(/\s+/g, " ").trim();
+    if (!stitle) return null;
+    return { source: pm[1], slug: pm[2], title: stitle };
+  }
+  var title = tail.replace(/-+/g, " ").replace(/\s+/g, " ").trim();
+  if (!title) return null;
+  return { source: "", slug: tail, title: title };
+}
+
+/**
+ * v5.3.0 DIRECT lane for asian:an-<slug> rows: navigate /anime/{slug}/,
+ * pick the real episode link, extract. No title search anywhere.
+ */
+async function catalogDirectStreams(catalogId, seasonNum, episodeNum) {
+  const slug = catalogId.slug;
+  if (!slug || !/^[a-z0-9][a-z0-9-]*$/.test(slug)) return [];
+  const wantEp = parseInt(episodeNum, 10) || 1;
+  console.log(`[animotvslash] catalog direct lane: an-${slug} ep=${wantEp}`);
+
+  // 1) the show page (canonical /anime/ form; root form tolerated)
+  const showPage = await fetchHTMLWithCookies(`https://animotvslash.org/anime/${slug}/`)
+    .catch(() => ({ html: null }));
+  let showHtml = showPage && showPage.html;
+  if (!showHtml) {
+    const rootPage = await fetchHTMLWithCookies(`https://animotvslash.org/${slug}/`)
+      .catch(() => ({ html: null }));
+    showHtml = rootPage && rootPage.html;
+  }
+  if (!showHtml) {
+    console.log('[animotvslash] catalog direct lane: show page unreachable');
+    return [];
+  }
+
+  // 2) the real episode link off the show page (same scan as the search
+  //    fallback — episode slugs differ from series slugs on this site)
+  const epRe = /href="https?:\/\/animotvslash\.org\/([a-z0-9-]+-episode-(\d+))\//gi;
+  let em, epPath = '';
+  while ((em = epRe.exec(showHtml)) !== null) {
+    if (parseInt(em[2], 10) === wantEp) { epPath = em[1]; break; }
+    if (!epPath) epPath = em[1]; // movies: any watch page
+  }
+  if (!epPath) {
+    console.log('[animotvslash] catalog direct lane: no episode link on show page');
+    return [];
+  }
+  const hit = await resolvePageWithFallbacks([`https://animotvslash.org/${epPath}/`]);
+  if (!hit.html) {
+    console.log('[animotvslash] catalog direct lane: episode page unreachable');
+    return [];
+  }
+  console.log(`[animotvslash] catalog direct lane hit: ${epPath}`);
+  const pseudo = { title: catalogId.title, original: catalogId.title, year: "", raw: null };
+  return finishStreams(hit, pseudo, 'tv', seasonNum || 1, wantEp);
+}
+
+/**
  * v5.2.0 app entry: remaps the 4-arg app signature, normalizes media-type
  * aliases ("series"/"show" -> "tv", NuvioTVSmart passes the type verbatim)
  * and resolves IMDb tt-ids (app without TMDB key) to TMDB ids before the
@@ -890,6 +971,18 @@ async function getStreams(tmdbId, season, episode) {
 
     var idStr = String(tmdbId === undefined || tmdbId === null ? "" : tmdbId).replace(/^tmdb:/i, "").trim();
     if (!idStr) return [];
+
+    // v5.3.0: asian-catalog fallback rows (asian:an-<slug> / generic
+    // asian:<slug>) -> direct lane; asian:kh-<id> -> AsianHub's lane, skip.
+    var catalogId = parseAsianCatalogId(idStr);
+    if (catalogId) {
+      if (catalogId.source === "kh") {
+        console.log(`[animotvslash] asian:kh- id -> handled by AsianHub plugin, skipping`);
+        return [];
+      }
+      var catSeason = mediaType === "tv" ? (parseInt(season, 10) || 1) : 1;
+      return catalogDirectStreams(catalogId, catSeason, episode);
+    }
 
     if (/^tt\d+/i.test(idStr)) {
         var hit = await fetchJSONWithCookies(`https://api.themoviedb.org/3/find/${idStr}?api_key=${TMDB_API_KEY}&external_source=imdb_id`).then(function(data) {

@@ -5,7 +5,16 @@
  *           Hong Kong / other Asian titles, English subs)
  * Language: ko / zh / ja / th / en
  * Author: xrexzerox
- * Version: 2.5.0
+ * Version: 2.6.0
+ *
+ * v2.6.0 (2026-09-10) - asian-catalog v4.0.0 pairing:
+ *   - NEW kisskh direct lane: asian:kh-<dramaId> rows (emitted for
+ *     TMDB-unmatched KissKH catalog rows) resolve straight through the
+ *     kisskh API by numeric drama id (detail -> episode -> kkey -> m3u8).
+ *     Zero title searching, mirror rotation inherited from kisskhFetchJson.
+ *   - parseAsianCatalogId now recognises the new kh- (owned here) and an-
+ *     (owned by the animotvslash plugin) prefixes; an- rows are skipped
+ *     fast like pmh- rows.
  *
  * v2.5.0 (2026-09-10) - app arg-shape hardening + kisskh lane self-sufficiency
  *   (same failure class as pinoyhub 5.6.0 "movies work / series don't"):
@@ -323,9 +332,12 @@ function titleScore(a, b) {
 /**
  * asian-catalog addon fallback ids (parse BEFORE the generic de-slug):
  *   v3.2.0 source-scoped shapes — asian:ks-<slug>, asian:va-<slug>,
- *   asian:pmh-<slug>. The tail slug is the source site's own page slug, so
- *   the plugin can navigate the real site structure directly instead of
- *   searching a title that may not match the site's URL. Returns:
+ *   asian:pmh-<slug>. v4.0.0 adds asian:kh-<kisskh dramaId> (owned by this
+ *   plugin's kisskh lane) and asian:an-<animotvslash slug> (owned by the
+ *   animotvslash plugin -> skipped here). The tail slug is the source
+ *   site's own page slug, so the plugin can navigate the real site
+ *   structure directly instead of searching a title that may not match the
+ *   site's URL. Returns:
  *     { source: "ks"|"va"|"pmh", slug, title }  for scoped rows
  *     { source: "", slug, title }               for legacy generic rows
  *   null when the id is not an asian-catalog id.
@@ -336,7 +348,7 @@ function parseAsianCatalogId(rawId) {
   if (!m) return null;
   var tail = m[1].replace(/\.json$/i, "").split("/")[0].trim().toLowerCase();
   if (!tail || !/^[a-z0-9][a-z0-9-]*$/i.test(tail)) return null;
-  var pm = tail.match(/^(ks|va|pmh)-([a-z0-9][a-z0-9-]*)$/);
+  var pm = tail.match(/^(ks|va|pmh|kh|an)-([a-z0-9][a-z0-9-]*)$/);
   if (pm) {
     // a source-scoped row; a bare prefix with no slug is invalid
     if (!pm[2] || pm[2] === "") return null;
@@ -1638,6 +1650,42 @@ function kisskhVideoSources(epsId, key) {
     });
 }
 
+/**
+ * v2.6.0: shared kisskh tail — keygen -> video sources -> headerless probe /
+ * HLS resolution. Used by BOTH the search-based kisskhLane and the new
+ * kh-<dramaId> direct lane.
+ */
+function kisskhPlayEpisode(info) {
+  return kisskhGenerateKey(info.ep.id).then(function(key) {
+    return kisskhVideoSources(info.ep.id, key).then(function(sources) {
+      var links = [];
+      if (sources.Video) links.push(sources.Video);
+      if (sources.Video_tmp) links.push(sources.Video_tmp);
+      if (sources.ThirdParty) links.push(sources.ThirdParty);
+      if (!links.length) return null;
+      var link = links[0];
+      var isM3u8 = link.indexOf(".m3u8") !== -1;
+      if (!isM3u8 && link.indexOf(".mp4") === -1) return null;
+      var base = KISSKH_BASES[0];
+      var headers = {
+        "Origin": base,
+        "Referer": base + "/",
+        "User-Agent": HEADERS["User-Agent"]
+      };
+      var qm = link.match(/_(\d+p)_/i);
+      var q = qm ? qm[1] : (/1080p/i.test(link) ? "1080p" : (/720p/i.test(link) ? "720p" : "Auto"));
+      return resolveHls(link, base + "/", "KissKH").then(function(r) {
+        if (!r) r = { url: link, quality: "" };
+        r.quality = r.quality || q;
+        r.source = "KissKH";
+        r.host = hostOf(r.url);
+        r.headers = headers;
+        return r;
+      });
+    });
+  });
+}
+
 function kisskhLane(tmdb, isSeries, season, episode) {
   var wantEp = isSeries ? String(episode) : "";
   var title = tmdb.title || tmdb.original || "";
@@ -1656,36 +1704,27 @@ function kisskhLane(tmdb, isSeries, season, episode) {
       var ep = kisskhFindEpisode(detail.episodes, isSeries ? "tv" : "movie", wantEp || 1);
       return { drama: drama, ep: ep };
     });
-  }).then(function(info) {
-    return kisskhGenerateKey(info.ep.id).then(function(key) {
-      return kisskhVideoSources(info.ep.id, key).then(function(sources) {
-        var links = [];
-        if (sources.Video) links.push(sources.Video);
-        if (sources.Video_tmp) links.push(sources.Video_tmp);
-        if (sources.ThirdParty) links.push(sources.ThirdParty);
-        if (!links.length) return null;
-        var link = links[0];
-        var isM3u8 = link.indexOf(".m3u8") !== -1;
-        if (!isM3u8 && link.indexOf(".mp4") === -1) return null;
-        var base = KISSKH_BASES[0];
-        var headers = {
-          "Origin": base,
-          "Referer": base + "/",
-          "User-Agent": HEADERS["User-Agent"]
-        };
-        var qm = link.match(/_(\d+p)_/i);
-        var q = qm ? qm[1] : (/1080p/i.test(link) ? "1080p" : (/720p/i.test(link) ? "720p" : "Auto"));
-        return resolveHls(link, base + "/", "KissKH").then(function(r) {
-          if (!r) r = { url: link, quality: "" };
-          r.quality = r.quality || q;
-          r.source = "KissKH";
-          r.host = hostOf(r.url);
-          r.headers = headers;
-          return r;
-        });
-      });
-    });
-  }).catch(function() { return null; });
+  }).then(kisskhPlayEpisode).catch(function() { return null; });
+}
+
+/**
+ * v2.6.0 DIRECT LANE for asian:kh-<dramaId> rows (asian-catalog v4.0.0):
+ * the tail IS the kisskh numeric drama id, so no search is needed at all —
+ * straight to detail -> episode -> kkey -> stream, riding the same mirror
+ * rotation as every kisskh request.
+ */
+function kisskhDirectLane(dramaId, isSeries, season, episode) {
+  var id = String(dramaId || "").trim();
+  if (!id || !/^\d+$/.test(id)) return Promise.resolve(null);
+  var wantEp = isSeries ? (parseInt(episode, 10) || 1) : 1;
+  console.log("[AsianHub] kisskh direct lane: dramaId=" + id + " ep=" + wantEp);
+  return kisskhDetail(id).then(function(detail) {
+    var ep = kisskhFindEpisode(detail.episodes, isSeries ? "tv" : "movie", wantEp);
+    return { drama: detail, ep: ep };
+  }).then(kisskhPlayEpisode).catch(function(err) {
+    console.log("[AsianHub] kisskh direct lane failed: " + ((err && err.message) || err));
+    return null;
+  });
 }
 
 // ===== v2.2.0 DIRECT LANES (source-scoped catalog ids asian:ks- / asian:va-) =====
@@ -1778,6 +1817,12 @@ function getStreamsCore(tmdbId, mt, season, episode) {
       console.log("[AsianHub] asian:pmh- id -> handled by PinoyMoviesHub plugin, skipping");
       return Promise.resolve([]);
     }
+    // v2.6.0: an- rows belong to the animotvslash plugin — skip fast (no
+    // point searching an anime title on the drama sites).
+    if (catalogId.source === "an") {
+      console.log("[AsianHub] asian:an- id -> handled by AnimeTVSlash plugin, skipping");
+      return Promise.resolve([]);
+    }
     var catIsSeries = mt === "tv" || !!(season && episode);
     var catMeta = {
       isSeries: catIsSeries,
@@ -1817,10 +1862,11 @@ function getStreamsCore(tmdbId, mt, season, episode) {
       });
     }
 
-    if (catalogId.source === "ks" || catalogId.source === "va") {
-      var directP = catalogId.source === "ks"
-        ? kissasianDirectLane(catalogId.slug, season, episode)
-        : viewasianDirectLane(catalogId.slug, catIsSeries, season, episode);
+    if (catalogId.source === "ks" || catalogId.source === "va" || catalogId.source === "kh") {
+      var directP;
+      if (catalogId.source === "ks") directP = kissasianDirectLane(catalogId.slug, season, episode);
+      else if (catalogId.source === "va") directP = viewasianDirectLane(catalogId.slug, catIsSeries, season, episode);
+      else directP = kisskhDirectLane(catalogId.slug, catIsSeries, season, episode);
       return directP.then(function(r) {
         if (r && r.url) {
           console.log("[AsianHub] direct lane hit (" + catalogId.source + ") -> " + r.url);
