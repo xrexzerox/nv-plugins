@@ -1,5 +1,38 @@
 /**
- * Miruro - Nuvio provider (v2.5.0)
+ * Miruro - Nuvio provider (v2.6.0)
+ *
+ * v2.6.0 (2026-09-11) "Anikoto latest episode - Though I am an Inept
+ * Villainess S1 E9 - still comes up empty" (on the deployed 4.9.0):
+ * the report was chased from both ends and produced these verified facts:
+ *   - The addon's DETAILS page was the empty part while it happened: Jikan
+ *     was serving 200-wrapped outages ({"status":500,"type":
+ *     "UpstreamException","message":"Request to MyAnimeList.net timed out"})
+ *     and HTTP 504s for mal 61240 -> the addon returned 404/502 -> Nuvio
+ *     rendered an empty details screen. (Fixed in the asian-catalog addon
+ *     5.1.0, which now falls back to the mapped Anikoto series data.)
+ *   - MegaPlay itself was healthy for the same show from the datacenter:
+ *     BOTH its mal route (/stream/mal/61240/9 -> file 179430) AND its ani
+ *     route (/stream/ani/188139/9 -> the same file) serve episode 9.
+ *   - The miruro pipe lane (the megaplay-independent lane) is DEAD upstream:
+ *     all four origins (www.miruro.ru/.to/.bz/.tv) answer HTTP 403 - each
+ *     call burned 4 x 6s of the 10.5s deadline for nothing.
+ *   - MegaPlay's CDN selector hints (?s=tcdn/bcdn) do NOT rotate ANIME
+ *     sources: all three hints return the identical ncdn.imgnex.top master
+ *     URL (the hints only matter for the megap.* hosts), so v2.5.0's hint
+ *     rotation re-probed the SAME URL 2 extra times per language.
+ * Changes:
+ *   - ani.zip ENRICHMENT for catalog ids: "mal:{id}" now also resolves its
+ *     AniList id via api.ani.zip/mappings?mal_id={id} (one CDN request,
+ *     24h cache; verified 61240 -> 188139). mpFileId then holds BOTH MegaPlay
+ *     routes for the same episode (mal AND ani) - when one side lags behind
+ *     on a just-aired episode the other still resolves - and the pipe lane
+ *     can use the anilistId too once the pipe recovers.
+ *   - PIPE CIRCUIT BREAKER: a 403 from any pipe origin (a hard block, not a
+ *     transient timeout) benches the whole pipe lane for 15 minutes so dead
+ *     pipe sweeps stop eating the deadline.
+ *   - MASTER-PROBE MEMO: megaPlayRowsSmart remembers the verdict per master
+ *     URL within a call, so identical URLs (the anime-hint case) are probed
+ *     once instead of three times, and host-swaps skip URLs already probed.
  *
  * v2.5.0 (2026-09-11) "still not showing streamable link ... unlike
  * animotvslash works perfectly": the deployed 4.8.0 chain was verified
@@ -458,11 +491,20 @@ function pipeRequest(path, query) {
   }
 }
 
+var _pipeState = _muState.pipe || (_muState.pipe = { downUntil: 0 });
+var PIPE_BREAK_MS = 15 * 60 * 1000;
+
 function pipeRequestInner(path, query) {
   var payload = { path: path, method: "GET", query: query, body: null };
   var enc = b64urlEncode(JSON.stringify(payload));
   var idx = 0;
   function attempt() {
+    // v2.6.0: a 403 from the pipe (hard upstream block, verified on all four
+    // origins 2026-09-11) is not transient - bench the whole lane for 15min
+    // instead of burning 4 x 6s of the deadline on every single call.
+    if (Date.now() < _pipeState.downUntil) {
+      return Promise.reject(new Error("pipe: circuit open (benched after 403)"));
+    }
     if (idx >= MIRURO_ORIGINS.length) return Promise.reject(new Error("pipe: all mirrors failed"));
     var origin = MIRURO_ORIGINS[idx++];
     // v2.5.0: 6s per origin (was 12s) - a dead origin must not eat the
@@ -471,7 +513,13 @@ function pipeRequestInner(path, query) {
       // fetchText throws on non-OK, so here status is 200
       return pipeDecode(body, "2");
     }).catch(function (err) {
-      console.log("[Miruro] pipe " + origin + " failed: " + (err && err.message ? err.message : err));
+      var msg = String((err && err.message) || err);
+      console.log("[Miruro] pipe " + origin + " failed: " + msg);
+      if (/HTTP 403/.test(msg)) {
+        _pipeState.downUntil = Date.now() + PIPE_BREAK_MS;
+        console.log("[Miruro] pipe benched for 15min (403 block)");
+        return Promise.reject(new Error("pipe: benched (403)"));
+      }
       return attempt();
     });
   }
@@ -693,10 +741,40 @@ function rowsFromMaster(masterUrl, res, subs, label, lang, makeRow) {
 
 /** One sources response -> rows, plus a reachability verdict. live=true
  *  means the master playlist downloaded on THIS device (or the device at
- *  least answered), so the URLs we emit are the ones that worked here. */
+ *  least answered), so the URLs we emit are the ones that worked here.
+ *  v2.6.0: the hlsVariants verdict is memoized MODULE-WIDE per master URL
+ *  (3min TTL): anime sources ignore MegaPlay's ?s= selector so several hints
+ *  return the IDENTICAL master URL, and the v2.6.0 enriched mal lane sweeps
+ *  MegaPlay twice (direct + ani-route) - probing the same blocked URL up to
+ *  6x per call wasted the deadline on devices. Negative verdicts are cached
+ *  too (a blocked host is re-probed at most once per TTL). */
+var MASTER_MEMO_TTL = 3 * 60 * 1000;
+var _masterMemo = _muState.masterMemo || (_muState.masterMemo = {});
+function masterProbe(url, referer) {
+  var key = String(url);
+  var hit = _masterMemo[key];
+  if (hit && Date.now() - hit.ts < MASTER_MEMO_TTL) {
+    return Promise.resolve(hit.res);
+  }
+  return hlsVariants(url, referer).then(function (res) {
+    _masterMemo[key] = { ts: Date.now(), res: res };
+    return res;
+  });
+}
+
 function megaPlayRowsFromSources(src, label, lang, makeRow) {
   var subs = subsFromTracks(src.tracks);
+  var master = String(src.file);
+  var cached = _masterMemo[master];
+  if (cached && Date.now() - cached.ts < MASTER_MEMO_TTL) {
+    var r0 = cached.res;
+    return Promise.resolve({
+      rows: rowsFromMaster(master, r0, subs, label, lang, makeRow),
+      live: !!(r0 && r0.ok)
+    });
+  }
   return hlsVariants(src.file, MEGAPLAY_BASE + "/").then(function (res) {
+    _masterMemo[master] = { ts: Date.now(), res: res };
     return {
       rows: rowsFromMaster(src.file, res, subs, label, lang, makeRow),
       live: !!(res && res.ok)
@@ -746,7 +824,7 @@ function megaPlayRowsSmart(fileId, label, lang, makeRow) {
       function trySwap() {
         if (!swaps.length) return unlive || []; // unlive rows -> fail-open keeps them
         var alt = m[1] + swaps.shift() + m[2];
-        return hlsVariants(alt, MEGAPLAY_BASE + "/").then(function (res) {
+        return masterProbe(alt, MEGAPLAY_BASE + "/").then(function (res) {
           if (!res || !res.ok) return trySwap();
           console.log("[Miruro] master OK via host swap -> " + alt.split("/")[2]);
           return rowsFromMaster(alt, res, subs, label, lang, makeRow);
@@ -811,6 +889,37 @@ function anikotoSeries(anikotoId) {
   }, 9000).then(function (d) {
     return d && d.data ? d.data : null;
   }).catch(function () { return null; });
+}
+
+// v2.6.0: mal -> anilist enrichment for catalog ids. "mal:61240" gains the
+// MegaPlay ANI route (same episode, second internal mapping - when one side
+// lags behind on a just-aired episode the other still resolves) and the pipe
+// lane gets its anilistId. One ani.zip CDN request, cached: hits 24h, misses
+// 1h so a temporary gap is retried reasonably soon. Verified live:
+// mappings?mal_id=61240 -> anilist 188139; MegaPlay /stream/ani/188139/9 and
+// /stream/mal/61240/9 resolve to the SAME file id (179430).
+var AZ_MAL_TTL = 24 * 60 * 60 * 1000;
+var _azMalCache = _muState.azMal || (_muState.azMal = {});
+function anizipFromMal(malId) {
+  var key = String(malId);
+  var hit = _azMalCache[key];
+  if (hit && Date.now() - hit.ts < (hit.ttl || AZ_MAL_TTL)) {
+    return Promise.resolve(hit.al);
+  }
+  return mapGap().then(function () {
+    return fetchJson(ANIZIP_BASE + "/mappings?mal_id=" + encodeURIComponent(key), {
+      "User-Agent": COMMON_UA, "Accept": "application/json"
+    }, 8000);
+  }).then(function (data) {
+    var al = data && data.mappings && data.mappings.anilist_id != null
+      ? parseInt(data.mappings.anilist_id, 10) : null;
+    var out = (al && isFinite(al) && al > 0) ? al : null;
+    _azMalCache[key] = { ts: Date.now(), al: out, ttl: out ? AZ_MAL_TTL : 60 * 60 * 1000 };
+    return out;
+  }).catch(function () {
+    _azMalCache[key] = { ts: Date.now(), al: null, ttl: 60 * 60 * 1000 };
+    return null;
+  });
 }
 
 // s-2 lanes for one Anikoto episode (sub from episode_embed_id, dub from
@@ -1338,7 +1447,21 @@ function getStreams(tmdbId, mediaType, season, episode) {
     var catEp = episode; // anime numbering is flat (season 1 per the meta addon)
     var catLanes;
     if (prefix === "mal") {
-      catLanes = [megaplayLanes({ malId: catId, anilistId: null }, catEp, makeRow, sinkRow)];
+      // v2.6.0: the mal route starts IMMEDIATELY (no serial ani.zip hop on the
+      // fast path). In parallel, ani.zip enriches the AniList id; when it
+      // lands, the ani route + pipe lane join (mpFileId/mpSources caches make
+      // the second MegaPlay sweep near-free). Rows dedupe in getStreams.
+      var mpNow = tap(megaplayLanes({ malId: catId, anilistId: null }, catEp, makeRow, sinkRow));
+      var enrich = anizipFromMal(catId).then(function (al) {
+        if (!al) return [];
+        console.log("[Miruro] mal:" + catId + " enriched with anilist " + al + " (ani.zip) -> ani route + pipe");
+        var mp2 = tap(megaplayLanes({ malId: catId, anilistId: al }, catEp, makeRow, sinkRow));
+        var pp = tap(pipeLanes(al, catEp, makeRow, sinkRow));
+        return Promise.all([mp2, pp]).then(function (parts) {
+          return parts[0].concat(parts[1]);
+        });
+      }).catch(function () { return []; });
+      catLanes = [mpNow, enrich];
     } else if (prefix === "anilist") {
       catLanes = [
         megaplayLanes({ malId: null, anilistId: catId }, catEp, makeRow, sinkRow),

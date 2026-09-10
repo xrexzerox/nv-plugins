@@ -1,5 +1,38 @@
 /**
- * Asian Catalog — Stremio-protocol catalog addon engine (v5.0.0)
+ * Asian Catalog — Stremio-protocol catalog addon engine (v5.1.0)
+ *
+ * v5.1.0 (2026-09-11, user report "Anikoto latest episode — Though I am an
+ * Inept Villainess S1 E9 — still comes up empty"):
+ *
+ * ROOT CAUSE (verified live while the report came in): the /meta/mal/{id}
+ * resource depended on Jikan, and Jikan's upstream (myanimelist.net) was
+ * having a full outage for exactly these ids:
+ *   GET /v4/anime/61240        -> HTTP 200 body {"status":500,
+ *        "type":"UpstreamException","message":"Request to MyAnimeList.net
+ *        timed out ..."}   (a 200-wrapped failure the old code treated as
+ *        data -> meta null -> 404 -> EMPTY DETAILS PAGE)
+ *   GET /v4/anime/61240/episodes -> HTTP 504 (old code: throw -> 502 ->
+ *        EMPTY DETAILS PAGE)
+ * The Anikoto API itself was perfectly healthy for the same show
+ * (/series/8952 = full episode list incl. the brand-new E9).
+ *
+ * FIXES:
+ *   1. Jikan failure-shape hardening: HTTP errors AND 200-wrapped
+ *      UpstreamException/MAL-timeout bodies are treated as failures, with
+ *      ONE paced retry (upstream MAL timeouts are often transient), then
+ *      null - never a thrown rejection.
+ *   2. Anikoto fallback for mal: meta: the addon builds a mal_id -> anikoto
+ *      series-id reverse map from the feed pages it already scans for the
+ *      sections (cached; 6 pages = ~300 most-recent rows). /meta/mal/{id}
+ *      now fetches Jikan AND the mapped Anikoto /series in parallel:
+ *        - EPISODES prefer the Anikoto list (freshest for airing shows - the
+ *          newest episode appears the day Anikoto adds it, no MAL lag), with
+ *          Jikan episode pages as fallback and the episode-count placeholder
+ *          as the last resort.
+ *        - DETAILS prefer Jikan (richer artwork/description/score), filling
+ *          every gap (name/poster/description/year/status/score/genres/
+ *          background) from the Anikoto series data when Jikan is down.
+ *      Result: the details page renders even during full MAL/Jikan outages.
  *
  * v5.0.0 (2026-09-11, user request "update the asian-catalog fully support
  * anilist mal kitsu so that miruro will work" + anikoto sections):
@@ -155,7 +188,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '5.0.0';
+  var VERSION = '5.1.0';
   var ADDON_ID = 'community.asian.catalog';
   var ADDON_NAME = 'Asian Catalog';
 
@@ -1544,47 +1577,160 @@
     cachePrune(metaCache, 300);
   }
 
+  // v5.1.0: Jikan wraps upstream MAL outages in HTTP 200 bodies (verified
+  // live 2026-09-11: {"status":500,"type":"UpstreamException","message":
+  // "Request to MyAnimeList.net timed out ..."}). Treat those shapes - and
+  // any HTTP error (504/429/500) - as a FAILURE, not as data.
+  function jikanLooksDown(d) {
+    if (!d) return true;
+    if (d.status === 500 || d.status === 502 || d.status === 503 || d.status === 504 || d.status === 429) return true;
+    var sig = String((d && (d.message || d.error || d.type)) || '');
+    return /UpstreamException|timed out|timeout|rate.?limit/i.test(sig);
+  }
+
   function jikanAnimeFull(cfg, malId) {
-    return jikanGap().then(function () {
-      return fetchJson(cfg, cfg.jikanApi + '/anime/' + encodeURIComponent(malId), 12000);
-    }).then(function (d) { return (d && d.data) ? d.data : null; });
+    // v5.1.0: one paced retry (upstream MAL timeouts are often transient),
+    // and NEVER a thrown rejection - a Jikan outage must not 502 the meta
+    // route when the Anikoto fallback can still build the details page.
+    function once() {
+      return jikanGap().then(function () {
+        return fetchJson(cfg, cfg.jikanApi + '/anime/' + encodeURIComponent(malId), 12000);
+      }).then(function (d) {
+        return (!d || jikanLooksDown(d)) ? null : ((d.data) ? d.data : null);
+      });
+    }
+    function failSoft() { return Promise.resolve(null); }
+    return once().then(function (a) {
+      if (a) return a;
+      return jikanGap().then(function () { return once(); }).then(function (a2) { return a2 || null; }).catch(failSoft);
+    }).catch(function () {
+      return jikanGap().then(function () { return once(); }).then(function (a2) { return a2 || null; }).catch(failSoft);
+    });
   }
 
   function jikanEpisodePage(cfg, malId, page) {
     return jikanGap().then(function () {
       return fetchJson(cfg, cfg.jikanApi + '/anime/' + encodeURIComponent(malId) + '/episodes?page=' + page, 12000);
     }).then(function (d) {
-      return (d && d.data && Array.isArray(d.data)) ? d.data : [];
+      if (!d || jikanLooksDown(d)) return [];   // v5.1.0: 200-wrapped outage bodies
+      return (d.data && Array.isArray(d.data)) ? d.data : [];
     }).catch(function () { return []; });
+  }
+
+  // v5.1.0: mal_id -> anikoto series-id reverse map, built from the same
+  // feed pages the sections already scan (cached ~30min so /meta/mal requests
+  // usually skip the extra HTTP entirely; Anikoto allows 60 req/120s).
+  var ANIKOTO_META_PAGES = 6;   // ~300 most-recent rows cover the anime sections
+  var ANIKOTO_MAP_TTL = 30 * 60 * 1000;
+  var _anikotoByMal = null;     // { malId: anikotoId }
+  var _anikotoByMalTs = 0;
+  var _anikotoByMalInflight = null;
+  function anikotoByMalMap(cfg) {
+    var now = cfg.nowFn();
+    if (_anikotoByMal && now - _anikotoByMalTs < ANIKOTO_MAP_TTL) return Promise.resolve(_anikotoByMal);
+    if (_anikotoByMalInflight) return _anikotoByMalInflight;
+    var pages = [];
+    for (var p = 1; p <= ANIKOTO_META_PAGES; p++) {
+      pages.push(anikotoFeedPage(cfg, p).catch(function () { return []; }));
+    }
+    _anikotoByMalInflight = Promise.all(pages).then(function (all) {
+      var map = {};
+      all.forEach(function (rows) {
+        (rows || []).forEach(function (r) {
+          var m = parseInt(r && r.mal_id, 10);
+          if (isFinite(m) && m > 0 && r.id) map[m] = String(r.id);
+        });
+      });
+      _anikotoByMal = map;
+      _anikotoByMalTs = cfg.nowFn();
+      _anikotoByMalInflight = null;
+      return map;
+    }).catch(function () {
+      _anikotoByMalInflight = null;
+      return {};
+    });
+    return _anikotoByMalInflight;
   }
 
   function metaForMal(cfg, malId, reqType) {
     var key = 'mal:' + malId;
     var cached = metaCacheGet(cfg, key);
     if (cached) return Promise.resolve(cached);
-    return jikanAnimeFull(cfg, malId).then(function (a) {
-      if (!a || (!a.title && !a.title_english)) return null;
-      var isMovie = String(a.type || '').toLowerCase() === 'movie';
-      var poster = a.images && a.images.jpg ? (a.images.jpg.large_image_url || a.images.jpg.image_url) : undefined;
+    // v5.1.0: Jikan AND the mapped Anikoto /series resolve IN PARALLEL, so a
+    // full MAL/Jikan outage can no longer blank the details page (the exact
+    // "comes up empty" report of 2026-09-11). EPISODES prefer the Anikoto
+    // list: it is the library the user actually watches and the freshest for
+    // airing shows (the newest episode shows up the day Anikoto adds it,
+    // while MAL/Jikan episode pages lag by hours-to-days).
+    return Promise.all([
+      jikanAnimeFull(cfg, malId),
+      anikotoByMalMap(cfg).then(function (map) {
+        var aid = map[parseInt(malId, 10)];
+        if (!aid) return null;
+        return anikotoFetchJson(cfg, '/series/' + encodeURIComponent(aid)).then(function (d) {
+          return (d && d.data) ? d.data : null;
+        }).catch(function () { return null; });
+      }).catch(function () { return null; })
+    ]).then(function (parts) {
+      var a = parts[0];
+      var sData = parts[1];
+      var sa = sData && sData.anime ? sData.anime : null;
+      var aName = a ? (a.title_english || a.title) : '';
+      var saName = sa ? cleanDisplayName(sa.title || sa.titles || sa.alternative || sa.native) : '';
+      if ((!aName && !saName) || (!a && !sa)) return null;
+      var isMovie = a ? String(a.type || '').toLowerCase() === 'movie' : false;
       var meta = {
         id: key,
         type: 'series',
-        name: a.title_english || a.title,
-        poster: poster,
-        posterShape: 'poster',
-        description: (a.synopsis || '').replace(/\[Written by MAL Rewrite\]\s*$/i, '').trim() || undefined,
-        releaseInfo: a.year ? String(a.year) : (a.aired && a.aired.from ? String(a.aired.from).split('-')[0] : undefined),
-        status: a.status || undefined,
-        runtime: a.duration ? String(a.duration).replace(/^per ep\s*/i, '') : undefined
+        name: aName || saName,
+        posterShape: 'poster'
       };
-      var score = parseFloat(a.score);
-      if (isFinite(score) && score > 0) meta.imdbRating = score;
-      if (Array.isArray(a.genres) && a.genres.length) meta.genres = a.genres.map(function (g) { return g.name; }).slice(0, 6);
-      var bg = a.trailer && a.trailer.images && a.trailer.images.maximum_image_url;
+      var jikanPoster = a && a.images && a.images.jpg ? (a.images.jpg.large_image_url || a.images.jpg.image_url) : undefined;
+      var aniPoster = sa && /^https?:\/\//i.test(String(sa.poster || '')) && !isPlaceholderPoster(sa.poster) ? sa.poster : undefined;
+      meta.poster = jikanPoster || aniPoster || undefined;
+      var jikanDesc = a && a.synopsis ? String(a.synopsis).replace(/\[Written by MAL Rewrite\]\s*$/i, '').trim() : '';
+      meta.description = jikanDesc || (sa ? stripTags(sa.description || '') : '') || undefined;
+      var jikanYear = a ? (a.year ? String(a.year) : (a.aired && a.aired.from ? String(a.aired.from).split('-')[0] : undefined)) : undefined;
+      meta.releaseInfo = jikanYear || (sa && sa.year ? String(sa.year) : undefined);
+      meta.status = (a && a.status) || (sa && sa.status) || undefined;
+      if (a && a.duration) meta.runtime = String(a.duration).replace(/^per ep\s*/i, '');
+      var jikanScore = a ? parseFloat(a.score) : NaN;
+      var aniScore = sa ? parseFloat(sa.score) : NaN;
+      var score = isFinite(jikanScore) && jikanScore > 0 ? jikanScore :
+        (isFinite(aniScore) && aniScore > 0 && aniScore <= 10 ? Math.round(aniScore * 10) / 10 : undefined);
+      if (score) meta.imdbRating = score;
+      var genres = (a && Array.isArray(a.genres) && a.genres.length)
+        ? a.genres.map(function (g) { return g.name; })
+        : (sa && sa.terms_by_type && Array.isArray(sa.terms_by_type.genre) ? sa.terms_by_type.genre : []);
+      if (genres.length) meta.genres = genres.slice(0, 6);
+      var bg = (a && a.trailer && a.trailer.images && a.trailer.images.maximum_image_url) ||
+        (sa && /^https?:\/\//i.test(String(sa.background_image || '')) ? sa.background_image : undefined);
       if (bg) meta.background = bg;
       if (!isMovie) {
-        // episode pages: 100 per page, up to 3 pages (300 eps) — enough for
-        // the vast majority; keeps a cold details open under ~1.5s of Jikan
+        var aniEps = sData && Array.isArray(sData.episodes) ? sData.episodes : [];
+        if (aniEps.length) {
+          var aniVideos = [];
+          for (var ae = 0; ae < aniEps.length; ae++) {
+            var aep = aniEps[ae] || {};
+            var anum = parseInt(aep.number, 10);
+            if (!isFinite(anum) || anum <= 0) continue;
+            aniVideos.push({
+              id: key + ':1:' + anum,
+              title: aep.title || ('Episode ' + anum),
+              season: 1,
+              episode: anum,
+              released: aep.updated_at ? aep.updated_at : null
+            });
+          }
+          aniVideos.sort(function (x, y) { return x.episode - y.episode; });
+          if (aniVideos.length) {
+            meta.videos = aniVideos;
+            metaCacheSet(cfg, key, meta);
+            return meta;
+          }
+        }
+        // Jikan episode pages: 100 per page, up to 3 pages (300 eps) — enough
+        // for the vast majority; keeps a cold details open under ~1.5s of Jikan
         var pagePromises = [jikanEpisodePage(cfg, malId, 1), jikanEpisodePage(cfg, malId, 2), jikanEpisodePage(cfg, malId, 3)];
         return Promise.all(pagePromises).then(function (pages) {
           var videos = [];
@@ -1603,11 +1749,17 @@
             }
           }
           if (videos.length) meta.videos = videos;
-          else if (a.episodes) {
-            for (var k = 1; k <= Math.min(parseInt(a.episodes, 10) || 0, 300); k++) {
-              videos.push({ id: key + ':1:' + k, title: 'Episode ' + k, season: 1, episode: k, released: null });
+          else {
+            // v5.1.0: the episode-count placeholder now also survives a Jikan
+            // outage via the Anikoto row's own episode count.
+            var countHint = a && a.episodes ? parseInt(a.episodes, 10) : (sa && sa.episodes ? parseInt(sa.episodes, 10) : 0);
+            if (countHint > 0) {
+              var max = Math.min(countHint, 300);
+              for (var k = 1; k <= max; k++) {
+                videos.push({ id: key + ':1:' + k, title: 'Episode ' + k, season: 1, episode: k, released: null });
+              }
+              meta.videos = videos;
             }
-            meta.videos = videos;
           }
           metaCacheSet(cfg, key, meta);
           return meta;
