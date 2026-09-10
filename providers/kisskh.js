@@ -178,12 +178,149 @@ function getTmdbEpisodeTitle(tmdbId, season, episode) {
 
 // ===== KISSKH SPECIFIC =====
 
+// ---- Local kkey generation (v2.8.10 algorithm) ----
+// Pure-JS port, byte-identical to the reference implementation and the
+// Google Script API. Used as PRIMARY so kisskh never depends on an external
+// key service; Google Script is kept as a fallback.
+var KKEY_ROUND_KEYS = [
+    0x4f6bdaa3, -0x61d07350, 0x7f5e722d, -0x61210cec,
+    0x536620a8, -0x32b653e8, -0x4de821cb, 0x2cc92d21,
+    -0x73412227, 0x41f771c1, -0xc1f500c, -0x20d67d2b,
+    0x2dadde47, 0x6c5aaf86, -0x6045ff8e, 0x409382a7,
+    -0x6417db2, -0x6a1bd238, 0xa5e2dba, 0x4acdaf1d,
+    0x54c72698, -0x3edcf4b0, -0x3482d916, -0x7e4f7609,
+    -0x6c9fb16c, 0x524345c4, -0x66c19cd2, 0x188eead9,
+    -0x351884c7, -0x675bc103, 0x19a5dd3, 0x1914b70a,
+    -0x4fb1e313, 0x28ea2210, 0x29707fc3, 0x3064c8c9,
+    -0x17593e17, -0x3fb31c07, -0x16c363c6, -0x26a7ab0d,
+    -0x4b793324, 0x74ca2f25, -0x62094ce1, 0x44aee7ec
+];
+var KKEY_IV = [0x1504af3, 0x56e619cf, 0x2e42bba6, -0x73c08f07];
+var _kkeyTables = null;
+
+function kkeyCalculateHash(str) {
+    var hash = 0;
+    for (var i = 0; i < str.length; i++) {
+        hash = (hash << 5) - hash + str.charCodeAt(i);
+    }
+    return hash;
+}
+
+function kkeyWordsToHex(words) {
+    var out = '';
+    for (var i = 0; i < words.length; i++) {
+        var hex = (words[i] >>> 0).toString(16);
+        while (hex.length < 8) hex = '0' + hex;
+        out += hex;
+    }
+    return out.toUpperCase();
+}
+
+function kkeyBuildTables() {
+    var pow = [];
+    for (var i = 0; i < 256; i++) pow[i] = i < 128 ? (i << 1) : ((i << 1) ^ 0x11b);
+    var sbox = [], T1 = [], T2 = [], T3 = [], T4 = [];
+    var x = 0, xi = 0;
+    for (var j = 0; j < 256; j++) {
+        var sx = xi ^ (xi << 1) ^ (xi << 2) ^ (xi << 3) ^ (xi << 4);
+        sx = (sx >>> 8) ^ (0xff & sx) ^ 0x63;
+        sbox[x] = sx;
+        var x2 = pow[x];
+        var x8 = pow[pow[x2]];
+        var w = 0x101 * pow[sx] ^ 0x1010100 * sx;
+        T1[x] = (w << 0x18) | (w >>> 0x8);
+        T2[x] = (w << 0x10) | (w >>> 0x10);
+        T3[x] = (w << 0x8) | (w >>> 0x18);
+        T4[x] = w;
+        if (x) {
+            x = x2 ^ pow[pow[pow[x8 ^ x2]]];
+            xi ^= pow[pow[xi]];
+        } else {
+            x = xi = 1;
+        }
+    }
+    return [T1, T2, T3, T4, sbox];
+}
+
+function kkeyEncrypt(plaintext) {
+    if (!_kkeyTables) _kkeyTables = kkeyBuildTables();
+    var T1 = _kkeyTables[0], T2 = _kkeyTables[1], T3 = _kkeyTables[2], T4 = _kkeyTables[3], sbox = _kkeyTables[4];
+
+    var data = plaintext;
+    var padLen = 16 - (plaintext.length % 16);
+    for (var p = 0; p < padLen; p++) data += String.fromCharCode(padLen);
+
+    var words = [];
+    for (var i = 0; i < data.length; i += 4) {
+        words.push(
+            data.charCodeAt(i) << 0x18 |
+            data.charCodeAt(i + 1) << 0x10 |
+            data.charCodeAt(i + 2) << 0x8 |
+            data.charCodeAt(i + 3)
+        );
+    }
+
+    var keys = KKEY_ROUND_KEYS;
+
+    for (var block = 0; block < words.length; block += 4) {
+        var roundKey = block === 0 ? KKEY_IV : words.slice(block - 4, block);
+
+        for (var k = 0; k < 4; k++) words[block + k] ^= roundKey[k];
+
+        var s0 = words[block] ^ keys[0];
+        var s1 = words[block + 1] ^ keys[1];
+        var s2 = words[block + 2] ^ keys[2];
+        var s3 = words[block + 3] ^ keys[3];
+        var tIdx = 4;
+
+        for (var round = 1; round < 10; round++) {
+            var t0 = T1[s0 >>> 0x18] ^ T2[(s1 >>> 0x10) & 0xff] ^ T3[(s2 >>> 0x8) & 0xff] ^ T4[s3 & 0xff] ^ keys[tIdx++];
+            var t1 = T1[s1 >>> 0x18] ^ T2[(s2 >>> 0x10) & 0xff] ^ T3[(s3 >>> 0x8) & 0xff] ^ T4[s0 & 0xff] ^ keys[tIdx++];
+            var t2 = T1[s2 >>> 0x18] ^ T2[(s3 >>> 0x10) & 0xff] ^ T3[(s0 >>> 0x8) & 0xff] ^ T4[s1 & 0xff] ^ keys[tIdx++];
+            s3 = T1[s3 >>> 0x18] ^ T2[(s0 >>> 0x10) & 0xff] ^ T3[(s1 >>> 0x8) & 0xff] ^ T4[s2 & 0xff] ^ keys[tIdx++];
+            s0 = t0; s1 = t1; s2 = t2;
+        }
+
+        words[block]     = ((sbox[s0 >>> 0x18] << 0x18) | (sbox[(s1 >>> 0x10) & 0xff] << 0x10) | (sbox[(s2 >>> 0x8) & 0xff] << 0x8) | sbox[s3 & 0xff]) ^ keys[tIdx++];
+        words[block + 1] = ((sbox[s1 >>> 0x18] << 0x18) | (sbox[(s2 >>> 0x10) & 0xff] << 0x10) | (sbox[(s3 >>> 0x8) & 0xff] << 0x8) | sbox[s0 & 0xff]) ^ keys[tIdx++];
+        words[block + 2] = ((sbox[s2 >>> 0x18] << 0x18) | (sbox[(s3 >>> 0x10) & 0xff] << 0x10) | (sbox[(s0 >>> 0x8) & 0xff] << 0x8) | sbox[s1 & 0xff]) ^ keys[tIdx++];
+        words[block + 3] = ((sbox[s3 >>> 0x18] << 0x18) | (sbox[(s0 >>> 0x10) & 0xff] << 0x10) | (sbox[(s1 >>> 0x8) & 0xff] << 0x8) | sbox[s2 & 0xff]) ^ keys[tIdx++];
+    }
+
+    return kkeyWordsToHex(words);
+}
+
+function generateKkeyLocal(epsId, isSub) {
+    var SUB_SALT = 'VgV52sWhwvBSf8BsM3BRY9weWiiCbtGp';
+    var VIDEO_SALT = '62f176f3bb1b5b8e70e39932ad34a0c7';
+    var fields = [
+        '', epsId.toString(), '', 'mg3c3b04ba', '2.8.10',
+        isSub ? SUB_SALT : VIDEO_SALT,
+        '4830201', 'kisskh', 'kisskh', 'kisskh', 'kisskh', 'kisskh', 'kisskh',
+        '00', ''
+    ];
+    var hash = kkeyCalculateHash(fields.join('|'));
+    fields.splice(1, 0, hash.toString());
+    return kkeyEncrypt(fields.join('|'));
+}
+
 function generateKey(epsId) {
-    var keyUrl = GOOGLE_SCRIPT_API + "?id=" + epsId + "&version=2.8.10";
     log("Generating key for episode: " + epsId);
+    // PRIMARY: compute locally (no external dependency)
+    try {
+        var localKey = generateKkeyLocal(epsId, false);
+        if (localKey && localKey.length >= 32) {
+            log("Key generated locally");
+            return Promise.resolve(localKey);
+        }
+    } catch (e) {
+        log("Local key generation failed: " + e.message);
+    }
+    // FALLBACK: Google Script API
+    var keyUrl = GOOGLE_SCRIPT_API + "?id=" + epsId + "&version=2.8.10";
     return fetchJson(keyUrl).then(function(keyData) {
         if (keyData && keyData.key) {
-            log("Key generated successfully");
+            log("Key generated via Google Script fallback");
             return keyData.key;
         }
         throw new Error("Google Script returned no key");
