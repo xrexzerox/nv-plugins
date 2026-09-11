@@ -1,5 +1,5 @@
 /**
- * Pencuri — Nuvio provider (v1.2.0)
+ * Pencuri — Nuvio provider (v1.3.0)
  *
  * Paired with asian-catalog v5.4.0: the addon's Pencuri catalogs (Movies
  * /movies/ + Series /series/ + the Malaysia / Indonesia / Japan / Thailand
@@ -12,6 +12,62 @@
  *     (movie) or its real episode page (series) — zero title searching.
  *   numeric / tmdb:<id> / tt:<imdb>  -> TMDB lookup -> site search
  *     `/?s={title}` -> best title+year match -> same resolution flow.
+ *
+ * v1.3.0 FIXES ("only show 1 stream and its not playing example movie -
+ *   have 8 server you should get all playable stream link" — user report on
+ *   4.14.0 with /mutiny-2026/ as the sample, 2026-09-11):
+ *   0. *** THE STREAMTAPE DECOY ***: a Streamtape /e/ page carries TWO
+ *      get_video links — the #robotlink DIV TEXT and the one its script
+ *      writes via `getElementById('robotlink').innerHTML = ...`. The DIV
+ *      token is a DECOY: https://streamtape.com/get_video?...&token=<div>
+ *      answers {"status":403/500,"msg":"Access Denied / error on our
+ *      side!"} (verified live, exactly the dead link the user pasted).
+ *      Only the innerHTML-EXPRESSION token 302s to the real
+ *      tapecontent.net radosgw/<id>/<sig>/<Filename>.mp4 (verified live
+ *      for both mutiny embeds: 720p + 1080p). v1.2.0 took the div text ->
+ *      the ONLY row the app showed was the decoy -> "1 stream and its not
+ *      playing". Now an eval-FREE mini evaluator (string literals + `+`
+ *      + chained .substring(a[,b]) with real JS semantics) reconstructs
+ *      the expression link; the div text is only a fallback.
+ *   1. Streamtape rows are labeled from the embed page's own FILENAME
+ *      ("Mutiny.2026.720p.WEB-DL…" — carried right on the /e/ page, so no
+ *      extra request is needed). The row URL stays the /get_video link: it
+ *      re-signs per request at play time, so it never carries a stale or
+ *      IP-bound signature (verified live: two requests 20s apart got two
+ *      fresh tapecontent signatures). The ranged verify hop now only GATES
+ *      div-text fallback rows (decoy-token risk); expression tokens are the
+ *      page's own script output and are never dropped — streamtape
+ *      soft-blocks chatty egresses with an empty 200 (verified), so a
+ *      probing gate would randomly kill good servers.
+ *   2. NEW StreamHG lane (hgcloud.to / hglink.to, 2 of the 8 servers on
+ *      every Pencuri page — previously skipped as an "unparseable JS
+ *      stub"): the stub's obfuscated /main.js only rotates the embed to a
+ *      fixed rotating-domain page (https://audinifer.com/e/<id>, decoded
+ *      live from the loader). That page's Dean-Edwards packed script
+ *      (radix 36) unpacks to a links JSON: hls4/hls3/hls2 — the signed
+ *      https://<cdn>/hls2/01/<n>/<id>_n/master.m3u8?t=<sig>&e=129600
+ *      verified 206 application/vnd.apple.mpegurl from the datacenter.
+ *      The provider unpacks radix-AWARE, picks the best link (.m3u8 >
+ *      .txt), probes it, and labels quality from the master playlist's
+ *      RESOLUTION= line.
+ *   3. unpackPackedScript is now RADIX-AWARE (Dean Edwards p,a,c,k,e with
+ *      radix 10..62): hgcloud packs alpha tokens ("y", "1t") that the old
+ *      decimal-only regex garbled. Token values are validated against the
+ *      radix alphabet (a=10..z=35, A=36..Z=61 — Dean's charset) and only
+ *      substituted when the index resolves to a non-empty dictionary
+ *      word, so literal words like MDCore/wurl pass through untouched.
+ *   4. Placeholder-guard: voe embeds that are dead filler ship a
+ *      Big-Buck-Bunny test video in source='...' (verified on mutiny —
+ *      both voe tabs). Known test-clip hosts/names are now rejected
+ *      instead of probing into a fake row; voeParseReal also learned the
+ *      single-quoted source='...' marker for REAL voe embeds.
+ *   5. Dood family (playmogo.com / dsvplay.com — 2 of the 8 servers): the
+ *      Turnstile gate is UNCONDITIONAL (same challenge page for desktop
+ *      UA, mobile UA, cookie attempts — verified live), so a pure HTTP
+ *      client can never reach pass_md5. The lane stays and stays
+ *      turnstile-aware for other titles/nodes, but on gated pages it
+ *      skips in milliseconds. Result for /mutiny-2026/: 4 playable rows
+ *      (Streamtape 720p + 1080p, StreamHG x2) instead of 1 broken one.
  *
  * v1.2.0 FIXES ("still doesnt show getstream or stream links not showing,
  *   both movies and tv" — user report on 4.13.0, 2026-09-12):
@@ -174,28 +230,42 @@ function fetchTextFollow(url, referer, timeoutMs) {
   return fetchRaw(url, referer, timeoutMs, true);
 }
 
+// v1.3.0: ranged follow probe that reports WHAT happened — { ok, status,
+// url, ct } — so lanes can tell a verified stream (ok), a hard upstream
+// rejection (status >= 400, or 2xx text/html challenge/soft-404 -> drop the
+// row) from network purgatory (status 0 -> keep fail-open). Range: 0-255
+// keeps the body tiny even when a host ignores the redirect hop.
+function probeRange(url) {
+  var dead = function () { return { ok: false, status: 0, url: String(url), ct: '' }; };
+  var go = function () {
+    return fetch(url, { headers: { 'User-Agent': UA, 'Range': 'bytes=0-255' }, redirect: 'follow' })
+      .then(function (res) {
+        if (!res) return dead();
+        var status = res.status || 0;
+        var ct = '';
+        try { ct = String((res.headers && res.headers.get && res.headers.get('content-type')) || ''); } catch (e) { ct = ''; }
+        var finalUrl = String(url);
+        try { if (res.url) finalUrl = String(res.url); } catch (e) {}
+        var ok = status >= 200 && status < 300 && !/text\/html/i.test(ct);
+        var out = { ok: ok, status: status, url: finalUrl, ct: ct };
+        return res.text().then(function () { return out; }, function () { return out; });
+      }).catch(dead);
+  };
+  if (!hasTimers()) {
+    try { return go(); } catch (e) { return Promise.resolve(dead()); }
+  }
+  return new Promise(function (resolve) {
+    var settled = false;
+    var settle = function (v) { if (!settled) { settled = true; clearTimeout(timer); resolve(v); } };
+    var timer = setTimeout(function () { settle(dead()); }, 9000);
+    go().then(settle, function () { settle(dead()); });
+  });
+}
+
 // v1.2.0: headerless playability probe (pinoyhub pattern) — ranged GET
 // with NO Referer; a text/html answer means the CDN demands headers.
 function probeHeaderless(url) {
-  var go = function () {
-    return fetch(url, { headers: { 'User-Agent': UA, 'Range': 'bytes=0-1023' }, redirect: 'follow' })
-      .then(function (res) {
-        if (!res || res.status < 200 || res.status >= 300) return false;
-        var ct = '';
-        try { ct = String((res.headers && res.headers.get && res.headers.get('content-type')) || ''); } catch (e) { ct = ''; }
-        if (/text\/html/i.test(ct)) return false; // challenge / soft-404 page
-        return true;
-      }).catch(function () { return false; });
-  };
-  if (!hasTimers()) {
-    try { return go(); } catch (e) { return Promise.resolve(false); }
-  }
-  return new Promise(function (resolve) {
-    var done = false;
-    var settle = function (v) { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
-    var timer = setTimeout(function () { settle(false); }, 9000);
-    go().then(function (v) { settle(v); }, function () { settle(false); });
-  });
+  return probeRange(url).then(function (r) { return !!r && r.ok; });
 }
 
 function randomToken(len) {
@@ -338,11 +408,27 @@ function unpackPackedScript(html) {
   var m = String(html || '').match(/eval\(function\(p,a,c,k,e,[a-z]?\)\{[\s\S]*?\}\('([\s\S]*?)',(\d+),(\d+),'([\s\S]*?)'\.split\('\|'\)/);
   if (!m) return '';
   var p = m[1].replace(/\\'/g, "'").replace(/\\\\/g, '\\');
+  var radix = parseInt(m[2], 10) || 10;
   var k = m[4].split('|');
-  return p.replace(/\b(\d+)\b/g, function (tok, n) {
-    var idx = parseInt(n, 10);
-    if (!isFinite(idx) || idx >= k.length) return tok;
-    return k[idx];
+  // v1.3.0: radix-aware substitution. Dean Edwards packs index tokens in
+  // base-radix (hgcloud radix=36 -> alpha tokens like "y"/"1t"; the old
+  // decimal-only regex garbled those pages). Token chars validated against
+  // the radix alphabet (0-9, a=10..z=35, A=36..Z=61 — Dean's charset); a
+  // token only substitutes when its index hits a NON-EMPTY dictionary slot,
+  // so literal words (MDCore, wurl, ...) pass through untouched.
+  return p.replace(/\b[0-9a-zA-Z]+\b/g, function (tok) {
+    var v = 0;
+    for (var i = 0; i < tok.length; i++) {
+      var ch = tok.charAt(i), d;
+      if (ch >= '0' && ch <= '9') d = ch.charCodeAt(0) - 48;
+      else if (ch >= 'a' && ch <= 'z') d = ch.charCodeAt(0) - 87;
+      else if (ch >= 'A' && ch <= 'Z') d = ch.charCodeAt(0) - 29;
+      else return tok;
+      if (d >= radix) return tok;
+      v = v * radix + d;
+    }
+    if (!isFinite(v) || v < 0 || v >= k.length || !k[v]) return tok;
+    return k[v];
   });
 }
 
@@ -365,30 +451,117 @@ function mixdropExtract(embedUrl) {
   }).catch(function () { return null; });
 }
 
-// --- lane 2: streamtape (token verified; final hop resolves device-side) ----
+// --- lane 2: streamtape (v1.3.0: the DIV token is a DECOY — only the
+// innerHTML-expression token 302s to the real tapecontent.net CDN) -----
+// eval-FREE evaluator for Streamtape's innerHTML expression, which is built
+// entirely from string literals, `+` concatenation and chained
+// .substring(a) / .substring(a,b) calls with real JS semantics
+// (verified live: "'//stream'+ ('xcdtape.com/get_video?...&token=X').substring(2).substring(1)"
+// — the leading decoy chars are what the substrings strip). Anything else
+// in the expression fails soft to ''.
+function stSubstr(str, a, b) {
+  var len = str.length;
+  if (!isFinite(a)) a = 0;
+  if (a < 0) a = 0;
+  if (a > len) a = len;
+  if (b === undefined || b === null) return str.slice(a);
+  if (!isFinite(b)) b = 0;
+  if (b < 0) b = 0;
+  if (b > len) b = len;
+  if (a > b) { var t = a; a = b; b = t; }
+  return str.slice(a, b);
+}
+
+function stEvalExpr(src) {
+  var s = String(src || ''), out = '', i = 0, n = s.length;
+  while (i < n) {
+    var ch = s.charAt(i);
+    if (ch === ' ' || ch === '+' || ch === '\n' || ch === '\r' || ch === '\t') { i++; continue; }
+    if (ch === "'" || ch === '"') {
+      var q = ch; i++; var lit = '';
+      while (i < n && s.charAt(i) !== q) {
+        if (s.charAt(i) === '\\') { i++; lit += s.charAt(i); }
+        else lit += s.charAt(i);
+        i++;
+      }
+      if (i >= n) return ''; // unterminated literal -> fail
+      i++;
+      out += lit;
+      continue;
+    }
+    if (ch === '(') {
+      var depth = 0, j = i;
+      for (; j < n; j++) {
+        var c2 = s.charAt(j);
+        if (c2 === '(') depth++;
+        else if (c2 === ')') { depth--; if (!depth) break; }
+      }
+      if (j >= n) return ''; // unbalanced -> fail
+      var inner = s.slice(i + 1, j);
+      var im = inner.match(/^\s*(['"])([\s\S]*)\1\s*$/);
+      if (!im) return ''; // only simple string groups are supported
+      var cur = im[2];
+      i = j + 1;
+      for (;;) {
+        var cm = s.slice(i).match(/^\.substring\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?\)/);
+        if (!cm) break;
+        cur = stSubstr(cur, parseInt(cm[1], 10), cm[2] !== undefined ? parseInt(cm[2], 10) : undefined);
+        i += cm[0].length;
+      }
+      out += cur;
+      continue;
+    }
+    return ''; // unknown token -> fail soft
+  }
+  return out;
+}
+
+function stAbsPath(path) {
+  if (path.indexOf('//') === 0) return 'https:' + path;
+  if (/^https?:\/\//i.test(path)) return path;
+  return 'https://' + path.replace(/^\//, '');
+}
+
 function streamtapeExtract(embedUrl) {
   return fetchText(embedUrl, PENCURI_BASE + '/', EMBED_TIMEOUT_MS).then(function (html) {
     if (!html) return null;
-    // shape 1 (observed live): the div carries the FULL /get_video path
-    var m = html.match(/id="robotlink"[^>]*>(\s*\/[\w.-]+\/get_video\?[^<\s]+)/i);
-    var path = m ? m[1].trim() : '';
-    // shape 2 (classic): div has the rotation part; innerHTML appends the rest
-    if (!path) {
-      var divm = html.match(/id="robotlink"[^>]*>([^<]*)</i);
-      var expr = html.match(/getElementById\("robotlink"\)\.innerHTML\s*=\s*([^;]+);/i);
-      if (divm && expr) {
-        // eval-FREE: concatenate the string literals in the expression
-        var parts = [], lm, lre = /'([^']*)'|"([^"]*)"/g;
-        while ((lm = lre.exec(expr[1])) !== null) parts.push(lm[1] || lm[2] || '');
-        // obfuscated hex additions resolve to numbers — ignore them; the
-        // div text + literals reconstruct the token tail on modern pages
-        path = divm[1] + parts.join('');
-      }
+    // removed videos: drop at the page level (the /e/ page itself says so)
+    if (/video you are looking for|file (was|has been) (removed|deleted)|class="not_found"/i.test(html)) return null;
+    // v1.3.0: the embed page carries the real FILENAME (title + body) —
+    // "Mutiny.2026.720p.WEB-DL….mkv.mp4" — so quality needs no extra request
+    var q = '';
+    var fn = html.match(/([A-Za-z0-9._-]+\.(?:mkv|mp4|avi|webm))/i);
+    if (fn) q = qualityFromText(fn[1]);
+    if (!q) q = qualityFromText(html);
+    var divm = html.match(/id="robotlink"[^>]*>([^<]*)/i);
+    // accept both quote styles around the id (live pages use single quotes)
+    var expr = html.match(/getElementById\(["']robotlink["']\)\.innerHTML\s*=\s*([^;]+);/i);
+    var path = '', trusted = false;
+    if (expr) {
+      var ev = stEvalExpr(expr[1]);
+      if (ev && ev.indexOf('get_video') >= 0 && ev.indexOf('token=') >= 0) { path = ev; trusted = true; }
+    }
+    if (!path && divm) {
+      var dv = String(divm[1] || '').trim();
+      if (dv.indexOf('get_video') >= 0 && dv.indexOf('token=') >= 0) path = dv; // decoy risk!
+    }
+    if (!path && divm && expr) {
+      var joined = String(divm[1] || '').trim() + stEvalExpr(expr[1]);
+      if (joined.indexOf('get_video') >= 0 && joined.indexOf('token=') >= 0) { path = joined; trusted = true; }
     }
     if (!path || path.indexOf('get_video') < 0) return null;
-    if (path.indexOf('//') === 0) return makeRow('https:' + path, 'Streamtape', '', '');
-    if (/^https?:\/\//i.test(path)) return makeRow(path, 'Streamtape', '', '');
-    return makeRow('https://' + path.replace(/^\//, ''), 'Streamtape', '', '');
+    var abs = stAbsPath(path);
+    // Expression tokens ARE the page's own player link — ship them directly.
+    // The token re-signs per request at play time (fresh for the player IP),
+    // so no probe is needed: probing only burns requests streamtape
+    // rate-limits aggressively (empty-200 soft block, verified live).
+    if (trusted) return makeRow(abs, 'Streamtape', q, '');
+    // div-text fallback = decoy-token risk (403/500 verified): gate on the
+    // ranged verify hop — only a live 302->CDN answer ships the row.
+    return probeRange(abs).then(function (r) {
+      if (r && r.ok) return makeRow(abs, 'Streamtape', q || qualityFromText(r.url), '');
+      return null; // decoy fallback failed verification -> dead
+    });
   }).catch(function () { return null; });
 }
 
@@ -462,6 +635,88 @@ function doodExtract(embedUrl) {
   }).catch(function () { return null; });
 }
 
+// --- lane 3b: StreamHG / hgcloud (v1.3.0) ---------------------------------
+// hgcloud.to|hglink.to /e/<id> serves a 452-byte "Loading..." stub whose
+// obfuscated /main.js only rotates the embed onto a fixed rotating-domain
+// page (decoded live: https://audinifer.com/e/<id>). That page's
+// Dean-Edwards packed script (radix 36) unpacks to a links JSON —
+// hls4/hls3/hls2 — whose signed master.m3u8 (?t=<sig>&e=129600, ASN-bound)
+// verified 206 application/vnd.apple.mpegurl from the datacenter.
+var HG_ROTATE_HOSTS = ['audinifer.com'];
+
+function qualityFromHeight(h) {
+  var n = parseInt(h, 10);
+  if (!isFinite(n) || n <= 0) return '';
+  if (n >= 2100) return '4K';
+  if (n >= 1400) return '1440p';
+  if (n >= 1000) return '1080p';
+  if (n >= 640) return '720p';
+  if (n >= 400) return '480p';
+  return '';
+}
+
+function hgParsePlayerPage(html) {
+  var unpacked = unpackPackedScript(html);
+  if (!unpacked) return null;
+  var cands = [], m, re = /["']hls(\d)["']\s*:\s*["']([^"']+)["']/g;
+  while ((m = re.exec(unpacked)) !== null) {
+    var url = m[2];
+    if (!/^https?:\/\//i.test(url) && url.charAt(0) !== '/') continue;
+    if (isPlaceholderUrl(url)) continue;
+    cands.push({ level: parseInt(m[1], 10) || 0, url: url });
+  }
+  cands.sort(function (a, b) { return b.level - a.level; }); // hls4 first
+  var best = null;
+  for (var i = 0; i < cands.length; i++) {
+    if (!best && /\.m3u8(?:[?#]|$)/i.test(cands[i].url)) best = cands[i].url;
+  }
+  if (!best) {
+    for (var j = 0; j < cands.length; j++) {
+      if (!best && /\.txt(?:[?#]|$)/i.test(cands[j].url)) best = cands[j].url; // HLS disguised as .txt
+    }
+  }
+  if (!best && cands.length) best = cands[0].url;
+  if (!best) return null;
+  if (best.charAt(0) === '/') best = 'https://' + HG_ROTATE_HOSTS[0] + best;
+  // The signed playlist may be ASN-bound: a datacenter probe can be rejected
+  // while the device (which fetched the player page and holds its own
+  // signature) plays fine — the site's own player uses exactly this URL. So
+  // the probe only labels; it never drops (fail-open).
+  return probeRange(best).then(function (r) {
+    var label = /\.m3u8/i.test(best) ? 'm3u8' : '';
+    if (!r || !r.ok) return makeRow(best, 'StreamHG', label, ''); // fail-open
+    // signed master playlist is tiny — read it for a RESOLUTION label
+    return fetchText(best, 'https://' + HG_ROTATE_HOSTS[0] + '/', EMBED_TIMEOUT_MS).then(function (body) {
+      var q = '';
+      if (body) {
+        var hm = null, rem = /RESOLUTION=\d+x(\d+)/gi;
+        while ((hm = rem.exec(String(body))) !== null) {
+          if (!q) q = qualityFromHeight(hm[1]);
+        }
+      }
+      return makeRow(best, 'StreamHG', q || label, '');
+    });
+  });
+}
+
+function hgTry(urls, idx) {
+  if (idx >= urls.length) return Promise.resolve(null);
+  return fetchText(urls[idx], 'https://hgcloud.to/', EMBED_TIMEOUT_MS).then(function (html) {
+    if (!html || String(html).length < 2000 || /<title>\s*Loading/i.test(html)) return hgTry(urls, idx + 1);
+    return Promise.resolve(hgParsePlayerPage(html)).then(function (row) {
+      return row || hgTry(urls, idx + 1);
+    });
+  }).catch(function () { return hgTry(urls, idx + 1); });
+}
+
+function hgcloudExtract(embedUrl) {
+  var idm = String(embedUrl).match(/\/e\/([a-z0-9]+)/i);
+  var id = idm ? idm[1] : '';
+  if (!id) return Promise.resolve(null);
+  var urls = HG_ROTATE_HOSTS.map(function (h) { return 'https://' + h + '/e/' + id; });
+  return hgTry(urls, 0);
+}
+
 // --- lane 4: voe (follow the embed's own JS redirect, best-effort) ----------
 function voeExtract(embedUrl) {
   return fetchText(embedUrl, PENCURI_BASE + '/', EMBED_TIMEOUT_MS).then(function (html) {
@@ -479,7 +734,8 @@ function voeExtract(embedUrl) {
 function voeParseReal(html, embedUrl) {
   // direct file markers first, then packed-script unpack, then \x-sourced
   var m = html.match(/["']file["']\s*:\s*["']([^"']+\.(?:m3u8|mp4)[^"']*)["']/i) ||
-    html.match(/hls\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i);
+    html.match(/hls\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
+    html.match(/source\s*=\s*["']([^"']+\.(?:m3u8|mp4)[^"']*)["']/i);
   if (!m) {
     var unpacked = unpackPackedScript(html);
     if (unpacked) html = unpacked;
@@ -489,11 +745,21 @@ function voeParseReal(html, embedUrl) {
   if (!m) return null;
   var url = m[1] || m[0];
   if (!/^https?:\/\//i.test(url)) return null;
+  if (isPlaceholderUrl(url)) return null; // v1.3.0: dead filler embed
   var host = String(embedUrl).replace(/^https?:\/\//i, '').split('/')[0];
   var q = qualityFromText(html);
   return probeHeaderless(url).then(function (ok) {
     return makeRow(url, 'Voe', q, ok ? '' : { Referer: 'https://' + host + '/', 'User-Agent': UA });
   });
+}
+
+// v1.3.0: dead-embed filler — hosts that ship a public test clip instead of
+// the real file (verified: both mutiny-2026 voe tabs carry a Big Buck Bunny
+// mp4). Never ship these as rows.
+var PLACEHOLDER_RE = /test-videos\.co\.uk|bigbuckbunny|bbb_sunflower|gtv-videos-bucket|sample-videos\.com|file-examples\.com|w3schools\.com|commondatastorage\.googleapis\.com/i;
+
+function isPlaceholderUrl(u) {
+  return PLACEHOLDER_RE.test(String(u || ''));
 }
 
 // --- lane 5: unknown hosts — cheap inline probe -----------------------------
@@ -508,6 +774,7 @@ function genericExtract(embedUrl) {
     if (!m) return null;
     var url = m[1] || m[0];
     if (!/^https?:\/\//i.test(url)) return null;
+    if (isPlaceholderUrl(url)) return null; // v1.3.0: dead filler embed
     var q5 = qualityFromText(html);
     return probeHeaderless(url).then(function (ok) {
       return makeRow(url, label, q5, ok ? '' : { Referer: embedUrl, 'User-Agent': UA });
@@ -518,8 +785,9 @@ function genericExtract(embedUrl) {
 function extractEmbed(embedUrl) {
   var u = String(embedUrl);
   if (/mixdrop/i.test(u)) return mixdropExtract(u);
-  if (/streamtape/i.test(u)) return streamtapeExtract(u);
+  if (/streamtape|streamta\.pe|tapewithadblock/i.test(u)) return streamtapeExtract(u);
   if (DOOD_HOST_RE.test(u.replace(/^https?:\/\//i, '').split('/')[0])) return doodExtract(u);
+  if (/hgcloud|hglink|streamhg/i.test(u)) return hgcloudExtract(u);
   if (/voe\.[a-z]+|johnfullwonder|audaciouslily/i.test(u)) return voeExtract(u);
   return genericExtract(u);
 }
@@ -532,7 +800,11 @@ function dedupeRows(rows) {
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     if (!r || !r.url) continue;
-    var key = String(r.url).replace(/[#?].*$/, '');
+    // v1.3.0: key on the FULL url (host + path + QUERY). Stripping the query
+    // — the old behavior — collapsed Streamtape's two get_video embeds into
+    // one row, because the file id lives in the query (?id=...&token=...).
+    // Only the #fragment is ignored (pure client-side decoration).
+    var key = String(r.url).replace(/^https?:\/\//i, '').replace(/#.*$/, '');
     if (seen[key]) continue;
     seen[key] = 1;
     out.push(r);
