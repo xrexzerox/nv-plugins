@@ -1,9 +1,25 @@
-# Asian Catalog (community.asian.catalog) — v5.3.0
+# Asian Catalog (community.asian.catalog) — v5.4.0
 
 Stremio-protocol **catalog addon** for Nuvio (NuvioMobile + NuvioTVSmart). The
 directory now **mirrors each website's real sections** (user enumerated them from
 the sites on 2026-09-10/12; every path below was fetched and verified live when
 it was served). Every pmh/pen fallback row now opens real details, too.
+
+**v5.4.0 (2026-09-12)**: the **Pencuri country / feature boards are back**
+(user list 2026-09-12, "additional to asian-catalog for pencuri" after the
+v5.3.0 trim): **Malaysia `/country/malaysia/`, Indonesia `/country/indonesia/`,
+Japan `/country/japan/`, Thailand `/country/thailand/`, Most Viewed
+`/most-viewed/`, Most Rating `/most-rating/`, Top IMDb `/top-imdb/`** — all
+verified 200 with 40 rows/page (the site's `/top-imdb/page` alone is a 404;
+its pagination lives at `/top-imdb/page/N/`). They keep their v5.2.0 shape:
+movie-typed sections that **mix movies and series** (only the
+`pencuri-movies`/`pencuri-series` defs filter rows). Directory is **28
+catalogs**. Paired with **pencuri.js v1.2.0**, which fixes the 4.13.0
+"no stream links on movies AND tv" report: Nuvio's QuickJS plugin runtime has
+**no setTimeout/clearTimeout** (verified in the app source + quickjs AAR), so
+the provider's unguarded timer call threw on device and zeroed every lane;
+v1.2.0 uses the repo-standard guarded fetch pattern plus the full
+pinoyhub-proven Dood flow and headerless-first CDN rows.
 
 **v5.3.0 (2026-09-12)**: two fixes for the user's reports of 2026-09-12.
 (1) **"could not load the details from any addons" (Pinoy Movies Hub)** —
@@ -14,11 +30,11 @@ on open. The addon now **serves real detail-page meta** for both tails: Dooplay
 `.sheader` + `.wp-content` + static `#seasons` episode list (pmh) and MovieMo
 og-tags + `/episode/` links (pen) — Stremio-shaped `videos[]` included, cached.
 (2) **Catalogs trimmed to the sites' own archives** (user list): Pinoy Movies
-Hub drops the carousel/genre widgets for **Movies `/movies` + Series `/series`**;
-Pencuri drops the country/most-viewed/top-imdb boards for **Movies `/movies/` +
-Series `/series/`** — the live site now prefixes series rows with `/series/` in
-their hrefs (the v5.2.0 parser captured `series` as the slug and dropped every
-series row; fixed in both addon and pencuri.js).
+Hub drops the carousel/genre widgets for **Movies `/movies` + Series `/series`**
+(and in v5.4.0 the Pencuri boards came back — see above) — the live site now
+prefixes series rows with `/series/` in their hrefs (the v5.2.0 parser captured
+`series` as the slug and dropped every series row; fixed in both addon and
+pencuri.js).
 
 **v4.1.0 (2026-09-10)**: the deployed worker confirmed kisskh.co/.ovh/.nl ALL
 Cloudflare-403 its datacenter egress (free CORS proxies get the same challenge
@@ -31,7 +47,7 @@ residential egress — the lane that works). `/health` reports
 `sources.kisskh.mode = 'api' | 'tmdb-rescue'` so you can always tell which lane
 served the rows.
 
-## The directory (21 catalogs, grouped by source)
+## The directory (28 catalogs, grouped by source)
 
 ### Pinoy Movies Hub — pinoymovieshub.win (canonical mirror, verified)
 Mirror check (user request): **pinoymovieshub.win** is the live canonical host —
@@ -111,11 +127,20 @@ same CF challenge or error) and the kisskh.org/.asia/.cc WordPress clones
 |---------|------|--------------------|
 | Pencuri Movies | movie | `/movies/` (paginated `/movies/page/N/`) |
 | Pencuri Series | series | `/series/` (paginated `/series/page/N/`) |
+| Pencuri Malaysia | movie (mixed) | `/country/malaysia/` (paginated `/page/N/`) |
+| Pencuri Indonesia | movie (mixed) | `/country/indonesia/` |
+| Pencuri Japan | movie (mixed) | `/country/japan/` |
+| Pencuri Thailand | movie (mixed) | `/country/thailand/` |
+| Pencuri Most Viewed | movie (mixed) | `/most-viewed/` |
+| Pencuri Most Rating | movie (mixed) | `/most-rating/` |
+| Pencuri Top IMDb | movie (mixed) | `/top-imdb/` (the site's `/top-imdb/page` alone is a 404; pagination is `/top-imdb/page/N/`) |
 
 Series rows carry `/series/` prefixed hrefs on the live site; rows are typed
-from that prefix or the site's `mli-eps` badge, and typed catalogs keep only
-their own type (the `/movies/` page's sticky series block drops out). Search is
-WordPress-standard `/?s=query` (verified live: returns `ml-item` rows).
+from that prefix or the site's `mli-eps` badge. `pencuri-movies` /
+`pencuri-series` keep only their own type (the `/movies/` page's sticky series
+block drops out); the country/feature boards mix movies and series exactly like
+the original v5.2.0 sections. Search is WordPress-standard `/?s=query`
+(verified live: returns `ml-item` rows).
 
 ## Metadata
 

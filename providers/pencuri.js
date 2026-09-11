@@ -1,8 +1,10 @@
 /**
- * Pencuri — Nuvio provider (v1.1.0)
+ * Pencuri — Nuvio provider (v1.2.0)
  *
- * Paired with asian-catalog v5.3.0: the addon's Pencuri catalogs (Movies
- * /movies/ + Series /series/ from pencurimovie.baby) emit `tmdb:<id>` rows
+ * Paired with asian-catalog v5.4.0: the addon's Pencuri catalogs (Movies
+ * /movies/ + Series /series/ + the Malaysia / Indonesia / Japan / Thailand
+ * / Most Viewed / Most Rating / Top IMDb boards) from pencurimovie.baby
+ * emit `tmdb:<id>` rows
  * when TMDB matches and `asian:pen-<slug>` fallback rows when it does not.
  * This plugin plays BOTH:
  *
@@ -10,6 +12,34 @@
  *     (movie) or its real episode page (series) — zero title searching.
  *   numeric / tmdb:<id> / tt:<imdb>  -> TMDB lookup -> site search
  *     `/?s={title}` -> best title+year match -> same resolution flow.
+ *
+ * v1.2.0 FIXES ("still doesnt show getstream or stream links not showing,
+ *   both movies and tv" — user report on 4.13.0, 2026-09-12):
+ *   0. *** THE DEVICE KILLER ***: Nuvio's plugin runtime is QuickJS with
+ *      NO setTimeout/clearTimeout (verified in NuvioMobile source: no
+ *      timer host bindings, no timer polyfill in JsBindings.kt, no timer
+ *      strings in the quickjs-kt AAR). v1.1.0's fetchText called
+ *      setTimeout(...) inside the Promise executor -> ReferenceError on
+ *      the device -> every fetchText threw -> EVERY lane died -> 0 rows
+ *      for BOTH movies and tv. Node/datacenter tests never caught it
+ *      because Node HAS timers. Every other working provider guards this
+ *      (pinoyhub hasTimers(), miruro hasTimers(), zoechip/vidzee/...).
+ *      fetchText now uses the repo-standard guarded pattern: with timers
+ *      -> Promise.race timeout; without -> bare fetch (the native fetch
+ *      bridge and the app's 60s plugin budget bound the wait).
+ *   1. Dood family (dsvplay.com is the FIRST embed on most pages) now
+ *      runs the full pinoyhub-proven flow instead of requiring the
+ *      pass_md5 response to carry a query: embed page -> turnstile gate
+ *      check -> /pass_md5/{token}/{file} (Referer + X-Requested-With) ->
+ *      direct URL = base + randomToken(10) + "?token=<token>&expiry=<ms>"
+ *      plus the /d/{id} download-page fallback (dref_url cookie).
+ *   2. TV-safe rows: every CDN URL is probed HEADERLESS (ranged GET, no
+ *      Referer); headers are attached ONLY when the CDN demands them
+ *      (verified live: mxcontent.net answers 403 text/html without
+ *      Referer, 206 video/mp4 with it). Nuvio parses stream.headers and
+ *      ExoPlayer sends them natively on mobile.
+ *   3. Stream rows now carry behaviorHints.bingeGroup (pinoyhub shape);
+ *      the unknown noProbe field is gone.
  *
  * v1.1.0 FIXES ("pencuri.js dont show streamable", user report 2026-09-12):
  *   1. Nuvio passes the TAPPED EPISODE id for series — "tmdb:<id>:<s>:<e>"
@@ -80,6 +110,10 @@ var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, l
 var EMBED_TIMEOUT_MS = 8000;
 var PAGE_TIMEOUT_MS = 10000;
 
+function hasTimers() {
+  return typeof setTimeout === 'function' && typeof clearTimeout === 'function';
+}
+
 var ENTITY_MAP = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'", '#039': "'", '#8216': "'", '#8217': "'", '#8220': '"', '#8221': '"' };
 
 function decodeEntities(s) {
@@ -98,30 +132,77 @@ function attr(tag, name) {
   return m ? m[1] : '';
 }
 
-function fetchText(url, referer, timeoutMs) {
-  return new Promise(function (resolve) {
-    var headers = { 'User-Agent': UA, 'Accept': 'text/html,*/*' };
-    if (referer) headers['Referer'] = referer;
-    var done = false;
-    var settle = function (fn, v) {
-      if (done) return;
-      done = true;
-      fn(v);
-    };
-    var timer = setTimeout(function () { settle(resolve, null); }, timeoutMs || PAGE_TIMEOUT_MS);
-    try {
-      fetch(url, { headers: headers, redirect: 'follow' }).then(function (res) {
-        if (!res || !res.ok) { clearTimeout(timer); return settle(resolve, null); }
-        res.text().then(function (body) {
-          clearTimeout(timer);
-          settle(resolve, body);
-        }).catch(function () { clearTimeout(timer); settle(resolve, null); });
-      }).catch(function () { clearTimeout(timer); settle(resolve, null); });
-    } catch (e) {
-      clearTimeout(timer);
-      settle(resolve, null);
+function fetchRaw(url, refererOrHeaders, timeoutMs, wantMeta) {
+  // v1.2.0: GUARDED timeout race — the device runtime has no timers, so
+  // when hasTimers() is false we call fetch bare (the native fetch bridge
+  // owns the wait; the app's 60s plugin budget is the hard cap). Calling
+  // setTimeout unconditionally was the 4.13.0 zero-rows device bug.
+  var headers = { 'User-Agent': UA, 'Accept': 'text/html,*/*' };
+  if (refererOrHeaders) {
+    if (typeof refererOrHeaders === 'string') {
+      headers['Referer'] = refererOrHeaders;
+    } else {
+      for (var hk in refererOrHeaders) headers[hk] = refererOrHeaders[hk];
     }
+  }
+  var go = function () {
+    return fetch(url, { headers: headers, redirect: 'follow' }).then(function (res) {
+      if (!res || !res.ok) return null;
+      return res.text().then(function (body) {
+        return wantMeta ? { text: body, url: String(res.url || url) } : body;
+      });
+    }).catch(function () { return null; });
+  };
+  if (!hasTimers()) {
+    try { return go(); } catch (e) { return Promise.resolve(null); }
+  }
+  return new Promise(function (resolve) {
+    var done = false;
+    var settle = function (v) { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
+    var timer = setTimeout(function () { settle(null); }, timeoutMs || PAGE_TIMEOUT_MS);
+    go().then(function (v) { settle(v); }, function () { settle(null); });
   });
+}
+
+function fetchText(url, referer, timeoutMs) {
+  return fetchRaw(url, referer, timeoutMs, false);
+}
+
+// redirect-aware variant for lanes that need the FINAL url (dood host
+// rotation: dsvplay.com 301s to playmogo.com etc.)
+function fetchTextFollow(url, referer, timeoutMs) {
+  return fetchRaw(url, referer, timeoutMs, true);
+}
+
+// v1.2.0: headerless playability probe (pinoyhub pattern) — ranged GET
+// with NO Referer; a text/html answer means the CDN demands headers.
+function probeHeaderless(url) {
+  var go = function () {
+    return fetch(url, { headers: { 'User-Agent': UA, 'Range': 'bytes=0-1023' }, redirect: 'follow' })
+      .then(function (res) {
+        if (!res || res.status < 200 || res.status >= 300) return false;
+        var ct = '';
+        try { ct = String((res.headers && res.headers.get && res.headers.get('content-type')) || ''); } catch (e) { ct = ''; }
+        if (/text\/html/i.test(ct)) return false; // challenge / soft-404 page
+        return true;
+      }).catch(function () { return false; });
+  };
+  if (!hasTimers()) {
+    try { return go(); } catch (e) { return Promise.resolve(false); }
+  }
+  return new Promise(function (resolve) {
+    var done = false;
+    var settle = function (v) { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
+    var timer = setTimeout(function () { settle(false); }, 9000);
+    go().then(function (v) { settle(v); }, function () { settle(false); });
+  });
+}
+
+function randomToken(len) {
+  var chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  var out = '';
+  for (var i = 0; i < (len || 8); i++) out += chars.charAt(Math.floor(Math.random() * chars.length));
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -230,11 +311,13 @@ function isSeriesPage(html) {
 // ---------------------------------------------------------------------------
 // HOST LANES — each returns Promise<row|null> and never rejects.
 
-function makeRow(url, hostLabel, quality, referer) {
+function makeRow(url, hostLabel, quality, headers) {
   var q = String(quality || '');
   var name = 'Pencuri | ' + hostLabel + (q ? ' | ' + q : '');
-  var row = { name: name, title: name, url: url, quality: q, noProbe: true };
-  if (referer) row.headers = { Referer: referer };
+  // v1.2.0: pinoyhub-style row — behaviorHints carried, the unknown
+  // noProbe field dropped; headers attached ONLY when the CDN needs them.
+  var row = { name: name, title: name, url: url, quality: q, behaviorHints: { bingeGroup: 'pencuri-direct' } };
+  if (headers) row.headers = headers;
   return row;
 }
 
@@ -264,7 +347,6 @@ function unpackPackedScript(html) {
 }
 
 function mixdropExtract(embedUrl) {
-  var host = String(embedUrl).match(/^https?:\/\/([^\/]+)/i);
   var hostLabel = 'MixDrop';
   return fetchText(embedUrl, PENCURI_BASE + '/', EMBED_TIMEOUT_MS).then(function (html) {
     if (!html) return null;
@@ -275,7 +357,11 @@ function mixdropExtract(embedUrl) {
     var path = wurl[1].replace(/^\/\//, '');
     var url = /^https?:\/\//i.test(path) ? path : 'https://' + path;
     var q = qualityFromText(unpacked);
-    return makeRow(url, hostLabel, q, 'https://mixdrop.top/');
+    // v1.2.0: mxcontent.net 403s text/html without Referer and 206s with it
+    // (verified live) — probe headerless, attach headers only on demand.
+    return probeHeaderless(url).then(function (ok) {
+      return makeRow(url, hostLabel, q, ok ? '' : { Referer: 'https://mixdrop.top/', 'User-Agent': UA });
+    });
   }).catch(function () { return null; });
 }
 
@@ -306,29 +392,72 @@ function streamtapeExtract(embedUrl) {
   }).catch(function () { return null; });
 }
 
-// --- lane 3: dood family (dsvplay/playmogo/...) — turnstile-aware -----------
-// The classic dood flow needs an md5() to finish the download token; without
-// a crypto primitive in the runtime we can only consume mirrors whose
-// /pass_md5/ response ALREADY carries the full query string. Anything less
-// (and every turnstile-gated page) is skipped — never emit a dead URL.
+// --- lane 3: dood family (dsvplay/playmogo/...) — the pinoyhub-proven
+// flow. v1.2.0 no longer requires the /pass_md5/ response to carry a
+// query: the token from the path + a random tail + expiry IS the
+// authorization on most Dood nodes (verified pattern from pinoyhub.js,
+// device-proven since 5.5.0). Turnstile-gated pages stay skipped.
 var DOOD_HOST_RE = /(^|\.)(dsvplay\.com|dsvplayz?\.com|playmogo\.com|dood\.[a-z.]+|doodstream\.com|ds2play\.com|d000d\.com|d000g\.com|dsvtbs\.com)$/i;
 
+function doodIsGated(html) {
+  // Cloudflare Turnstile interstitial: a pure HTTP client never passes.
+  return /op=validate|turnstile\.render|challenges\.cloudflare\.com\/turnstile|captcha-player|g-recaptcha/i.test(html);
+}
+
+function doodIsDead(html) {
+  return /video you are looking for is not found|class="not_found"/i.test(html);
+}
+
+function doodFindMd5Path(html) {
+  var m = String(html || '').match(/['"]\/(pass_md5\/[a-z0-9]+(?:\/[a-z0-9]+)?)['"]/i);
+  if (!m) {
+    var unpacked = unpackPackedScript(html);
+    if (unpacked) m = unpacked.match(/['"]\/(pass_md5\/[a-z0-9]+(?:\/[a-z0-9]+)?)['"]/i);
+  }
+  if (m) return m[1];
+  m = String(html || '').match(/\/pass_md5\/([a-z0-9]+)/i);
+  return m ? 'pass_md5/' + m[1] : null;
+}
+
+function doodFromMd5Path(host, md5Path, refererUrl, q, hostLabel) {
+  var passUrl = 'https://' + host + '/' + md5Path;
+  return fetchText(passUrl, { Referer: refererUrl, 'X-Requested-With': 'XMLHttpRequest', 'User-Agent': UA }, EMBED_TIMEOUT_MS).then(function (body) {
+    var base = String(body || '').trim();
+    if (base.indexOf('http') !== 0 || base.length > 300) return null;
+    var token = md5Path.split('/')[1] || '';
+    var expiry = Date.now() + 2 * 60 * 60 * 1000;
+    var directUrl = base + randomToken(10) + '?token=' + token + '&expiry=' + expiry;
+    return probeHeaderless(directUrl).then(function (ok) {
+      return makeRow(directUrl, hostLabel, q, ok ? '' : { Referer: 'https://' + host + '/', 'User-Agent': UA });
+    });
+  }).catch(function () { return null; });
+}
+
 function doodExtract(embedUrl) {
-  var hm = String(embedUrl).match(/^https?:\/\/([^\/]+)/i);
-  var hostLabel = 'Dood' + (hm ? ' (' + hm[1].replace(/^www\./, '') + ')' : '');
-  return fetchText(embedUrl, PENCURI_BASE + '/', EMBED_TIMEOUT_MS).then(function (html) {
-    if (!html) return null;
-    if (/challenges\.cloudflare\.com|captcha-player|turnstile|g-recaptcha/i.test(html)) return null; // hard gate
-    var title = html.match(/<title>([^<]+)<\/title>/i);
+  var idm = String(embedUrl).match(/\/e\/([a-z0-9]+)/i);
+  var embedId = idm ? idm[1] : '';
+  return fetchTextFollow(embedUrl, PENCURI_BASE + '/', EMBED_TIMEOUT_MS).then(function (page) {
+    if (!page || !page.text) return null;
+    var html = page.text;
+    var fm = String(page.url || embedUrl).match(/^https?:\/\/([^\/]+)/i);
+    var host = fm ? fm[1].replace(/^www\./, '') : (String(embedUrl).match(/^https?:\/\/([^\/]+)/i) || ['', ''])[1];
+    var hostLabel = 'Dood (' + host + ')';
+    if (doodIsGated(html)) return null;
+    if (doodIsDead(html)) return null;
+    var title = html.match(/<title[^>]*>([^<]*)<\/title>/i);
     var q = qualityFromText(title ? title[1] : '');
-    var pass = html.match(/['"]?(\/pass_md5\/[a-z0-9]+\/[a-z0-9]+)['"]?/i);
-    if (!pass) return null;
-    var origin = String(embedUrl).match(/^https?:\/\/[^\/]+/i)[0];
-    return fetchText(origin + pass[1], embedUrl, EMBED_TIMEOUT_MS).then(function (cdn) {
-      if (!cdn) return null;
-      var base = String(cdn).trim();
-      if (!/^https?:\/\//i.test(base) || base.length > 200 || base.indexOf('?') < 0) return null;
-      return makeRow(base, hostLabel, q, embedUrl);
+    var md5Path = doodFindMd5Path(html);
+    if (md5Path) return doodFromMd5Path(host, md5Path, 'https://' + host + '/e/' + (embedId || 'x'), q, hostLabel);
+    // legacy /d/{id} download-page fallback (dref_url cookie set client-side)
+    if (!embedId) return null;
+    var embedAbs = 'https://' + host + '/e/' + embedId;
+    return fetchTextFollow('https://' + host + '/d/' + embedId, { Referer: embedAbs, Cookie: 'dref_url=' + encodeURIComponent(embedAbs), 'User-Agent': UA }, EMBED_TIMEOUT_MS).then(function (dl) {
+      if (!dl || !dl.text || doodIsGated(dl.text)) return null;
+      var fm2 = String(dl.url || embedUrl).match(/^https?:\/\/([^\/]+)/i);
+      var dlHost = fm2 ? fm2[1].replace(/^www\./, '') : host;
+      var md5Path2 = doodFindMd5Path(dl.text);
+      if (!md5Path2) return null;
+      return doodFromMd5Path(dlHost, md5Path2, 'https://' + dlHost + '/d/' + embedId, q, 'Dood (' + dlHost + ')');
     });
   }).catch(function () { return null; });
 }
@@ -340,14 +469,14 @@ function voeExtract(embedUrl) {
     var follow = html.match(/window\.location\.href\s*=\s*'(https?:\/\/[^']+)'/);
     if (follow && follow[1] && follow[1].indexOf(embedUrl) < 0) {
       return fetchText(follow[1], PENCURI_BASE + '/', EMBED_TIMEOUT_MS).then(function (real) {
-        return real ? voeParseReal(real) : null;
+        return real ? voeParseReal(real, embedUrl) : null;
       });
     }
-    return voeParseReal(html);
+    return voeParseReal(html, embedUrl);
   }).catch(function () { return null; });
 }
 
-function voeParseReal(html) {
+function voeParseReal(html, embedUrl) {
   // direct file markers first, then packed-script unpack, then \x-sourced
   var m = html.match(/["']file["']\s*:\s*["']([^"']+\.(?:m3u8|mp4)[^"']*)["']/i) ||
     html.match(/hls\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i);
@@ -360,7 +489,11 @@ function voeParseReal(html) {
   if (!m) return null;
   var url = m[1] || m[0];
   if (!/^https?:\/\//i.test(url)) return null;
-  return makeRow(url, 'Voe', qualityFromText(html), 'https://' + String(embedUrl).replace(/^https?:\/\//i, '').split('/')[0] + '/');
+  var host = String(embedUrl).replace(/^https?:\/\//i, '').split('/')[0];
+  var q = qualityFromText(html);
+  return probeHeaderless(url).then(function (ok) {
+    return makeRow(url, 'Voe', q, ok ? '' : { Referer: 'https://' + host + '/', 'User-Agent': UA });
+  });
 }
 
 // --- lane 5: unknown hosts — cheap inline probe -----------------------------
@@ -375,7 +508,10 @@ function genericExtract(embedUrl) {
     if (!m) return null;
     var url = m[1] || m[0];
     if (!/^https?:\/\//i.test(url)) return null;
-    return makeRow(url, label, qualityFromText(html), embedUrl);
+    var q5 = qualityFromText(html);
+    return probeHeaderless(url).then(function (ok) {
+      return makeRow(url, label, q5, ok ? '' : { Referer: embedUrl, 'User-Agent': UA });
+    });
   }).catch(function () { return null; });
 }
 

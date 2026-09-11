@@ -2,7 +2,7 @@
 /**
  * Asian Catalog v4.1.0 — offline regression suite (no network).
  * Run: node test-catalog.js
- * Covers: manifest shape (21 catalogs), all five site parsers (fixtures
+ * Covers: manifest shape (28 catalogs), all five site parsers (fixtures
  * inline), genre label -> real slug mapping, meta shapes (TMDB-enriched +
  * source-scoped fallbacks), page-URL builders via canned fetch, request
  * routing (search/genre/skip/404), and the v4.1.0 kisskh TMDB rescue
@@ -24,13 +24,14 @@ const cfg = Core.makeConfig({ __fetchFn: () => Promise.reject(new Error('offline
 
 (async () => {
 // ---------------------------------------------------------------- manifest
-section('manifest shape (v5.3.0, 21 catalogs mirroring the site sections)');
+section('manifest shape (v5.4.0, 28 catalogs mirroring the site sections)');
 {
   const man = Core.manifest(cfg);
-  ok('version 5.3.0', man.version === '5.3.0', man.version);
+  ok('version 5.4.0', man.version === '5.4.0', man.version);
   ok('description mentions TMDB rescue', /auto-rescued from TMDB/.test(man.description), man.description.slice(0, 80));
   ok('description mentions Pencuri', /pencurimovie\.baby/.test(man.description));
   ok('description mentions v5.3.0 detail meta', /detail-page meta/.test(man.description));
+  ok('description mentions v5.4.0 boards', /boards are back/.test(man.description));
   ok('id community.asian.catalog', man.id === 'community.asian.catalog');
   ok('types movie+series', man.types.join(',') === 'movie,series');
   ok('idPrefixes tmdb+asian+mal+anikoto', man.idPrefixes.join(',') === 'tmdb:,asian:,mal:,anikoto:', man.idPrefixes.join(','));
@@ -43,10 +44,12 @@ section('manifest shape (v5.3.0, 21 catalogs mirroring the site sections)');
     'kisskh-hollywood', 'kisskh-hollywood-movies', 'kisskh-anime', 'kisskh-upcoming',
     'animo-latest',
     'pencuri-movies', 'pencuri-series',
+    'pencuri-malaysia', 'pencuri-indonesia', 'pencuri-japan', 'pencuri-thailand',
+    'pencuri-most-viewed', 'pencuri-most-rating', 'pencuri-top-imdb',
     'anikoto-latest-episode', 'anikoto-new-release', 'anikoto-new-added',
     'anikoto-upcoming', 'anikoto-just-completed'
   ];
-  ok('21 catalogs', man.catalogs.length === 21, man.catalogs.length);
+  ok('28 catalogs', man.catalogs.length === 28, man.catalogs.length);
   ok('exact id set', ids.length === want.length && want.every(w => ids.indexOf(w) !== -1), ids);
   ok('no duplicate ids', new Set(ids).size === ids.length);
   ok('every catalog declares skip', man.catalogs.every(c => c.extra.some(e => e.name === 'skip')));
@@ -418,7 +421,7 @@ section('handle(): routing + extras');
   ok('unknown catalog 404', r404.status === 404);
   const rJson = await Core.handle('/manifest.json', {});
   const man = await rJson.json();
-  ok('manifest served', man.version === '5.3.0' && man.catalogs.length === 21);
+  ok('manifest served', man.version === '5.4.0' && man.catalogs.length === 28);
   const health = await (await Core.handle('/health', {})).json();
   ok('health shape', !!health.status && typeof health.sources === 'object');
   ok('health probes 8 sources', Object.keys(health.sources).length === 8, Object.keys(health.sources));

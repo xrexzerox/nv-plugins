@@ -208,7 +208,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '5.3.0';
+  var VERSION = '5.4.0';
   var ADDON_ID = 'community.asian.catalog';
   var ADDON_NAME = 'Asian Catalog';
 
@@ -1359,11 +1359,13 @@
     }
     return penPageRaw(cfg, url).then(function (items) {
       // v5.3.0: typed catalogs — /movies/ keeps movie rows (the site's
-      // sticky series block drops out), /series/ keeps series rows, and
-      // site search is filtered the same way per catalog type.
+      // sticky series block drops out) and /series/ keeps series rows.
+      // v5.4.0: ONLY defs flagged penTyped filter rows — the re-added
+      // country/feature boards mix movies and series exactly like the
+      // original v5.2.0 sections did.
       var out = [];
       for (var i = 0; i < items.length; i++) {
-        if (def.type === 'series' ? items[i].type === 'series' : items[i].type !== 'series') out.push(items[i]);
+        if (!def.penTyped || (def.type === 'series' ? items[i].type === 'series' : items[i].type !== 'series')) out.push(items[i]);
       }
       if (!out.length) return [];
       return resolveBatch(cfg, out);
@@ -2362,14 +2364,64 @@
       //     site's mli-eps badge) ---
       {
         type: 'movie', id: 'pencuri-movies', name: 'Pencuri Movies', source: 'pencuri',
-        mode: 'list', penPath: 'movies',
+        mode: 'list', penPath: 'movies', penTyped: true,
         description: 'Movies on pencurimovie.baby',
         extra: [{ name: 'search' }, { name: 'skip' }]
       },
       {
         type: 'series', id: 'pencuri-series', name: 'Pencuri Series', source: 'pencuri',
-        mode: 'list', penPath: 'series',
+        mode: 'list', penPath: 'series', penTyped: true,
         description: 'Series on pencurimovie.baby',
+        extra: [{ name: 'search' }, { name: 'skip' }]
+      },
+      // --- Pencuri country / feature boards — RE-ADDED in v5.4.0 (user
+      //     list 2026-09-12 "additional to asian-catalog for pencuri" after
+      //     v5.3.0 trimmed them to Movies + Series). Same shapes as the
+      //     original v5.2.0 boards: movie-typed sections that MIX movies
+      //     and series (no row filter — the paired pencuri.js re-sniffs
+      //     the real page shape when playing). /top-imdb is the verified
+      //     base URL (the site's /top-imdb/page alone is a 404; its
+      //     pagination lives at /top-imdb/page/N/). ---
+      {
+        type: 'movie', id: 'pencuri-malaysia', name: 'Pencuri Malaysia', source: 'pencuri',
+        mode: 'list', penPath: 'country/malaysia',
+        description: 'Malaysia section on pencurimovie.baby',
+        extra: [{ name: 'search' }, { name: 'skip' }]
+      },
+      {
+        type: 'movie', id: 'pencuri-indonesia', name: 'Pencuri Indonesia', source: 'pencuri',
+        mode: 'list', penPath: 'country/indonesia',
+        description: 'Indonesia section on pencurimovie.baby',
+        extra: [{ name: 'search' }, { name: 'skip' }]
+      },
+      {
+        type: 'movie', id: 'pencuri-japan', name: 'Pencuri Japan', source: 'pencuri',
+        mode: 'list', penPath: 'country/japan',
+        description: 'Japan section on pencurimovie.baby',
+        extra: [{ name: 'search' }, { name: 'skip' }]
+      },
+      {
+        type: 'movie', id: 'pencuri-thailand', name: 'Pencuri Thailand', source: 'pencuri',
+        mode: 'list', penPath: 'country/thailand',
+        description: 'Thailand section on pencurimovie.baby',
+        extra: [{ name: 'search' }, { name: 'skip' }]
+      },
+      {
+        type: 'movie', id: 'pencuri-most-viewed', name: 'Pencuri Most Viewed', source: 'pencuri',
+        mode: 'list', penPath: 'most-viewed',
+        description: 'Most viewed on pencurimovie.baby',
+        extra: [{ name: 'search' }, { name: 'skip' }]
+      },
+      {
+        type: 'movie', id: 'pencuri-most-rating', name: 'Pencuri Most Rating', source: 'pencuri',
+        mode: 'list', penPath: 'most-rating',
+        description: 'Most rating on pencurimovie.baby',
+        extra: [{ name: 'search' }, { name: 'skip' }]
+      },
+      {
+        type: 'movie', id: 'pencuri-top-imdb', name: 'Pencuri Top IMDb', source: 'pencuri',
+        mode: 'list', penPath: 'top-imdb',
+        description: 'Top IMDb on pencurimovie.baby',
         extra: [{ name: 'search' }, { name: 'skip' }]
       },
       // --- Anikoto API (anikotoapi.site) — 5 catalogs (user list 2026-09-11;
@@ -2412,7 +2464,7 @@
       id: ADDON_ID,
       version: VERSION,
       name: ADDON_NAME,
-      description: 'Asian catalogs mirroring each site\'s real sections: pinoymovieshub.win (Movies / Series), kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Movies / Series). v5.0.0: anime rows carry ANIME ids — mal:/anilist:/anikoto: — straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.3.0: pmh/pen rows open real detail-page meta (episodes included) so no row ever 404s on details. Other rows carry full TMDB metadata or source-scoped asian: fallback ids.',
+      description: 'Asian catalogs mirroring each site\'s real sections: pinoymovieshub.win (Movies / Series), kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). v5.0.0: anime rows carry ANIME ids — mal:/anilist:/anikoto: — straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.3.0: pmh/pen rows open real detail-page meta (episodes included) so no row ever 404s on details. v5.4.0: the Pencuri country and feature boards are back. Other rows carry full TMDB metadata or source-scoped asian: fallback ids.',
       logo: cfg.pinoySite + PINOY_ICON,
       resources: ['catalog', 'meta'],
       types: ['movie', 'series'],
@@ -2620,7 +2672,7 @@
       '<li><b>ViewAsian</b> — <a href="' + cfg.viewasianSite + '">' + cfg.viewasianSite.replace(/^https:\/\//, '') + '</a> (Recently Drama, Movie and Kshow)</li>' +
       '<li><b>KissKH</b> — JSON API via ' + cfg.kisskhHosts.join(' / ') + ' (Latest Update, Top K/C-Drama, Hollywood, Anime, Upcoming; auto-rescued from TMDB lists when every mirror is CF-blocked)</li>' +
       '<li><b>AnimeTVSlash</b> — <a href="' + cfg.animoSite + '">' + cfg.animoSite.replace(/^https:\/\//, '') + '</a> (Latest Release)</li>' +
-      '<li><b>Pencuri</b> — <a href="' + cfg.pencuriSite + '">' + cfg.pencuriSite.replace(/^https:\/\//, '') + '</a> (Movies / Series)</li>' +
+      '<li><b>Pencuri</b> — <a href="' + cfg.pencuriSite + '">' + cfg.pencuriSite.replace(/^https:\/\//, '') + '</a> (Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb)</li>' +
       '<li><b>Anikoto API</b> — <a href="' + cfg.anikotoApi + '">' + cfg.anikotoApi.replace(/^https:\/\//, '') + '</a> (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed; rows carry <code>mal:</code>/<code>anilist:</code>/<code>anikoto:</code> ids for the paired miruro plugin)</li>' +
       '</ul>' +
       '<p>Add this manifest URL in Nuvio (Settings &rarr; Addons): <b>' + (cfg.__selfUrl || 'https://your-deployment') + '/manifest.json</b></p>' +
