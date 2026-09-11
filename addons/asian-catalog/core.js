@@ -208,7 +208,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '5.4.0';
+  var VERSION = '5.5.0';
   var ADDON_ID = 'community.asian.catalog';
   var ADDON_NAME = 'Asian Catalog';
 
@@ -2464,7 +2464,7 @@
       id: ADDON_ID,
       version: VERSION,
       name: ADDON_NAME,
-      description: 'Asian catalogs mirroring each site\'s real sections: pinoymovieshub.win (Movies / Series), kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). v5.0.0: anime rows carry ANIME ids — mal:/anilist:/anikoto: — straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.3.0: pmh/pen rows open real detail-page meta (episodes included) so no row ever 404s on details. v5.4.0: the Pencuri country and feature boards are back. Other rows carry full TMDB metadata or source-scoped asian: fallback ids.',
+      description: 'Asian catalogs mirroring each site\'s real sections: pinoymovieshub.win (Movies / Series), kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). v5.0.0: anime rows carry ANIME ids — mal:/anilist:/anikoto: — straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.3.0: pmh/pen rows open real detail-page meta (episodes included) so no row ever 404s on details. v5.4.0: the Pencuri country and feature boards are back. Other rows carry full TMDB metadata or source-scoped asian: fallback ids. v5.5.0: catalog layout restored to the 28-catalog set validated on 4.15.0; the paired pencuri.js v1.4.0 adds English subtitles to every stream row.',
       logo: cfg.pinoySite + PINOY_ICON,
       resources: ['catalog', 'meta'],
       types: ['movie', 'series'],

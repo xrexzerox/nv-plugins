@@ -1,4 +1,4 @@
-/* asian-catalog worker-bundle v5.4.0 (2026-09-12): Pencuri country and feature boards RE-ADDED per user list 2026-09-12 - Malaysia /country/malaysia/, Indonesia /country/indonesia/, Japan /country/japan/, Thailand /country/thailand/, Most Viewed /most-viewed/, Most Rating /most-rating/, Top IMDb /top-imdb/ (verified base; /top-imdb/page alone is a 404) - alongside the v5.3.0 Pencuri Movies + Series sections (28 catalogs total); the boards MIX movies and series like the original v5.2.0 sections (only penTyped defs filter rows); /meta for asian:pen- and asian:pmh- ids unchanged */
+/* asian-catalog worker-bundle v5.5.0 (2026-09-11): catalog layout RESTORED to the 28-catalog set the user validated on 4.15.0 (reverts the 4.16.0 rebuild's 33-catalog regression: Pencuri Movies + Series sections are back, the 7 extra Pinoy boards the user had removed are gone again); paired pencuri.js v1.4.0 now attaches ENGLISH SUBTITLES (opensubtitles-v3) to every Pencuri stream row. /meta for asian:pen- and asian:pmh- ids unchanged */
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -30,7 +30,7 @@ var require_core = __commonJS({
   "core.js"(exports) {
     (function(global) {
       "use strict";
-      var VERSION = "5.4.0";
+      var VERSION = "5.5.0";
       var ADDON_ID = "community.asian.catalog";
       var ADDON_NAME = "Asian Catalog";
       var PINOY_SITE_DEFAULT = "https://pinoymovieshub.win";
@@ -2269,7 +2269,7 @@ var require_core = __commonJS({
           id: ADDON_ID,
           version: VERSION,
           name: ADDON_NAME,
-          description: "Asian catalogs mirroring each site's real sections: pinoymovieshub.win (Movies / Series), kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). v5.0.0: anime rows carry ANIME ids \u2014 mal:/anilist:/anikoto: \u2014 straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.3.0: pmh/pen rows open real detail-page meta (episodes included) so no row ever 404s on details. v5.4.0: the Pencuri country and feature boards are back. Other rows carry full TMDB metadata or source-scoped asian: fallback ids.",
+          description: "Asian catalogs mirroring each site's real sections: pinoymovieshub.win (Movies / Series), kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). v5.0.0: anime rows carry ANIME ids \u2014 mal:/anilist:/anikoto: \u2014 straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.3.0: pmh/pen rows open real detail-page meta (episodes included) so no row ever 404s on details. v5.4.0: the Pencuri country and feature boards are back. Other rows carry full TMDB metadata or source-scoped asian: fallback ids. v5.5.0: catalog layout restored to the 28-catalog set validated on 4.15.0; the paired pencuri.js v1.4.0 adds English subtitles to every stream row.",
           logo: cfg.pinoySite + PINOY_ICON,
           resources: ["catalog", "meta"],
           types: ["movie", "series"],

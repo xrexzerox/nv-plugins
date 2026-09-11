@@ -1,7 +1,7 @@
 /**
- * Pencuri — Nuvio provider (v1.3.0)
+ * Pencuri — Nuvio provider (v1.4.0)
  *
- * Paired with asian-catalog v5.4.0: the addon's Pencuri catalogs (Movies
+ * Paired with asian-catalog v5.5.0: the addon's Pencuri catalogs (Movies
  * /movies/ + Series /series/ + the Malaysia / Indonesia / Japan / Thailand
  * / Most Viewed / Most Rating / Top IMDb boards) from pencurimovie.baby
  * emit `tmdb:<id>` rows
@@ -12,6 +12,31 @@
  *     (movie) or its real episode page (series) — zero title searching.
  *   numeric / tmdb:<id> / tt:<imdb>  -> TMDB lookup -> site search
  *     `/?s={title}` -> best title+year match -> same resolution flow.
+ *
+ * v1.4.0 — ENGLISH SUBTITLES ("all stream now working for pencuri but
+ *   please support english subtitle for pencuri.js" — user report after
+ *   4.15.0, 2026-09-11):
+ *   Every returned stream row now carries a `subtitles` array of ENGLISH
+ *   tracks: s.subtitles = [{ url, language: "en", name: "English" }] —
+ *   the exact shape NuvioMobile's PluginRuntime maps to PluginSubtitleResult
+ *   (url / language / name / headers) and netmirror.js 5.x already emits.
+ *   Source: Stremio's official OpenSubtitles-v3 addon (keyless,
+ *   opensubtitles-v3.strem.io/subtitles/{movie|series}/{tt[:s:e]}.json)
+ *   whose urls (subs5.strem.io .../subencoding-stremio-utf8/...) are plain
+ *   UTF-8 SRT downloads — verified live for movies and per-episode.
+ *   The IMDb id is resolved per lane, fail-soft, IN PARALLEL with host
+ *   extraction so the deadline never moves:
+ *     - tt:<imdb>            -> direct.
+ *     - numeric / tmdb:<id>  -> TMDB /{kind}/{id}/external_ids.
+ *     - asian:pen-<slug>     -> the detail page's og:title "Name (Year)"
+ *                               -> TMDB search (year-matched) ->
+ *                               external_ids. The page-title lane fires the
+ *                               moment resolveBySlug touches a live page
+ *                               (title-gate deferred — no timers, device
+ *                               safe); if the page dies the gate settles
+ *                               with the rows and nothing hangs.
+ *   Clean tracks sort before hearing-impaired; 4 tracks max; 30min cache
+ *   keyed imdb:movie|imdb:tv:s:e.
  *
  * v1.3.0 FIXES ("only show 1 stream and its not playing example movie -
  *   have 8 server you should get all playable stream link" — user report on
@@ -165,6 +190,11 @@ var TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
 var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 var EMBED_TIMEOUT_MS = 8000;
 var PAGE_TIMEOUT_MS = 10000;
+// v1.4.0: English subtitles — Stremio's official keyless OpenSubtitles-v3 addon
+var OS_V3_BASE = 'https://opensubtitles-v3.strem.io';
+var SUBS_TIMEOUT_MS = 7000;
+var SUBS_CACHE_TTL = 30 * 60 * 1000;
+var _subsCache = {};
 
 function hasTimers() {
   return typeof setTimeout === 'function' && typeof clearTimeout === 'function';
@@ -862,7 +892,7 @@ function resolveFromDetail(html, slug, season, episode, pageUrl) {
 // shape only 301s — a round-trip that dies if the site drops the redirect).
 // hintSeries (from the mediaType arg, explicit s/e, or the search row's own
 // type) picks which shape goes first; the other is always tried on failure.
-function resolveBySlug(slug, season, episode, hintSeries) {
+function resolveBySlug(slug, season, episode, hintSeries, onTitle) {
   var seriesUrl = PENCURI_BASE + '/series/' + slug + '/';
   var plainUrl = PENCURI_BASE + '/' + slug + '/';
   var firstUrl = hintSeries ? seriesUrl : plainUrl;
@@ -871,14 +901,24 @@ function resolveBySlug(slug, season, episode, hintSeries) {
     return !!html && (collectEmbeds(html).length > 0 ||
       collectEpisodeLinks(html).length > 0 || isSeriesPage(html));
   }
+  // v1.4.0: fire the English-subtitle lane the moment a live page arrives —
+  // og:title "Name (Year)" is all the subtitle resolver needs. onTitle is
+  // optional (TMDB-keyed lanes know the title already and never pass one).
+  function noteTitle(html) {
+    if (!onTitle || !html) return;
+    var ty = pageTitle(html);
+    if (ty && ty.title) { try { onTitle(ty); } catch (e) {} }
+  }
   return fetchText(firstUrl, PENCURI_BASE + '/', PAGE_TIMEOUT_MS).then(function (html) {
-    if (looksAlive(html)) return resolveFromDetail(html, slug, season, episode, firstUrl);
+    if (looksAlive(html)) { noteTitle(html); return resolveFromDetail(html, slug, season, episode, firstUrl); }
     return fetchText(secondUrl, PENCURI_BASE + '/', PAGE_TIMEOUT_MS).then(function (html2) {
-      return looksAlive(html2) ? resolveFromDetail(html2, slug, season, episode, secondUrl) : [];
+      if (looksAlive(html2)) { noteTitle(html2); return resolveFromDetail(html2, slug, season, episode, secondUrl); }
+      return [];
     });
   }).catch(function () {
     return fetchText(secondUrl, PENCURI_BASE + '/', PAGE_TIMEOUT_MS).then(function (html2) {
-      return looksAlive(html2) ? resolveFromDetail(html2, slug, season, episode, secondUrl) : [];
+      if (looksAlive(html2)) { noteTitle(html2); return resolveFromDetail(html2, slug, season, episode, secondUrl); }
+      return [];
     }).catch(function () { return []; });
   });
 }
@@ -974,6 +1014,145 @@ function resolveByTmdb(kind, id, season, episode) {
 }
 
 // ---------------------------------------------------------------------------
+// ENGLISH SUBTITLES (v1.4.0)
+//
+// Stremio's official OpenSubtitles-v3 addon, keyless:
+//   GET {base}/subtitles/{movie|series}/{imdbId}[:s:e].json
+//     -> { subtitles: [{ url, lang, subtitleFileName, ... }] }
+// The returned urls (subs5.strem.io/.../subencoding-stremio-utf8/...) are
+// plain UTF-8 SRT downloads. Every lane resolves its IMDb id fail-soft and
+// IN PARALLEL with host extraction; rows without a resolvable imdb simply
+// ship without subs (never an error).
+
+// og:title / <title> -> { title, year } ("Mutiny (2026)" -> mutiny/2026)
+function pageTitle(html) {
+  var s = String(html || '');
+  var m = s.match(/property=["']og:title["']\s+content=["']([^"']+)["']/i) ||
+    s.match(/content=["']([^"']+)["']\s+property=["']og:title["']/i);
+  if (!m) m = s.match(/<title[^>]*>([^<]*)<\/title>/i);
+  if (!m) return { title: '', year: '' };
+  var raw = collapseWs(stripTags(decodeEntities(m[1] || '')));
+  raw = raw.replace(/\s*-\s*Pencuri Movie.*$/i, '').trim();
+  var ym = raw.match(/\((19|20)\d{2}\)/);
+  var year = ym ? ym[0].replace(/[()]/g, '') : '';
+  var title = raw.replace(/\s*\((19|20)\d{2}\)\s*/, '').trim();
+  return { title: title, year: year };
+}
+
+// generic TMDB GET (path already carries the query string sans api_key)
+function tmdbGet(path) {
+  var url = 'https://api.themoviedb.org/3' + path +
+    (path.indexOf('?') >= 0 ? '&' : '?') + 'api_key=' + TMDB_API_KEY + '&language=en-US';
+  return fetchText(url, null, PAGE_TIMEOUT_MS).then(function (body) {
+    if (!body) return null;
+    try { return JSON.parse(body); } catch (e) { return null; }
+  }).catch(function () { return null; });
+}
+
+// kind+tmdbId -> imdb id ("" when none — fail-soft)
+function tmdbExternalImdb(kind, tmdbId) {
+  return tmdbGet('/' + kind + '/' + encodeURIComponent(String(tmdbId)) + '/external_ids').then(function (d) {
+    return (d && d.imdb_id) ? String(d.imdb_id) : '';
+  });
+}
+
+// page title+year -> TMDB search (year-matched best) -> external_ids -> imdb
+function imdbFromPageTitle(title, year, isTv) {
+  if (!title) return Promise.resolve('');
+  var kind = isTv ? 'tv' : 'movie';
+  var q = '/search/' + kind + '?query=' + encodeURIComponent(String(title).trim()) +
+    (year ? '&year=' + encodeURIComponent(year) : '');
+  return tmdbGet(q).then(function (d) {
+    if (!d || !Array.isArray(d.results) || !d.results.length) return '';
+    var best = d.results[0], i;
+    if (year) {
+      for (i = 0; i < d.results.length; i++) {
+        var rd = String(d.results[i].release_date || d.results[i].first_air_date || '');
+        if (rd.indexOf(year) === 0) { best = d.results[i]; break; }
+      }
+    }
+    return best && best.id ? tmdbExternalImdb(kind, String(best.id)) : '';
+  }).catch(function () { return ''; });
+}
+
+function subKey(imdbId, mediaType, season, episode) {
+  var base = String(imdbId) + ':' + (mediaType === 'tv' ? 's' : 'm');
+  if (mediaType === 'tv') base += ':' + (parseInt(season, 10) || 1) + ':' + (parseInt(episode, 10) || 1);
+  return base;
+}
+
+// English tracks for an imdb id (episode-scoped for tv). 4 max, clean
+// before hearing-impaired, 30min cache. Never rejects, never throws.
+function englishSubsFor(imdbId, mediaType, season, episode) {
+  if (!/^tt\d+/i.test(String(imdbId || ''))) return Promise.resolve([]);
+  var key = subKey(imdbId, mediaType, season, episode);
+  var hit = _subsCache[key];
+  if (hit && (Date.now() - hit.ts) < SUBS_CACHE_TTL) return Promise.resolve(hit.value);
+  var path = mediaType === 'tv'
+    ? '/subtitles/series/' + encodeURIComponent(String(imdbId)) + ':' + (parseInt(season, 10) || 1) + ':' + (parseInt(episode, 10) || 1) + '.json'
+    : '/subtitles/movie/' + encodeURIComponent(String(imdbId)) + '.json';
+  return fetchText(OS_V3_BASE + path, null, SUBS_TIMEOUT_MS).then(function (body) {
+    var data = null;
+    try { data = body ? JSON.parse(body) : null; } catch (e) { data = null; }
+    var list = (data && Array.isArray(data.subtitles)) ? data.subtitles : [];
+    var eng = [], i;
+    for (i = 0; i < list.length; i++) {
+      var s = list[i];
+      if (!s || !s.url) continue;
+      var lang = String(s.lang || s.language || '').toLowerCase();
+      if (lang !== 'eng' && lang.indexOf('en') !== 0) continue;
+      var fname = String(s.subtitleFileName || s.movieReleaseName || '');
+      var hi = /(^|[.\-_ ])(hi|sdh)([.\-_ ])|hearing.impaired/i.test(fname);
+      eng.push({ s: s, hi: hi });
+    }
+    // clean tracks first, then HI; stable within groups
+    eng.sort(function (a, b) { return (a.hi ? 1 : 0) - (b.hi ? 1 : 0); });
+    var out = [], seen = {};
+    for (i = 0; i < eng.length && out.length < 4; i++) {
+      var u = eng[i].s.url;
+      if (seen[u]) continue;
+      seen[u] = true;
+      out.push({ url: u, language: 'en', name: eng[i].hi ? 'English (HI)' : 'English' });
+    }
+    _subsCache[key] = { ts: Date.now(), value: out };
+    return out;
+  }).catch(function () { return []; });
+}
+
+// one-shot deferred WITHOUT timers (the device runtime has none): the
+// page-title callback fires it with the imdb promise, whose RESOLVED VALUE
+// (the imdb id string, "" when unresolvable) is what gate.promise settles
+// to (native promise adoption unwraps fired promises); if the page dies it
+// is settled with null by the rows settlement, so Promise.all never hangs.
+function makeTitleGate() {
+  var done = false, fire = null;
+  var p = new Promise(function (resolve) { fire = resolve; });
+  return {
+    promise: p,
+    fire: function (v) { if (!done) { done = true; try { fire(v); } catch (e) {} } }
+  };
+}
+
+// attach the (shared) subtitle array to every resolved row — the netmirror
+// v5 pattern Nuvio's runtime is proven against; fail-soft on both sides.
+function withSubs(rowsJob, subsJob, tag) {
+  return Promise.all([
+    Promise.resolve(rowsJob).catch(function () { return []; }),
+    Promise.resolve(subsJob).catch(function () { return []; })
+  ]).then(function (arr) {
+    var rows = arr[0] || [];
+    var subs = arr[1] || [];
+    if (subs.length && rows.length) {
+      for (var i = 0; i < rows.length; i++) {
+        try { rows[i].subtitles = subs; } catch (e) {}
+      }
+      console.log('[Pencuri] ' + subs.length + ' English subtitle track(s) attached' + (tag ? ' (' + tag + ')' : ''));
+    }
+    return rows;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // entry
 
 function getStreams(videoId, mediaType, season, episode) {
@@ -1013,7 +1192,22 @@ function getStreams(videoId, mediaType, season, episode) {
     var catS = argSeason > 0 ? argSeason : catalog.season;
     var catE = argEpisode > 0 ? argEpisode : catalog.episode;
     var catHint = hintSeries || catS > 0 || catE > 0;
-    return resolveBySlug(catalog.slug, catS, catE, catHint);
+    // v1.4.0: the page's og:title fires the parallel English-subtitle lane
+    // the moment resolveBySlug touches a live page; if the page is dead the
+    // gate settles with the rows and the call returns whatever hosts gave.
+    var gate = makeTitleGate();
+    var rowsJob = resolveBySlug(catalog.slug, catS, catE, catHint, function (ty) {
+      gate.fire(ty && ty.title ? imdbFromPageTitle(ty.title, ty.year, catHint) : null);
+    }).then(function (rows) {
+      gate.fire(null); // no-op when onTitle already fired; unhangs dead pages
+      return rows;
+    });
+    var subsJob = gate.promise.then(function (im) {
+      // gate.promise resolves to the UNWRAPPED value of the fired promise:
+      // the imdb id string ("" when unresolvable) or null when the page died.
+      return englishSubsFor(im || '', catHint ? 'tv' : 'movie', catS, catE);
+    });
+    return withSubs(rowsJob, subsJob, 'catalog lane');
   }
 
   // v1.1.0: tolerate tapped-episode decorations ("tmdb:<id>:<s>:<e>",
@@ -1032,9 +1226,19 @@ function getStreams(videoId, mediaType, season, episode) {
     var kind = isTv ? 'tv' : 'movie';
     // try the requested kind, then the other (site rows are typed by badge
     // but TMDB ids arrive from the addon with the catalog's type)
+    // v1.4.0: external_ids runs in PARALLEL with the site search/extraction
+    var imdbJob = tmdbExternalImdb(kind, tmm);
     return resolveByTmdb(kind, tmm, useS, useE).then(function (rows) {
-      if (rows.length) return rows;
-      return resolveByTmdb(kind === 'tv' ? 'movie' : 'tv', tmm, useS, useE);
+      if (rows.length) {
+        return withSubs(Promise.resolve(rows), imdbJob.then(function (im) {
+          return englishSubsFor(im, kind, useS, useE);
+        }), 'tmdb lane');
+      }
+      var flipped = kind === 'tv' ? 'movie' : 'tv';
+      return withSubs(resolveByTmdb(flipped, tmm, useS, useE),
+        tmdbExternalImdb(flipped, tmm).then(function (im2) {
+          return englishSubsFor(im2, flipped, useS, useE);
+        }), 'tmdb lane (flipped)');
     });
   }
 
@@ -1050,8 +1254,16 @@ function getStreams(videoId, mediaType, season, episode) {
       try { data = JSON.parse(body); } catch (e) { return []; }
       var mv = data && data.movie_results && data.movie_results[0];
       var tv = data && data.tv_results && data.tv_results[0];
-      if (mv && mv.id) return resolveByTmdb('movie', mv.id, ttS, ttE);
-      if (tv && tv.id) return resolveByTmdb('tv', tv.id, ttS, ttE);
+      // v1.4.0: the imdb id is KNOWN here — subs fetch in parallel with the
+      // TMDB->site-search->extraction chain, typed by the find result.
+      if (mv && mv.id) {
+        return withSubs(resolveByTmdb('movie', mv.id, ttS, ttE),
+          englishSubsFor('tt' + im[1], 'movie', ttS, ttE), 'tt lane');
+      }
+      if (tv && tv.id) {
+        return withSubs(resolveByTmdb('tv', tv.id, ttS, ttE),
+          englishSubsFor('tt' + im[1], 'tv', ttS, ttE), 'tt lane');
+      }
       return [];
     });
   }
@@ -1059,13 +1271,34 @@ function getStreams(videoId, mediaType, season, episode) {
   // bare slug-ish id (stale caches): strip any numeric decorations first
   var slugish = idStr.replace(/(?:[:\/]\d+)+$/, '');
   if (/^[a-z0-9][a-z0-9-]*$/i.test(slugish)) {
-    return resolveBySlug(slugish.toLowerCase(), season, episode, hintSeries || argEpisode > 0);
+    // v1.4.0: same page-title gate as the catalog lane
+    var slugHint = hintSeries || argEpisode > 0;
+    var gate2 = makeTitleGate();
+    var rows2 = resolveBySlug(slugish.toLowerCase(), season, episode, slugHint, function (ty) {
+      gate2.fire(ty && ty.title ? imdbFromPageTitle(ty.title, ty.year, slugHint) : null);
+    }).then(function (rows) {
+      gate2.fire(null);
+      return rows;
+    });
+    var subs2 = gate2.promise.then(function (im) {
+      return englishSubsFor(im || '', slugHint ? 'tv' : 'movie', argSeason, argEpisode);
+    });
+    return withSubs(rows2, subs2, 'slug lane');
   }
   return Promise.resolve([]);
 }
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { getStreams: getStreams };
+  // v1.4.0 test hooks (guarded; never used by the apps)
+  module.exports.__internals = {
+    englishSubsFor: englishSubsFor,
+    parsePencuriCatalogId: parsePencuriCatalogId,
+    pageTitle: pageTitle,
+    imdbFromPageTitle: imdbFromPageTitle,
+    makeTitleGate: makeTitleGate,
+    _subsCache: _subsCache
+  };
 } else if (typeof global !== 'undefined') {
   global.getStreams = getStreams;
 }

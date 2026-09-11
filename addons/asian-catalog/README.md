@@ -1,9 +1,20 @@
-# Asian Catalog (community.asian.catalog) — v5.4.0
+# Asian Catalog (community.asian.catalog) — v5.5.0
 
 Stremio-protocol **catalog addon** for Nuvio (NuvioMobile + NuvioTVSmart). The
 directory now **mirrors each website's real sections** (user enumerated them from
 the sites on 2026-09-10/12; every path below was fetched and verified live when
 it was served). Every pmh/pen fallback row now opens real details, too.
+
+**v5.5.0 (2026-09-11)**: the catalog layout the user validated on 4.15.0 is
+**restored intact** (repo 4.17.0) — the 4.16.0 rebuild had regressed the
+directory to 33 catalogs, dropping the **Pencuri Movies `/movies/` + Pencuri
+Series `/series/`** sections and re-adding seven Pinoy boards the user had
+removed. v5.5.0 ships the user-validated **28-catalog** set unchanged and pairs
+with **pencuri.js v1.4.0**, which now attaches **English subtitles** to every
+Pencuri stream row (Stremio's keyless opensubtitles-v3 lane; episode-scoped for
+series; resolved in parallel so stream latency is unchanged). The worker bundle
+(`worker-bundle.js`) was rebuilt from this core — **redeploy the CF worker**
+when updating.
 
 **v5.4.0 (2026-09-12)**: the **Pencuri country / feature boards are back**
 (user list 2026-09-12, "additional to asian-catalog for pencuri" after the
@@ -14,7 +25,7 @@ verified 200 with 40 rows/page (the site's `/top-imdb/page` alone is a 404;
 its pagination lives at `/top-imdb/page/N/`). They keep their v5.2.0 shape:
 movie-typed sections that **mix movies and series** (only the
 `pencuri-movies`/`pencuri-series` defs filter rows). Directory is **28
-catalogs**. Paired with **pencuri.js v1.2.0**, which fixes the 4.13.0
+catalogs**. Paired with **pencuri.js v1.3.0** (4.15.0), which fixes the 4.14.0
 "no stream links on movies AND tv" report: Nuvio's QuickJS plugin runtime has
 **no setTimeout/clearTimeout** (verified in the app source + quickjs AAR), so
 the provider's unguarded timer call threw on device and zeroed every lane;
