@@ -4,7 +4,18 @@
  * Supports: Movies & TV Shows
  * Language: Filipino / Tagalog / English
  * Author: xrexzerox
- * Version: 5.7.0
+ * Version: 5.8.0
+ *
+ * v5.8.0 changelog (asian-catalog v5.3.0 pairing):
+ *  - parseAsianCatalogId now tolerates the TAPPED-EPISODE id shapes
+ *    ("asian:pmh-<slug>:<s>:<e>", urlencoded %3A, "/" separators, .json)
+ *    that Nuvio passes once the addon serves real detail metas with
+ *    Stremio videos[] for pmh series (previously the colons made the
+ *    parser return null -> the row fell through to a title search).
+ *  - The trailing :s:e digits fill in the season/episode when the app
+ *    passes no explicit args (show-level play still defaults S1E1).
+ *  - Catalog note (user list 2026-09-12): the addon now lists ONLY the
+ *    site's own /movies and /series archives for this source.
  *
  * v5.7.0 changelog (asian-catalog v4.0.0 pairing):
  *  - parseAsianCatalogId recognises the new source prefixes kh- (KissKH,
@@ -1248,18 +1259,41 @@ function parseAsianCatalogId(rawId) {
   var s = String(rawId || "").trim();
   var m = s.match(/^asian[:\/](.+)$/i);
   if (!m) return null;
-  var tail = m[1].replace(/\.json$/i, "").split("/")[0].trim().toLowerCase();
+  // v5.8.0: Nuvio passes the TAPPED EPISODE id for series built from the
+  // addon's new detail metas — "asian:pmh-<slug>:<s>:<e>" (and urlencoded
+  // %3A or "/" separators). Strip those decorations (and .json) BEFORE the
+  // shape check, and capture the trailing digits as a season/episode
+  // fallback for callers that receive no explicit s/e args.
+  var body = m[1].replace(/\.json([^.].*)?$/i, "").replace(/\.json$/i, "");
+  if (body.indexOf("%") >= 0) {
+    try { var dec = decodeURIComponent(body); if (dec) body = dec; } catch (e) {}
+  }
+  // tokenise on BOTH separators so "/1/3" decorations survive (v5.8.0)
+  var toks = body.split(/[:\/]/);
+  var tail = toks[0].trim().toLowerCase();
+  // season/episode ONLY from a pure :s:e / /s/e pair (never single trailing
+  // path numbers — "slug/2026" must not read as E2026)
+  var decS = /^\d+$/.test(toks[1] || "") && /^\d+$/.test(toks[2] || "") ? parseInt(toks[1], 10) : 0;
+  var decE = decS > 0 ? parseInt(toks[2], 10) : 0;
   if (!tail || !/^[a-z0-9][a-z0-9-]*$/i.test(tail)) return null;
   var pm = tail.match(/^(ks|va|pmh|kh|an)-([a-z0-9][a-z0-9-]*)$/);
   if (pm) {
     if (!pm[2]) return null;
     var stitle = pm[2].replace(/-+/g, " ").replace(/\s+/g, " ").trim();
     if (!stitle) return null;
-    return { source: pm[1], slug: pm[2], title: stitle };
+    return {
+      source: pm[1], slug: pm[2], title: stitle,
+      season: decS,
+      episode: decE
+    };
   }
   var title = tail.replace(/-+/g, " ").replace(/\s+/g, " ").trim();
   if (!title) return null;
-  return { source: "", slug: tail, title: title };
+  return {
+    source: "", slug: tail, title: title,
+    season: decS,
+    episode: decE
+  };
 }
 
 /**
@@ -1452,10 +1486,19 @@ function getStreamsCore(tmdbId, mt, season, episode) {
       console.log("[PinoyMoviesHub] asian:" + catalogId.source + "- id -> handled by another plugin, skipping");
       return Promise.resolve([]);
     }
-    var catIsSeries = mt === "tv" || !!(season && episode);
+    var catIsSeries = mt === "tv" || !!(season && episode) ||
+      !!(catalogId.season && catalogId.episode);
     var catType = catIsSeries ? "tv" : "movie";
     var catPseudo = { type: catType, title: catalogId.title, original: catalogId.title, year: "", raw: null };
     var catMeta = { isSeries: catIsSeries, season: season, episode: episode, episodeTitle: "" };
+    // v5.8.0: the id suffix digits fill in when the app passes no s/e args
+    // (episode taps surface the tapped id but not always the numbers)
+    if ((!season || !episode) && catalogId.season && catalogId.episode) {
+      season = season || String(catalogId.season);
+      episode = episode || String(catalogId.episode);
+      catMeta.season = season;
+      catMeta.episode = episode;
+    }
     var catDisplay = catIsSeries
       ? catalogId.title + " S" + season + "E" + episode
       : catalogId.title;

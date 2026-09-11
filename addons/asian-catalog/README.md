@@ -1,8 +1,40 @@
-# Asian Catalog (community.asian.catalog) — v4.1.0
+# Asian Catalog (community.asian.catalog) — v5.4.0
 
 Stremio-protocol **catalog addon** for Nuvio (NuvioMobile + NuvioTVSmart). The
 directory now **mirrors each website's real sections** (user enumerated them from
-the sites on 2026-09-10; every path below was fetched and verified live that day).
+the sites on 2026-09-10/12; every path below was fetched and verified live when
+it was served). Every pmh/pen fallback row now opens real details, too.
+
+**v5.4.0 (2026-09-12)**: the **Pencuri country / feature boards are back**
+(user list 2026-09-12, "additional to asian-catalog for pencuri" after the
+v5.3.0 trim): **Malaysia `/country/malaysia/`, Indonesia `/country/indonesia/`,
+Japan `/country/japan/`, Thailand `/country/thailand/`, Most Viewed
+`/most-viewed/`, Most Rating `/most-rating/`, Top IMDb `/top-imdb/`** — all
+verified 200 with 40 rows/page (the site's `/top-imdb/page` alone is a 404;
+its pagination lives at `/top-imdb/page/N/`). They keep their v5.2.0 shape:
+movie-typed sections that **mix movies and series** (only the
+`pencuri-movies`/`pencuri-series` defs filter rows). Directory is **28
+catalogs**. Paired with **pencuri.js v1.2.0**, which fixes the 4.13.0
+"no stream links on movies AND tv" report: Nuvio's QuickJS plugin runtime has
+**no setTimeout/clearTimeout** (verified in the app source + quickjs AAR), so
+the provider's unguarded timer call threw on device and zeroed every lane;
+v1.2.0 uses the repo-standard guarded fetch pattern plus the full
+pinoyhub-proven Dood flow and headerless-first CDN rows.
+
+**v5.3.0 (2026-09-12)**: two fixes for the user's reports of 2026-09-12.
+(1) **"could not load the details from any addons" (Pinoy Movies Hub)** —
+TMDB-unmatched rows carry `asian:pmh-`/`asian:pen-` fallback ids and Nuvio
+asks every addon for `/meta` on them; the addon answered 404 on purpose and
+Nuvio's TMDB fallback cannot parse `asian:` ids, so every unmatched row errored
+on open. The addon now **serves real detail-page meta** for both tails: Dooplay
+`.sheader` + `.wp-content` + static `#seasons` episode list (pmh) and MovieMo
+og-tags + `/episode/` links (pen) — Stremio-shaped `videos[]` included, cached.
+(2) **Catalogs trimmed to the sites' own archives** (user list): Pinoy Movies
+Hub drops the carousel/genre widgets for **Movies `/movies` + Series `/series`**
+(and in v5.4.0 the Pencuri boards came back — see above) — the live site now
+prefixes series rows with `/series/` in their hrefs (the v5.2.0 parser captured
+`series` as the slug and dropped every series row; fixed in both addon and
+pencuri.js).
 
 **v4.1.0 (2026-09-10)**: the deployed worker confirmed kisskh.co/.ovh/.nl ALL
 Cloudflare-403 its datacenter egress (free CORS proxies get the same challenge
@@ -15,7 +47,7 @@ residential egress — the lane that works). `/health` reports
 `sources.kisskh.mode = 'api' | 'tmdb-rescue'` so you can always tell which lane
 served the rows.
 
-## The directory (33 catalogs, grouped by source)
+## The directory (28 catalogs, grouped by source)
 
 ### Pinoy Movies Hub — pinoymovieshub.win (canonical mirror, verified)
 Mirror check (user request): **pinoymovieshub.win** is the live canonical host —
@@ -24,21 +56,11 @@ Mirror check (user request): **pinoymovieshub.win** is the live canonical host �
 
 | Catalog | Type | Site section / URL |
 |---------|------|--------------------|
-| Pinoy New Releases | movie | NEW RELEASES — home featured carousel (`#featured-titles`, posters + ratings + years) |
-| Pinoy New Releases • Series | series | same carousel, series rows |
-| Pinoy Recently Added Movies | movie | Recently Added Movies → `/movies/` |
-| Pinoy Series | series | Series → `/series/` |
-| Pinoy Featured (Movies) | movie | Featured → `/genre/featured` |
-| Pinoy Featured • Series | series | Featured → `/genre/featured` |
-| Pinoy Coming Soon | movie | Coming Soon → `/genre/coming-soon` |
-| Pinoy Movies by Genre | movie | 17 chips = the site's own genre sections |
-| Pinoy Series by Genre | series | 17 chips = the site's own genre sections |
+| Pinoy Movies | movie | `/movies` (paginated `/movies/page/N/`) |
+| Pinoy Series | series | `/series` (paginated `/series/page/N/`) |
 
-Genre chips are exactly the site's home sections: Action, Animation, Comedy,
-Concert, Digitally Restored, Crime, Documentary, Drama, Fantasy, Horror, Indie,
-Romance, **Rated R → `/genre/sexy`**, Sports, Stageplay, Tagalog Dubbed,
-**Wattpad Presents → `/genre/wattpad`** (both label mappings verified against the
-home sections' own see-all links).
+(v5.2.0-era carousel/genre widgets removed 2026-09-12 per user list; the
+detail-page meta builder covers any `asian:pmh-` fallback row either way.)
 
 ### KissAsian — kissasian.cam
 
@@ -99,42 +121,26 @@ same CF challenge or error) and the kisskh.org/.asia/.cc WordPress clones
 |---------|------|--------------------|
 | AnimeTVSlash Latest Release | series | `/anime/?status=&type=&order=update` — the home section's own View All URL |
 
-### Anikoto API — anikotoapi.site (v5.0.0)
-
-| Catalog | Type | Feed filter |
-|---------|------|-------------|
-| Anikoto Latest Episode | series | `/recent-anime` feed order (daily episode updates) |
-| Anikoto New Release | series | current-year rows that are Currently Airing |
-| Anikoto New Added | series | highest anikoto ids = most recently added |
-| Anikoto Upcoming Anime | series | status "Not yet aired" |
-| Anikoto Just Completed | series | status "Finished Airing" |
-
-Rows carry `mal:` (fallback `anilist:`/`anikoto:`) ids — the paired **miruro**
-plugin plays them directly through MegaPlay's mal/ani/s-2 routes with zero
-mapping latency. `/meta/series/mal:{id}.json` builds full details (Jikan first,
-Anikoto fallback; episodes preferred from Anikoto so airing shows show their
-newest episode immediately).
-
-### Pencuri Movie — pencurimovie.baby (v5.2.0)
+### Pencuri — pencurimovie.baby (ww44.)
 
 | Catalog | Type | Site section / URL |
 |---------|------|--------------------|
-| Pencuri Movie Malaysia | movie | `/country/malaysia/` |
-| Pencuri Movie Indonesia | movie | `/country/indonesia/` |
-| Pencuri Movie Japan | movie | `/country/japan/` |
-| Pencuri Movie Thailand | movie | `/country/thailand/` |
-| Pencuri Most Viewed | movie | `/most-viewed/` |
-| Pencuri Most Rating | movie | `/most-rating/` |
-| Pencuri Top IMDb | movie | `/top-imdb/` |
+| Pencuri Movies | movie | `/movies/` (paginated `/movies/page/N/`) |
+| Pencuri Series | series | `/series/` (paginated `/series/page/N/`) |
+| Pencuri Malaysia | movie (mixed) | `/country/malaysia/` (paginated `/page/N/`) |
+| Pencuri Indonesia | movie (mixed) | `/country/indonesia/` |
+| Pencuri Japan | movie (mixed) | `/country/japan/` |
+| Pencuri Thailand | movie (mixed) | `/country/thailand/` |
+| Pencuri Most Viewed | movie (mixed) | `/most-viewed/` |
+| Pencuri Most Rating | movie (mixed) | `/most-rating/` |
+| Pencuri Top IMDb | movie (mixed) | `/top-imdb/` (the site's `/top-imdb/page` alone is a 404; pagination is `/top-imdb/page/N/`) |
 
-Rows carry `pencuri:{slug}` ids read straight off the site's `ml-item`
-listings (no TMDB matching; posters are the site's TMDB-hosted images).
-`/meta/movie/pencuri:{slug}.json` builds details from the page itself
-(og:title/og:image/description). The paired **pencuri** plugin resolves the
-exact page and EVERY server tab on it to direct links, and attaches
-**English subtitles** (OpenSubtitles via Stremio's keyless opensubtitles-v3
-addon) to every row. Search extras map to the site-wide WordPress search;
-`skip` walks the site's own `/page/N/` pagination.
+Series rows carry `/series/` prefixed hrefs on the live site; rows are typed
+from that prefix or the site's `mli-eps` badge. `pencuri-movies` /
+`pencuri-series` keep only their own type (the `/movies/` page's sticky series
+block drops out); the country/feature boards mix movies and series exactly like
+the original v5.2.0 sections. Search is WordPress-standard `/?s=query`
+(verified live: returns `ml-item` rows).
 
 ## Metadata
 
@@ -153,19 +159,23 @@ Every row carries as much metadata as the source + TMDB can provide:
 | `asian:va-<slug>` | asianhub.js | viewasian `/drama/{slug}/` → episode → extractors |
 | `asian:kh-<dramaId>` | asianhub.js v2.6.0 | kisskh API detail → episode → local kkey → HLS |
 | `asian:an-<slug>` | animotvslash.js v5.3.0 | `/anime/{slug}/` → real `-episode-{n}` link → extract |
-| `pencuri:<slug>` | pencuri.js v1.3.0 | `/{slug}/` → every server tab resolved + English subtitles |
+| `asian:pen-<slug>` | pencuri.js v1.1.0 | `/series/{slug}/` or `/{slug}/` (movie) or its real `/episode/{base}-season-N-episode-M` page → tab embeds → extract |
 
-Generic `asian:<slug>` rows (stale CDN cache) stay supported as a search-based
-fallback. Plugins that do NOT own a prefix skip it fast (no wasted searches, no
-false matches).
+Since v5.3.0 the addon itself serves `/meta` for the `pmh-` and `pen-` tails
+(real detail-page meta + Stremio `videos[]` for series), so Nuvio opens full
+details for every fallback row instead of erroring. `asian:pen-<slug>:<s>:<e>`
+episode ids (emitted by the meta videos) are resolved per-episode by
+pencuri.js; `asian:pmh-<slug>:<s>:<e>` ones by pinoyhub.js v5.8.0+.
 
 ## Endpoints
 
 - `GET /manifest.json`
 - `GET /catalog/{movie|series}/{catalogId}.json`
 - `GET /catalog/{movie|series}/{catalogId}/{search=..&genre=..&skip=..}.json`
-- `GET /health` — 6 per-source probes (pinoymovieshub, kissasian, viewasian,
-  animotvslash, kisskh, tmdb) with latency + actionable hints
+- `GET /meta/{movie|series}/{id}.json` — mal:/anikoto: (Jikan/Anikoto) and,
+  since v5.3.0, `asian:pmh-`/`asian:pen-` detail-page meta
+- `GET /health` — 8 per-source probes (pinoymovieshub, kissasian, viewasian,
+  animotvslash, pencuri, kisskh, anikoto, tmdb) with latency + actionable hints
 - `GET /` — human index of all catalogs
 
 Verified against both Nuvio apps: NuvioMobile (Kotlin) and NuvioTVSmart (JS)
@@ -185,9 +195,10 @@ Optional env/vars: `TMDB_API_KEY`, `PINOY_SITE`, `KISSASIAN_SITE`,
 
 ## Tests
 
-- `node test-catalog.js` — 72-check offline regression suite (manifest shape,
-  all five parsers with fixtures, genre label mapping, meta shapes, page-URL
-  builders via canned fetch, the v4.1.0 kisskh TMDB rescue, routing).
+- `node test-catalog.js` — 95-check offline regression suite (manifest shape,
+  all five parsers with fixtures, genre label mapping, meta shapes, v5.3.0
+  pmh/pen detail-page meta, page-URL builders via canned fetch, the v4.1.0
+  kisskh TMDB rescue, routing).
 - `node ../scripts/verify-asian-catalog-workerd.mjs` — boots the actual
   `worker-bundle.js` in miniflare/workerd with canned upstreams and asserts
-  health (6 sources up), manifest (21 catalogs) and seven catalog endpoints.
+  health (8 sources up), manifest (21 catalogs) and catalog endpoints.
