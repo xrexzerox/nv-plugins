@@ -1,20 +1,24 @@
-# Asian Catalog (community.asian.catalog) — v5.2.0
+# Asian Catalog (community.asian.catalog) — v5.3.0
 
 Stremio-protocol **catalog addon** for Nuvio (NuvioMobile + NuvioTVSmart). The
 directory now **mirrors each website's real sections** (user enumerated them from
-the sites on 2026-09-10/11; every path below was fetched and verified live those
-days).
+the sites on 2026-09-10/12; every path below was fetched and verified live when
+it was served). Every pmh/pen fallback row now opens real details, too.
 
-**v5.2.0 (2026-09-11)**: NEW SOURCE **Pencuri** (pencurimovie.baby, ww44.
-mirror) — 7 catalogs from the user's own section list: Malaysia / Indonesia /
-Japan / Thailand countries, Most Viewed, Most Rating, Top IMDb (all paginated
-`/page/N/`). WordPress "MovieMo" markup (`ml-item` rows, `oldtitle="T (Year)"`,
-TMDB-hosted posters); rows are typed **series** when the site's `mli-eps`
-badge is present, else movie. TMDB-matched rows carry `tmdb:` ids; unmatched
-rows carry `asian:pen-<slug>` — played by the NEW paired **pencuri.js**
-plugin (direct page/episode navigation; MixDrop direct-mp4 lane verified
-HTTP 206 from the datacenter, Streamtape token lane, Dood/Voe best-effort
-with turnstile skip).
+**v5.3.0 (2026-09-12)**: two fixes for the user's reports of 2026-09-12.
+(1) **"could not load the details from any addons" (Pinoy Movies Hub)** —
+TMDB-unmatched rows carry `asian:pmh-`/`asian:pen-` fallback ids and Nuvio
+asks every addon for `/meta` on them; the addon answered 404 on purpose and
+Nuvio's TMDB fallback cannot parse `asian:` ids, so every unmatched row errored
+on open. The addon now **serves real detail-page meta** for both tails: Dooplay
+`.sheader` + `.wp-content` + static `#seasons` episode list (pmh) and MovieMo
+og-tags + `/episode/` links (pen) — Stremio-shaped `videos[]` included, cached.
+(2) **Catalogs trimmed to the sites' own archives** (user list): Pinoy Movies
+Hub drops the carousel/genre widgets for **Movies `/movies` + Series `/series`**;
+Pencuri drops the country/most-viewed/top-imdb boards for **Movies `/movies/` +
+Series `/series/`** — the live site now prefixes series rows with `/series/` in
+their hrefs (the v5.2.0 parser captured `series` as the slug and dropped every
+series row; fixed in both addon and pencuri.js).
 
 **v4.1.0 (2026-09-10)**: the deployed worker confirmed kisskh.co/.ovh/.nl ALL
 Cloudflare-403 its datacenter egress (free CORS proxies get the same challenge
@@ -36,21 +40,11 @@ Mirror check (user request): **pinoymovieshub.win** is the live canonical host �
 
 | Catalog | Type | Site section / URL |
 |---------|------|--------------------|
-| Pinoy New Releases | movie | NEW RELEASES — home featured carousel (`#featured-titles`, posters + ratings + years) |
-| Pinoy New Releases • Series | series | same carousel, series rows |
-| Pinoy Recently Added Movies | movie | Recently Added Movies → `/movies/` |
-| Pinoy Series | series | Series → `/series/` |
-| Pinoy Featured (Movies) | movie | Featured → `/genre/featured` |
-| Pinoy Featured • Series | series | Featured → `/genre/featured` |
-| Pinoy Coming Soon | movie | Coming Soon → `/genre/coming-soon` |
-| Pinoy Movies by Genre | movie | 17 chips = the site's own genre sections |
-| Pinoy Series by Genre | series | 17 chips = the site's own genre sections |
+| Pinoy Movies | movie | `/movies` (paginated `/movies/page/N/`) |
+| Pinoy Series | series | `/series` (paginated `/series/page/N/`) |
 
-Genre chips are exactly the site's home sections: Action, Animation, Comedy,
-Concert, Digitally Restored, Crime, Documentary, Drama, Fantasy, Horror, Indie,
-Romance, **Rated R → `/genre/sexy`**, Sports, Stageplay, Tagalog Dubbed,
-**Wattpad Presents → `/genre/wattpad`** (both label mappings verified against the
-home sections' own see-all links).
+(v5.2.0-era carousel/genre widgets removed 2026-09-12 per user list; the
+detail-page meta builder covers any `asian:pmh-` fallback row either way.)
 
 ### KissAsian — kissasian.cam
 
@@ -115,18 +109,13 @@ same CF challenge or error) and the kisskh.org/.asia/.cc WordPress clones
 
 | Catalog | Type | Site section / URL |
 |---------|------|--------------------|
-| Pencuri Malaysia | movie | `/country/malaysia/` (paginated `/country/malaysia/page/N/`) |
-| Pencuri Indonesia | movie | `/country/indonesia/` |
-| Pencuri Japan | movie | `/country/japan/` |
-| Pencuri Thailand | movie | `/country/thailand/` |
-| Pencuri Most Viewed | movie | `/most-viewed/` |
-| Pencuri Most Rating | movie | `/most-rating/` |
-| Pencuri Top IMDb | movie | `/top-imdb/` (paginated `/top-imdb/page/N/`; `/page` alone is a 404) |
+| Pencuri Movies | movie | `/movies/` (paginated `/movies/page/N/`) |
+| Pencuri Series | series | `/series/` (paginated `/series/page/N/`) |
 
-Sections mix movies and series; rows are typed individually from the site's
-`mli-eps` badge and the paired pencuri.js plugin re-sniffs the real page shape
-when playing (episode links present = series). Search is WordPress-standard
-`/?s=query` (verified live: returns `ml-item` rows).
+Series rows carry `/series/` prefixed hrefs on the live site; rows are typed
+from that prefix or the site's `mli-eps` badge, and typed catalogs keep only
+their own type (the `/movies/` page's sticky series block drops out). Search is
+WordPress-standard `/?s=query` (verified live: returns `ml-item` rows).
 
 ## Metadata
 
@@ -145,19 +134,23 @@ Every row carries as much metadata as the source + TMDB can provide:
 | `asian:va-<slug>` | asianhub.js | viewasian `/drama/{slug}/` → episode → extractors |
 | `asian:kh-<dramaId>` | asianhub.js v2.6.0 | kisskh API detail → episode → local kkey → HLS |
 | `asian:an-<slug>` | animotvslash.js v5.3.0 | `/anime/{slug}/` → real `-episode-{n}` link → extract |
-| `asian:pen-<slug>` | pencuri.js v1.0.0 | `/{slug}/` (movie) or its real `/episode/{base}-season-N-episode-M` page → tab embeds → extract |
+| `asian:pen-<slug>` | pencuri.js v1.1.0 | `/series/{slug}/` or `/{slug}/` (movie) or its real `/episode/{base}-season-N-episode-M` page → tab embeds → extract |
 
-Generic `asian:<slug>` rows (stale CDN cache) stay supported as a search-based
-fallback. Plugins that do NOT own a prefix skip it fast (no wasted searches, no
-false matches).
+Since v5.3.0 the addon itself serves `/meta` for the `pmh-` and `pen-` tails
+(real detail-page meta + Stremio `videos[]` for series), so Nuvio opens full
+details for every fallback row instead of erroring. `asian:pen-<slug>:<s>:<e>`
+episode ids (emitted by the meta videos) are resolved per-episode by
+pencuri.js; `asian:pmh-<slug>:<s>:<e>` ones by pinoyhub.js v5.8.0+.
 
 ## Endpoints
 
 - `GET /manifest.json`
 - `GET /catalog/{movie|series}/{catalogId}.json`
 - `GET /catalog/{movie|series}/{catalogId}/{search=..&genre=..&skip=..}.json`
-- `GET /health` — 6 per-source probes (pinoymovieshub, kissasian, viewasian,
-  animotvslash, kisskh, tmdb) with latency + actionable hints
+- `GET /meta/{movie|series}/{id}.json` — mal:/anikoto: (Jikan/Anikoto) and,
+  since v5.3.0, `asian:pmh-`/`asian:pen-` detail-page meta
+- `GET /health` — 8 per-source probes (pinoymovieshub, kissasian, viewasian,
+  animotvslash, pencuri, kisskh, anikoto, tmdb) with latency + actionable hints
 - `GET /` — human index of all catalogs
 
 Verified against both Nuvio apps: NuvioMobile (Kotlin) and NuvioTVSmart (JS)
@@ -177,9 +170,10 @@ Optional env/vars: `TMDB_API_KEY`, `PINOY_SITE`, `KISSASIAN_SITE`,
 
 ## Tests
 
-- `node test-catalog.js` — 72-check offline regression suite (manifest shape,
-  all five parsers with fixtures, genre label mapping, meta shapes, page-URL
-  builders via canned fetch, the v4.1.0 kisskh TMDB rescue, routing).
+- `node test-catalog.js` — 95-check offline regression suite (manifest shape,
+  all five parsers with fixtures, genre label mapping, meta shapes, v5.3.0
+  pmh/pen detail-page meta, page-URL builders via canned fetch, the v4.1.0
+  kisskh TMDB rescue, routing).
 - `node ../scripts/verify-asian-catalog-workerd.mjs` — boots the actual
   `worker-bundle.js` in miniflare/workerd with canned upstreams and asserts
-  health (6 sources up), manifest (21 catalogs) and seven catalog endpoints.
+  health (8 sources up), manifest (21 catalogs) and catalog endpoints.

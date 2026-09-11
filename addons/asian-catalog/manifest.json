@@ -1,8 +1,8 @@
 {
   "id": "community.asian.catalog",
-  "version": "5.2.0",
+  "version": "5.3.0",
   "name": "Asian Catalog",
-  "description": "Asian catalogs mirroring each site's real sections: pinoymovieshub.win, kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). v5.0.0: anime rows carry ANIME ids — mal:/anilist:/anikoto: — straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. Other rows carry full TMDB metadata or source-scoped asian: fallback ids.",
+  "description": "Asian catalogs mirroring each site's real sections: pinoymovieshub.win (Movies / Series), kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Movies / Series). v5.0.0: anime rows carry ANIME ids — mal:/anilist:/anikoto: — straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.3.0: pmh/pen rows open real detail-page meta (episodes included) so no row ever 404s on details. Other rows carry full TMDB metadata or source-scoped asian: fallback ids.",
   "logo": "https://pinoymovieshub.win/wp-content/uploads/2025/04/cropped-favicon-11-192x192.png",
   "resources": [
     "catalog",
@@ -21,30 +21,8 @@
   "catalogs": [
     {
       "type": "movie",
-      "id": "pinoy-new-releases",
-      "name": "Pinoy New Releases",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "series",
-      "id": "pinoy-new-releases-tv",
-      "name": "Pinoy New Releases • Series",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "movie",
       "id": "pinoy-movies",
-      "name": "Pinoy Recently Added Movies",
+      "name": "Pinoy Movies",
       "pageSize": 20,
       "extra": [
         {
@@ -63,105 +41,6 @@
       "extra": [
         {
           "name": "search"
-        },
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "movie",
-      "id": "pinoy-featured",
-      "name": "Pinoy Featured (Movies)",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "series",
-      "id": "pinoy-featured-tv",
-      "name": "Pinoy Featured • Series",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "movie",
-      "id": "pinoy-coming-soon",
-      "name": "Pinoy Coming Soon",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "movie",
-      "id": "pinoy-movies-genre",
-      "name": "Pinoy Movies by Genre",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "genre",
-          "options": [
-            "Action",
-            "Animation",
-            "Comedy",
-            "Concert",
-            "Digitally Restored",
-            "Crime",
-            "Documentary",
-            "Drama",
-            "Fantasy",
-            "Horror",
-            "Indie",
-            "Romance",
-            "Rated R",
-            "Sports",
-            "Stageplay",
-            "Tagalog Dubbed",
-            "Wattpad Presents"
-          ]
-        },
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "series",
-      "id": "pinoy-series-genre",
-      "name": "Pinoy Series by Genre",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "genre",
-          "options": [
-            "Action",
-            "Animation",
-            "Comedy",
-            "Concert",
-            "Digitally Restored",
-            "Crime",
-            "Documentary",
-            "Drama",
-            "Fantasy",
-            "Horror",
-            "Indie",
-            "Romance",
-            "Rated R",
-            "Sports",
-            "Stageplay",
-            "Tagalog Dubbed",
-            "Wattpad Presents"
-          ]
         },
         {
           "name": "skip"
@@ -342,8 +221,8 @@
     },
     {
       "type": "movie",
-      "id": "pencuri-malaysia",
-      "name": "Pencuri Malaysia",
+      "id": "pencuri-movies",
+      "name": "Pencuri Movies",
       "pageSize": 20,
       "extra": [
         {
@@ -355,79 +234,9 @@
       ]
     },
     {
-      "type": "movie",
-      "id": "pencuri-indonesia",
-      "name": "Pencuri Indonesia",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "search"
-        },
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "movie",
-      "id": "pencuri-japan",
-      "name": "Pencuri Japan",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "search"
-        },
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "movie",
-      "id": "pencuri-thailand",
-      "name": "Pencuri Thailand",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "search"
-        },
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "movie",
-      "id": "pencuri-most-viewed",
-      "name": "Pencuri Most Viewed",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "search"
-        },
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "movie",
-      "id": "pencuri-most-rating",
-      "name": "Pencuri Most Rating",
-      "pageSize": 20,
-      "extra": [
-        {
-          "name": "search"
-        },
-        {
-          "name": "skip"
-        }
-      ]
-    },
-    {
-      "type": "movie",
-      "id": "pencuri-top-imdb",
-      "name": "Pencuri Top IMDb",
+      "type": "series",
+      "id": "pencuri-series",
+      "name": "Pencuri Series",
       "pageSize": 20,
       "extra": [
         {

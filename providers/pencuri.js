@@ -1,18 +1,38 @@
 /**
- * Pencuri — Nuvio provider (v1.0.0)
+ * Pencuri — Nuvio provider (v1.1.0)
  *
- * Paired with asian-catalog v5.2.0: the addon's 7 Pencuri catalogs
- * (Malaysia / Indonesia / Japan / Thailand countries, Most Viewed,
- * Most Rating, Top IMDb — all from pencurimovie.baby) emit `tmdb:<id>`
- * rows when TMDB matches and `asian:pen-<slug>` fallback rows when it
- * does not. This plugin plays BOTH:
+ * Paired with asian-catalog v5.3.0: the addon's Pencuri catalogs (Movies
+ * /movies/ + Series /series/ from pencurimovie.baby) emit `tmdb:<id>` rows
+ * when TMDB matches and `asian:pen-<slug>` fallback rows when it does not.
+ * This plugin plays BOTH:
  *
  *   asian:pen-<slug> / asian:<slug>  -> navigate the site's real page
  *     (movie) or its real episode page (series) — zero title searching.
  *   numeric / tmdb:<id> / tt:<imdb>  -> TMDB lookup -> site search
  *     `/?s={title}` -> best title+year match -> same resolution flow.
  *
- * Site recon (2026-09-11, all live):
+ * v1.1.0 FIXES ("pencuri.js dont show streamable", user report 2026-09-12):
+ *   1. Nuvio passes the TAPPED EPISODE id for series — "tmdb:<id>:<s>:<e>"
+ *      (MetaDetailsScreen.buildPlaybackVideoId -> content.id + ":" + s + ":"
+ *      + e) — and the old /^(?:tmdb:)?(\d+)$/ regex rejected it in 0ms.
+ *      Same bug class miruro 2.7.0 fixed for mal: ids. The TMDB branch now
+ *      tolerates trailing :s:e / :e decorations and prefers the explicit
+ *      season/episode args (Nuvio 4-arg contract), falling back to the id
+ *      suffix digits only when the args are missing.
+ *   2. Series rows on the live site carry a /series/ prefix in their hrefs
+ *      (/series/{slug}/ — listing AND /?s= search). parseListingItems
+ *      captured "series" as the slug and the skip-list dropped the row,
+ *      so the search lane never matched any series -> 0 streams. Now the
+ *      prefix is captured, the slug is the last segment, and the row is
+ *      typed series from the href.
+ *   3. resolveBySlug tries the /series/{slug}/ shape first for series taps
+ *      (the old /{slug}/ 301 still works but costs a round-trip and dies
+ *      if the site drops the redirect).
+ *   4. asian:pen- ids with :s:e suffixes (episode ids from the addon's new
+ *      detail-page metas) resolve the episode from the suffix when the app
+ *      passes no season/episode args.
+ *
+ * Site recon (2026-09-11/12, all live):
  *   - WordPress "MovieMo" theme; listing rows are
  *     <div data-movie-id class="ml-item"> -> a.ml-mask[oldtitle="T (Year)"].
  *     Series rows carry an mli-eps "Eps N" badge (the addon types rows from
@@ -122,16 +142,31 @@ function parsePencuriCatalogId(rawId) {
   if (!s) return null;
   var m = s.match(/^asian[:\/](.+)$/i);
   if (!m) return null;
-  var tail = m[1].split(/[:\/]/)[0].trim().toLowerCase();
+  // v1.1.0: tokens AFTER the slug are the tapped-episode decoration
+  // ("pen-<slug>:1:3", "pen-<slug>/1/3") — captured as a season/episode
+  // fallback for callers that receive no explicit s/e args. Only a pure
+  // digit pair counts (never "slug/2026" -> E2026).
+  var toks = m[1].split(/[:\/]/);
+  var tail = toks[0].trim().toLowerCase();
+  var decS = /^\d+$/.test(toks[1] || '') && /^\d+$/.test(toks[2] || '') ? parseInt(toks[1], 10) : 0;
+  var decE = decS > 0 ? parseInt(toks[2], 10) : 0;
   if (!tail || !/^[a-z0-9][a-z0-9-]*$/i.test(tail)) return null;
   var pm = tail.match(/^(pen)-([a-z0-9][a-z0-9-]*)$/);
   if (pm) {
     if (!pm[2]) return null;
-    return { source: pm[1], slug: pm[2] };
+    return {
+      source: pm[1], slug: pm[2],
+      season: decS,
+      episode: decE
+    };
   }
   // foreign source-scoped rows (ks/va/pmh/kh/an-...) -> not ours
   if (/^(ks|va|pmh|kh|an)-/.test(tail)) return { source: 'foreign', slug: '' };
-  return { source: '', slug: tail }; // legacy generic asian:<slug>
+  return {
+    source: '', slug: tail, // legacy generic asian:<slug>
+    season: decS,
+    episode: decE
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -389,34 +424,55 @@ function resolvePageRows(html) {
   });
 }
 
-function resolveBySlug(slug, season, episode) {
-  var pageUrl = PENCURI_BASE + '/' + slug + '/';
-  return fetchText(pageUrl, PENCURI_BASE + '/', PAGE_TIMEOUT_MS).then(function (html) {
-    if (!html) return [];
-    if (isSeriesPage(html)) {
-      var epLinks = collectEpisodeLinks(html);
-      if (epLinks.length) {
-        var want = parseInt(episode, 10) || 1;
-        var epSlug = pickEpisodeLink(epLinks, season, want);
-        if (!epSlug) {
-          // construct the canonical shape as a last resort (verified pattern)
-          epSlug = slugBase(slug) + '-season-' + (parseInt(season, 10) || 1) + '-episode-' + want;
-        }
-        var epUrl = PENCURI_BASE + '/episode/' + epSlug;
-        return fetchText(epUrl, pageUrl, PAGE_TIMEOUT_MS).then(function (epHtml) {
-          if (!epHtml) {
-            // fall back to the season-less shape before giving up
-            var alt = PENCURI_BASE + '/episode/' + slugBase(slug) + '-episode-' + (parseInt(episode, 10) || 1);
-            return fetchText(alt, pageUrl, PAGE_TIMEOUT_MS).then(function (altHtml) {
-              return altHtml ? resolvePageRows(altHtml) : [];
-            });
-          }
-          return resolvePageRows(epHtml);
-        });
+function resolveFromDetail(html, slug, season, episode, pageUrl) {
+  if (isSeriesPage(html)) {
+    var epLinks = collectEpisodeLinks(html);
+    if (epLinks.length) {
+      var want = parseInt(episode, 10) || 1;
+      var epSlug = pickEpisodeLink(epLinks, season, want);
+      if (!epSlug) {
+        // construct the canonical shape as a last resort (verified pattern)
+        epSlug = slugBase(slug) + '-season-' + (parseInt(season, 10) || 1) + '-episode-' + want;
       }
+      var epUrl = PENCURI_BASE + '/episode/' + epSlug;
+      return fetchText(epUrl, pageUrl, PAGE_TIMEOUT_MS).then(function (epHtml) {
+        if (!epHtml) {
+          // fall back to the season-less shape before giving up
+          var alt = PENCURI_BASE + '/episode/' + slugBase(slug) + '-episode-' + (parseInt(episode, 10) || 1);
+          return fetchText(alt, pageUrl, PAGE_TIMEOUT_MS).then(function (altHtml) {
+            return altHtml ? resolvePageRows(altHtml) : [];
+          });
+        }
+        return resolvePageRows(epHtml);
+      });
     }
-    return resolvePageRows(html);
-  }).catch(function () { return []; });
+  }
+  return resolvePageRows(html);
+}
+
+// v1.1.0: series detail pages live at /series/{slug}/ (the bare /{slug}/
+// shape only 301s — a round-trip that dies if the site drops the redirect).
+// hintSeries (from the mediaType arg, explicit s/e, or the search row's own
+// type) picks which shape goes first; the other is always tried on failure.
+function resolveBySlug(slug, season, episode, hintSeries) {
+  var seriesUrl = PENCURI_BASE + '/series/' + slug + '/';
+  var plainUrl = PENCURI_BASE + '/' + slug + '/';
+  var firstUrl = hintSeries ? seriesUrl : plainUrl;
+  var secondUrl = hintSeries ? plainUrl : seriesUrl;
+  function looksAlive(html) {
+    return !!html && (collectEmbeds(html).length > 0 ||
+      collectEpisodeLinks(html).length > 0 || isSeriesPage(html));
+  }
+  return fetchText(firstUrl, PENCURI_BASE + '/', PAGE_TIMEOUT_MS).then(function (html) {
+    if (looksAlive(html)) return resolveFromDetail(html, slug, season, episode, firstUrl);
+    return fetchText(secondUrl, PENCURI_BASE + '/', PAGE_TIMEOUT_MS).then(function (html2) {
+      return looksAlive(html2) ? resolveFromDetail(html2, slug, season, episode, secondUrl) : [];
+    });
+  }).catch(function () {
+    return fetchText(secondUrl, PENCURI_BASE + '/', PAGE_TIMEOUT_MS).then(function (html2) {
+      return looksAlive(html2) ? resolveFromDetail(html2, slug, season, episode, secondUrl) : [];
+    }).catch(function () { return []; });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -453,23 +509,29 @@ function tmdbFetch(kind, id) {
 }
 
 function parseListingItems(html) {
-  // same markup as the addon's parser: data-movie-id -> ml-mask[oldtitle]
+  // same markup as the addon's parser: data-movie-id -> ml-mask[oldtitle].
+  // v1.1.0: series rows href /series/{slug}/ (listing + search, verified
+  // live) — capture the optional prefix, slug is the LAST segment, and the
+  // prefix pins the series type.
   var items = [], seen = {};
   var chunks = String(html || '').split(/<div data-movie-id="\d+"[^>]*class="ml-item/);
   for (var i = 1; i < chunks.length; i++) {
     var body = chunks[i].length > 4000 ? chunks[i].slice(0, 4000) : chunks[i];
-    var a = body.match(/<a href="https?:\/\/[^"]*pencurimovie\.baby\/([a-z0-9][a-z0-9-]*)\/"[^>]*oldtitle="([^"]+)"/i);
+    var a = body.match(/<a href="https?:\/\/[^"]*pencurimovie\.baby\/((?:series|movies)\/)?([a-z0-9][a-z0-9-]*)\/"[^>]*oldtitle="([^"]+)"/i);
     if (!a) continue;
-    var slug = a[1];
+    var prefix = a[1] ? a[1].replace(/\/+$/, '').toLowerCase() : '';
+    var slug = a[2];
     if (/^(feed|list-mode|page|wp-json|request-movie|genre|country|series|movies|episode|release|release-year|most|top|search|tag)$/.test(slug)) continue;
-    if (seen[slug]) continue;
-    seen[slug] = 1;
-    var title = collapseWs(stripTags(decodeEntities(a[2] || '')));
+    var key = prefix + ':' + slug;
+    if (seen[key]) continue;
+    seen[key] = 1;
+    var title = collapseWs(stripTags(decodeEntities(a[3] || '')));
     var year = '';
     var ym = title.match(/\s*\((\d{4})\)\s*$/);
     if (ym) { year = ym[1]; title = title.replace(/\s*\((\d{4})\)\s*$/, ''); }
     var em = body.match(/class="mli-eps"[\s\S]{0,80}Eps\s*<i>\s*(\d+)/i);
-    items.push({ slug: slug, title: title, year: year, type: em ? 'series' : 'movie' });
+    var isSeries = prefix === 'series' || !!em;
+    items.push({ slug: slug, title: title, year: year, type: isSeries ? 'series' : 'movie' });
   }
   return items;
 }
@@ -498,7 +560,7 @@ function resolveByTmdb(kind, id, season, episode) {
         if (s > bestScore) { bestScore = s; best = items[i]; }
       }
       if (!best || bestScore < 0.6) return [];
-      return resolveBySlug(best.slug, season, episode);
+      return resolveBySlug(best.slug, season, episode, best.type === 'series');
     });
   }).catch(function () { return []; });
 }
@@ -521,8 +583,16 @@ function getStreams(videoId, mediaType, season, episode) {
   }
   var idStr = String(videoId == null ? '' : videoId).trim();
   if (!idStr) return Promise.resolve([]);
+  if (idStr.indexOf('%') >= 0) {
+    try { var dec = decodeURIComponent(idStr); if (dec) idStr = String(dec).trim(); } catch (e) {}
+  }
   console.log('[Pencuri] start ' + idStr + (mediaType ? ' (' + mediaType + ')' : '') +
     ' S' + (parseInt(season, 10) || 1) + 'E' + (parseInt(episode, 10) || 1));
+
+  var argSeason = parseInt(season, 10) > 0 ? parseInt(season, 10) : 0;
+  var argEpisode = parseInt(episode, 10) > 0 ? parseInt(episode, 10) : 0;
+  var hintSeries = mtSlot === 'tv' || mtSlot === 'series' || mtSlot === 'show' ||
+    mtSlot === 'tv_show' || mtSlot === 'tvshow';
 
   var catalog = parsePencuriCatalogId(idStr);
   if (catalog) {
@@ -530,23 +600,40 @@ function getStreams(videoId, mediaType, season, episode) {
       console.log('[Pencuri] foreign asian: id -> skipping');
       return Promise.resolve([]);
     }
-    return resolveBySlug(catalog.slug, season, episode);
+    // v1.1.0: episode-id suffixes on pen ids ("asian:pen-<slug>:1:3") carry
+    // the tapped s/e when the app passes no explicit args.
+    var catS = argSeason > 0 ? argSeason : catalog.season;
+    var catE = argEpisode > 0 ? argEpisode : catalog.episode;
+    var catHint = hintSeries || catS > 0 || catE > 0;
+    return resolveBySlug(catalog.slug, catS, catE, catHint);
   }
 
-  var tmm = idStr.match(/^(?:tmdb:)?(\d+)$/i);
-  if (tmm) {
-    var isTv = mediaType ? (mtSlot === 'tv' || mtSlot === 'series' || mtSlot === 'show') : true;
+  // v1.1.0: tolerate tapped-episode decorations ("tmdb:<id>:<s>:<e>",
+  // ":<e>" single, "/"-separated) — the old strict regex rejected the exact
+  // id Nuvio passes for every TMDB-meta series episode tap
+  // (buildPlaybackVideoId -> content.id + ":" + s + ":" + e).
+  var tmParts = idStr.replace(/^tmdb:/i, '').split(/[:\/]/);
+  if (/^\d+$/.test(tmParts[0])) {
+    var tmm = tmParts[0];
+    var decS = tmParts.length >= 3 ? (parseInt(tmParts[1], 10) || 0) : 0;
+    var decE = tmParts.length >= 2 ? (parseInt(tmParts[tmParts.length - 1], 10) || 0) : 0;
+    var useS = argSeason > 0 ? argSeason : decS;
+    var useE = argEpisode > 0 ? argEpisode : decE;
+    var isTv = mediaType ? (mtSlot === 'tv' || mtSlot === 'series' || mtSlot === 'show' ||
+      mtSlot === 'tv_show' || mtSlot === 'tvshow') : true;
     var kind = isTv ? 'tv' : 'movie';
     // try the requested kind, then the other (site rows are typed by badge
     // but TMDB ids arrive from the addon with the catalog's type)
-    return resolveByTmdb(kind, tmm[1], season, episode).then(function (rows) {
+    return resolveByTmdb(kind, tmm, useS, useE).then(function (rows) {
       if (rows.length) return rows;
-      return resolveByTmdb(kind === 'tv' ? 'movie' : 'tv', tmm[1], season, episode);
+      return resolveByTmdb(kind === 'tv' ? 'movie' : 'tv', tmm, useS, useE);
     });
   }
 
   var im = idStr.match(/^tt(\d+)/i);
   if (im) {
+    var ttS = argSeason > 0 ? argSeason : (tmParts.length >= 3 ? (parseInt(tmParts[1], 10) || 0) : 0);
+    var ttE = argEpisode > 0 ? argEpisode : (tmParts.length >= 2 ? (parseInt(tmParts[tmParts.length - 1], 10) || 0) : 0);
     var findUrl = 'https://api.themoviedb.org/3/find/tt' + im[1] +
       '?api_key=' + TMDB_API_KEY + '&external_source=imdb_id';
     return fetchText(findUrl, null, PAGE_TIMEOUT_MS).then(function (body) {
@@ -555,14 +642,17 @@ function getStreams(videoId, mediaType, season, episode) {
       try { data = JSON.parse(body); } catch (e) { return []; }
       var mv = data && data.movie_results && data.movie_results[0];
       var tv = data && data.tv_results && data.tv_results[0];
-      if (mv && mv.id) return resolveByTmdb('movie', mv.id, season, episode);
-      if (tv && tv.id) return resolveByTmdb('tv', tv.id, season, episode);
+      if (mv && mv.id) return resolveByTmdb('movie', mv.id, ttS, ttE);
+      if (tv && tv.id) return resolveByTmdb('tv', tv.id, ttS, ttE);
       return [];
     });
   }
 
-  // bare slug-ish id (stale caches): try it as a slug directly
-  if (/^[a-z0-9][a-z0-9-]*$/i.test(idStr)) return resolveBySlug(idStr.toLowerCase(), season, episode);
+  // bare slug-ish id (stale caches): strip any numeric decorations first
+  var slugish = idStr.replace(/(?:[:\/]\d+)+$/, '');
+  if (/^[a-z0-9][a-z0-9-]*$/i.test(slugish)) {
+    return resolveBySlug(slugish.toLowerCase(), season, episode, hintSeries || argEpisode > 0);
+  }
   return Promise.resolve([]);
 }
 

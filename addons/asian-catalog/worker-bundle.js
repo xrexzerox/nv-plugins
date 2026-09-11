@@ -1,4 +1,4 @@
-/* asian-catalog worker-bundle v5.2.0 (2026-09-11): NEW SOURCE Pencuri (pencurimovie.baby ww44.) - 7 catalogs (Malaysia/Indonesia/Japan/Thailand countries, Most Viewed, Most Rating, Top IMDb) from the MovieMo ml-item markup; rows typed via the mli-eps badge; asian:pen-<slug> fallback ids paired with the new pencuri.js plugin (mixdrop/streamtape/dood/voe lanes) */
+/* asian-catalog worker-bundle v5.3.0 (2026-09-12): Pinoy Movies Hub trimmed to the site's own /movies + /series archives (user list 2026-09-12); Pencuri trimmed to Movies /movies/ + Series /series/ (site series rows now carry /series/ prefixed hrefs - parser updated); NEW /meta for asian:pmh- and asian:pen- fallback ids builds real detail-page meta (Dooplay .sheader + static #seasons episode list; MovieMo og-tags + /episode/ links) so no row 404s on details any more; pencuri health probe now checks /movies/ */
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -30,7 +30,7 @@ var require_core = __commonJS({
   "core.js"(exports) {
     (function(global) {
       "use strict";
-      var VERSION = "5.2.0";
+      var VERSION = "5.3.0";
       var ADDON_ID = "community.asian.catalog";
       var ADDON_NAME = "Asian Catalog";
       var PINOY_SITE_DEFAULT = "https://pinoymovieshub.win";
@@ -1020,7 +1020,7 @@ var require_core = __commonJS({
         var items = [];
         var seen = {};
         var host = String(cfg.pencuriSite || "").replace(/^https?:\/\//, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        var reAnchor = new RegExp('<a href="https?://' + host + '/([a-z0-9][a-z0-9-]*)/"[^>]*oldtitle="([^"]+)"', "i");
+        var reAnchor = new RegExp('<a href="https?://' + host + '/((?:series|movies)/)?([a-z0-9][a-z0-9-]*)/"[^>]*oldtitle="([^"]+)"', "i");
         var reEps = /class="mli-eps"[\s\S]{0,80}Eps\s*<i>\s*(\d+)/i;
         var reQuality = /class="mli-quality-text">([^<]+)</i;
         var chunks = String(html || "").split(/<div data-movie-id="\d+"[^>]*class="ml-item/);
@@ -1029,10 +1029,11 @@ var require_core = __commonJS({
           var a = body.match(reAnchor);
           if (!a)
             continue;
-          var slug = a[1];
+          var hrefPrefix = a[1] ? a[1].replace(/\/+$/, "").toLowerCase() : "";
+          var slug = a[2];
           if (PEN_SKIP_SLUGS[slug])
             continue;
-          var title = stripTags(decodeEntities(a[2] || ""));
+          var title = stripTags(decodeEntities(a[3] || ""));
           if (!title)
             continue;
           var year = "";
@@ -1045,22 +1046,24 @@ var require_core = __commonJS({
             if (sm)
               year = sm[2];
           }
-          if (seen[slug])
+          var em = body.match(reEps);
+          var qm = body.match(reQuality);
+          var isSeries = hrefPrefix === "series" || !!em;
+          var url = cfg.pencuriSite + (isSeries ? "/series/" + slug + "/" : "/" + slug + "/");
+          if (seen[url])
             continue;
-          seen[slug] = true;
+          seen[url] = true;
           var img = body.match(/<img[^>]*>/i);
           var poster = "";
           if (img)
             poster = attr(img[0], "src") || attr(img[0], "data-original") || attr(img[0], "data-lazy-src") || "";
           if (poster && !/^https?:\/\//i.test(poster))
             poster = "";
-          var em = body.match(reEps);
-          var qm = body.match(reQuality);
           items.push({
             slug,
-            url: cfg.pencuriSite + "/" + slug + "/",
+            url,
             source: "pen",
-            type: em ? "series" : "movie",
+            type: isSeries ? "series" : "movie",
             title: collapseWs(title),
             year,
             poster,
@@ -1090,9 +1093,14 @@ var require_core = __commonJS({
           url = page === 1 ? cfg.pencuriSite + "/" + path + "/" : cfg.pencuriSite + "/" + path + "/page/" + page + "/";
         }
         return penPageRaw(cfg, url).then(function(items) {
-          if (!items.length)
+          var out = [];
+          for (var i = 0; i < items.length; i++) {
+            if (def.type === "series" ? items[i].type === "series" : items[i].type !== "series")
+              out.push(items[i]);
+          }
+          if (!out.length)
             return [];
-          return resolveBatch(cfg, items);
+          return resolveBatch(cfg, out);
         });
       }
       var kisskhActiveHost = null;
@@ -1652,16 +1660,237 @@ var require_core = __commonJS({
           return meta;
         });
       }
+      function parseAsianMetaId(rawId) {
+        var s = String(rawId || "").trim();
+        if (s.indexOf("%") >= 0) {
+          try {
+            var d = decodeURIComponent(s);
+            if (d)
+              s = d;
+          } catch (e) {
+          }
+          s = String(s).trim();
+        }
+        s = s.replace(/\.json$/i, "").replace(/(:\d+)+$/, "").trim();
+        var m = s.match(/^asian[:\/]([a-z0-9][a-z0-9-]*)$/i);
+        if (!m)
+          return null;
+        var tail = m[1].toLowerCase();
+        var pm = tail.match(/^(pmh|pen)-([a-z0-9][a-z0-9-]*)$/);
+        if (pm)
+          return { source: pm[1], slug: pm[2] };
+        return null;
+      }
+      function pmhDetailHtml(cfg, kind, slug) {
+        function prim() {
+          return fetchTextWithRetry(cfg, cfg.pinoySite + (kind === "series" ? "/series/" : "/movies/") + slug, 12e3);
+        }
+        function alt() {
+          return fetchTextWithRetry(cfg, cfg.pinoySite + (kind === "series" ? "/movies/" : "/series/") + slug, 12e3);
+        }
+        return prim().then(function(html) {
+          if (html && /<h1[ >]/i.test(html))
+            return { html, kind };
+          return alt().then(function(html2) {
+            return html2 && /<h1[ >]/i.test(html2) ? { html: html2, kind: kind === "series" ? "movie" : "series" } : null;
+          });
+        }).catch(function() {
+          return alt().then(function(html2) {
+            return html2 && /<h1[ >]/i.test(html2) ? { html: html2, kind: kind === "series" ? "movie" : "series" } : null;
+          }).catch(function() {
+            return null;
+          });
+        });
+      }
+      function pmhParseDetail(cfg, html, kind, slug) {
+        var hm = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+        var name = hm ? collapseWs(stripTags(decodeEntities(hm[1]))) : "";
+        if (!name)
+          return null;
+        var meta = {
+          id: "asian:pmh-" + slug,
+          type: kind,
+          name,
+          posterShape: "poster"
+        };
+        var pp = html.match(/<div class="poster">\s*<img[^>]*>/i);
+        if (pp) {
+          var poster = attr(pp[0], "src") || attr(pp[0], "data-src") || "";
+          if (poster && /^https?:\/\//i.test(poster) && !isPlaceholderPoster(poster))
+            meta.poster = poster;
+        }
+        var dm = html.match(/<div class="wp-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+        if (dm) {
+          var desc = collapseWs(stripTags(decodeEntities(dm[1])));
+          if (desc)
+            meta.description = desc.slice(0, 700);
+        }
+        var ym = html.match(/itemprop=['"]?dateCreated['"]?[^>]*>\s*[A-Za-z]{3}\.[^,]*,\s*((?:19|20)\d\d)/i);
+        if (ym)
+          meta.releaseInfo = ym[1];
+        var rm = html.match(/itemprop=['"]?ratingValue['"]?[^>]*>\s*([\d.]+)/i);
+        var r = rm ? parseFloat(rm[1]) : NaN;
+        if (isFinite(r) && r > 0 && r <= 10)
+          meta.imdbRating = Math.round(r * 10) / 10;
+        if (kind === "series") {
+          var blockM = html.match(/id=['"]seasons['"][\s\S]{0,120000}/i);
+          var block = blockM ? blockM[0] : html;
+          var chunks = block.split(/<li\b/i);
+          var videos = [];
+          for (var i = 1; i < chunks.length; i++) {
+            var nm = chunks[i].match(/class=['"]numerando['"][^>]*>\s*(\d+)\s*-\s*(\d+)/i);
+            if (!nm)
+              continue;
+            var s = parseInt(nm[1], 10), e = parseInt(nm[2], 10);
+            if (!isFinite(s) || !isFinite(e) || s <= 0 || e <= 0)
+              continue;
+            var am2 = chunks[i].match(/href=['"]([^'"]+)['"][^>]*>([\s\S]*?)<\/a>/i);
+            var epTitle = am2 ? collapseWs(stripTags(decodeEntities(am2[2]))) : "";
+            var dte = chunks[i].match(/class=['"]date['"][^>]*>([^<]*)</i);
+            videos.push({
+              id: "asian:pmh-" + slug + ":" + s + ":" + e,
+              title: epTitle || "Episode " + e,
+              season: s,
+              episode: e,
+              released: dte ? collapseWs(stripTags(decodeEntities(dte[1]))) : null
+            });
+          }
+          if (videos.length)
+            meta.videos = videos;
+        }
+        return meta;
+      }
+      function metaForPmh(cfg, slug, wantSeries) {
+        var kind = wantSeries ? "series" : "movie";
+        var key = "asian:pmh-" + slug;
+        var cached = metaCacheGet(cfg, key);
+        if (cached)
+          return Promise.resolve(cached);
+        return pmhDetailHtml(cfg, kind, slug).then(function(hit) {
+          if (!hit)
+            return null;
+          var meta = pmhParseDetail(cfg, hit.html, hit.kind, slug);
+          if (meta)
+            metaCacheSet(cfg, key, meta);
+          return meta;
+        }).catch(function() {
+          return null;
+        });
+      }
+      function penDetailHtml(cfg, kind, slug) {
+        function prim() {
+          return fetchTextWithRetry(cfg, cfg.pencuriSite + (kind === "series" ? "/series/" : "/") + slug + "/", 12e3);
+        }
+        function alt() {
+          return fetchTextWithRetry(cfg, cfg.pencuriSite + (kind === "series" ? "/" : "/series/") + slug + "/", 12e3);
+        }
+        return prim().then(function(html) {
+          if (html && /og:title/i.test(html))
+            return { html, kind };
+          return alt().then(function(html2) {
+            return html2 && /og:title/i.test(html2) ? { html: html2, kind: kind === "series" ? "movie" : "series" } : null;
+          });
+        }).catch(function() {
+          return alt().then(function(html2) {
+            return html2 && /og:title/i.test(html2) ? { html: html2, kind: kind === "series" ? "movie" : "series" } : null;
+          }).catch(function() {
+            return null;
+          });
+        });
+      }
+      function penParseDetail(cfg, html, kind, slug) {
+        var tm = html.match(/property=["']og:title["'] content=["']([^"']+)["']/i) || html.match(/<title>([^<]*)<\/title>/i);
+        var raw = tm ? collapseWs(stripTags(decodeEntities(tm[1]))) : "";
+        raw = raw.replace(/\s*-\s*Pencuri Movie.*$/i, "").trim();
+        if (!raw)
+          return null;
+        var name = raw, year = "";
+        var ym = raw.match(/\s*\((\d{4})\)\s*$/);
+        if (ym) {
+          year = ym[1];
+          name = raw.replace(/\s*\((\d{4})\)\s*$/, "").trim();
+        }
+        var meta = {
+          id: "asian:pen-" + slug,
+          type: kind,
+          name,
+          posterShape: "poster"
+        };
+        if (year)
+          meta.releaseInfo = year;
+        var im = html.match(/property=["']og:image["'] content=["']([^"']+)["']/i);
+        if (im && /^https?:\/\//i.test(im[1]) && !isPlaceholderPoster(im[1]))
+          meta.poster = im[1];
+        var dm = html.match(/property=["']og:description["'] content=["']([^"']*)["']/i);
+        if (dm && dm[1])
+          meta.description = collapseWs(decodeEntities(dm[1])).slice(0, 700);
+        if (kind === "series") {
+          var seen = {}, videos = [];
+          var re = /\/episode\/([a-z0-9-]+?)\/?["']/gi, m;
+          while ((m = re.exec(html)) !== null) {
+            var epSlug = m[1];
+            if (seen[epSlug])
+              continue;
+            seen[epSlug] = 1;
+            var sm = epSlug.match(/^(.*)-season-(\d+)-episode-(\d+)$/i) || epSlug.match(/^(.*)-episode-(\d+)$/i);
+            if (!sm)
+              continue;
+            var isFull = sm.length === 4;
+            var s = isFull ? parseInt(sm[2], 10) : 1;
+            var e = parseInt(isFull ? sm[3] : sm[2], 10);
+            if (!isFinite(s) || !isFinite(e) || s <= 0 || e <= 0)
+              continue;
+            videos.push({
+              id: "asian:pen-" + slug + ":" + s + ":" + e,
+              title: "Episode " + e,
+              season: s,
+              episode: e,
+              released: null
+            });
+          }
+          videos.sort(function(x, y) {
+            return x.season - y.season || x.episode - y.episode;
+          });
+          if (videos.length)
+            meta.videos = videos;
+        }
+        return meta;
+      }
+      function metaForPen(cfg, slug, wantSeries) {
+        var kind = wantSeries ? "series" : "movie";
+        var key = "asian:pen-" + slug;
+        var cached = metaCacheGet(cfg, key);
+        if (cached)
+          return Promise.resolve(cached);
+        return penDetailHtml(cfg, kind, slug).then(function(hit) {
+          if (!hit)
+            return null;
+          var meta = penParseDetail(cfg, hit.html, hit.kind, slug);
+          if (meta)
+            metaCacheSet(cfg, key, meta);
+          return meta;
+        }).catch(function() {
+          return null;
+        });
+      }
       function addonMeta(cfg, type, rawId) {
         var id = String(rawId || "").trim();
         var mm = id.match(/^(mal|anikoto):(\d+)$/i);
-        if (!mm)
-          return Promise.resolve(null);
-        var prefix = mm[1].toLowerCase();
-        var num = mm[2];
-        if (prefix === "mal")
-          return metaForMal(cfg, num, type);
-        return metaForAnikoto(cfg, num);
+        if (mm) {
+          var prefix = mm[1].toLowerCase();
+          var num = mm[2];
+          if (prefix === "mal")
+            return metaForMal(cfg, num, type);
+          return metaForAnikoto(cfg, num);
+        }
+        var am = parseAsianMetaId(id);
+        if (am) {
+          var wantSeries = String(type || "").toLowerCase() === "series" || String(type || "").toLowerCase() === "tv";
+          if (am.source === "pmh")
+            return metaForPmh(cfg, am.slug, wantSeries);
+          return metaForPen(cfg, am.slug, wantSeries);
+        }
+        return Promise.resolve(null);
       }
       function bufferStateKey(cfg, kind, ident) {
         return kind + "|" + ident;
@@ -1746,54 +1975,19 @@ var require_core = __commonJS({
           }
         );
       }
-      var PINOY_GENRE_CHIPS = [
-        "Action",
-        "Animation",
-        "Comedy",
-        "Concert",
-        "Digitally Restored",
-        "Crime",
-        "Documentary",
-        "Drama",
-        "Fantasy",
-        "Horror",
-        "Indie",
-        "Romance",
-        "Rated R",
-        "Sports",
-        "Stageplay",
-        "Tagalog Dubbed",
-        "Wattpad Presents"
-      ];
       var KS_GENRE_CHIPS = ["Fantasy", "Friendship", "Law", "Romance", "Sports"];
       function catalogDefinitions() {
         return [
-          // --- Pinoy Movies Hub (pinoymovieshub.win) — 9 catalogs ---
-          {
-            type: "movie",
-            id: "pinoy-new-releases",
-            name: "Pinoy New Releases",
-            source: "pinoy",
-            mode: "newreleases",
-            description: "NEW RELEASES \u2014 the featured carousel on pinoymovieshub.win (movies)",
-            extra: [{ name: "skip" }]
-          },
-          {
-            type: "series",
-            id: "pinoy-new-releases-tv",
-            name: "Pinoy New Releases \u2022 Series",
-            source: "pinoy",
-            mode: "newreleases",
-            description: "NEW RELEASES \u2014 the featured carousel on pinoymovieshub.win (series)",
-            extra: [{ name: "skip" }]
-          },
+          // --- Pinoy Movies Hub (pinoymovieshub.win) — Movies + Series ---
+          // (user list 2026-09-12: the site's own /movies and /series archives,
+          //  paginated /movies/page/N/ + /series/page/N/)
           {
             type: "movie",
             id: "pinoy-movies",
-            name: "Pinoy Recently Added Movies",
+            name: "Pinoy Movies",
             source: "pinoy",
             mode: "archive",
-            description: "Recently Added Movies on pinoymovieshub.win",
+            description: "Movies on pinoymovieshub.win",
             extra: [{ name: "search" }, { name: "skip" }]
           },
           {
@@ -1804,51 +1998,6 @@ var require_core = __commonJS({
             mode: "archive",
             description: "Series on pinoymovieshub.win (teleseryes, Tagalog-dubbed shows)",
             extra: [{ name: "search" }, { name: "skip" }]
-          },
-          {
-            type: "movie",
-            id: "pinoy-featured",
-            name: "Pinoy Featured (Movies)",
-            source: "pinoy",
-            mode: "featured",
-            description: "Featured movies on pinoymovieshub.win",
-            extra: [{ name: "skip" }]
-          },
-          {
-            type: "series",
-            id: "pinoy-featured-tv",
-            name: "Pinoy Featured \u2022 Series",
-            source: "pinoy",
-            mode: "featured",
-            description: "Featured series on pinoymovieshub.win",
-            extra: [{ name: "skip" }]
-          },
-          {
-            type: "movie",
-            id: "pinoy-coming-soon",
-            name: "Pinoy Coming Soon",
-            source: "pinoy",
-            mode: "coming-soon",
-            description: "Coming Soon on pinoymovieshub.win",
-            extra: [{ name: "skip" }]
-          },
-          {
-            type: "movie",
-            id: "pinoy-movies-genre",
-            name: "Pinoy Movies by Genre",
-            source: "pinoy",
-            mode: "genre",
-            description: "Browse Pinoy movies by genre (site sections: Action .. Wattpad Presents)",
-            extra: [{ name: "genre", options: PINOY_GENRE_CHIPS.slice() }, { name: "skip" }]
-          },
-          {
-            type: "series",
-            id: "pinoy-series-genre",
-            name: "Pinoy Series by Genre",
-            source: "pinoy",
-            mode: "genre",
-            description: "Browse Pinoy series by genre (site sections: Action .. Wattpad Presents)",
-            extra: [{ name: "genre", options: PINOY_GENRE_CHIPS.slice() }, { name: "skip" }]
           },
           // --- KissAsian (kissasian.cam) — 3 catalogs ---
           {
@@ -1962,77 +2111,28 @@ var require_core = __commonJS({
             description: "Latest Release \u2014 newest anime updates on animotvslash.org",
             extra: [{ name: "search" }, { name: "skip" }]
           },
-          // --- Pencuri (pencurimovie.baby) — 7 catalogs (user list 2026-09-11;
-          //     sections mix movies and series — rows are typed individually
-          //     from the site's own mli-eps badge) ---
+          // --- Pencuri (pencurimovie.baby) — Movies + Series (user list
+          //     2026-09-12: the site's own /movies/ and /series/ listings;
+          //     rows typed individually from the /series/ href prefix or the
+          //     site's mli-eps badge) ---
           {
             type: "movie",
-            id: "pencuri-malaysia",
-            name: "Pencuri Malaysia",
+            id: "pencuri-movies",
+            name: "Pencuri Movies",
             source: "pencuri",
             mode: "list",
-            penPath: "country/malaysia",
-            description: "Malaysia section on pencurimovie.baby",
+            penPath: "movies",
+            description: "Movies on pencurimovie.baby",
             extra: [{ name: "search" }, { name: "skip" }]
           },
           {
-            type: "movie",
-            id: "pencuri-indonesia",
-            name: "Pencuri Indonesia",
+            type: "series",
+            id: "pencuri-series",
+            name: "Pencuri Series",
             source: "pencuri",
             mode: "list",
-            penPath: "country/indonesia",
-            description: "Indonesia section on pencurimovie.baby",
-            extra: [{ name: "search" }, { name: "skip" }]
-          },
-          {
-            type: "movie",
-            id: "pencuri-japan",
-            name: "Pencuri Japan",
-            source: "pencuri",
-            mode: "list",
-            penPath: "country/japan",
-            description: "Japan section on pencurimovie.baby",
-            extra: [{ name: "search" }, { name: "skip" }]
-          },
-          {
-            type: "movie",
-            id: "pencuri-thailand",
-            name: "Pencuri Thailand",
-            source: "pencuri",
-            mode: "list",
-            penPath: "country/thailand",
-            description: "Thailand section on pencurimovie.baby",
-            extra: [{ name: "search" }, { name: "skip" }]
-          },
-          {
-            type: "movie",
-            id: "pencuri-most-viewed",
-            name: "Pencuri Most Viewed",
-            source: "pencuri",
-            mode: "list",
-            penPath: "most-viewed",
-            description: "Most viewed on pencurimovie.baby",
-            extra: [{ name: "search" }, { name: "skip" }]
-          },
-          {
-            type: "movie",
-            id: "pencuri-most-rating",
-            name: "Pencuri Most Rating",
-            source: "pencuri",
-            mode: "list",
-            penPath: "most-rating",
-            description: "Most rating on pencurimovie.baby",
-            extra: [{ name: "search" }, { name: "skip" }]
-          },
-          {
-            type: "movie",
-            id: "pencuri-top-imdb",
-            name: "Pencuri Top IMDb",
-            source: "pencuri",
-            mode: "list",
-            penPath: "top-imdb",
-            description: "Top IMDb on pencurimovie.baby",
+            penPath: "series",
+            description: "Series on pencurimovie.baby",
             extra: [{ name: "search" }, { name: "skip" }]
           },
           // --- Anikoto API (anikotoapi.site) — 5 catalogs (user list 2026-09-11;
@@ -2089,7 +2189,7 @@ var require_core = __commonJS({
           id: ADDON_ID,
           version: VERSION,
           name: ADDON_NAME,
-          description: "Asian catalogs mirroring each site's real sections: pinoymovieshub.win, kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). v5.0.0: anime rows carry ANIME ids \u2014 mal:/anilist:/anikoto: \u2014 straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. Other rows carry full TMDB metadata or source-scoped asian: fallback ids.",
+          description: "Asian catalogs mirroring each site's real sections: pinoymovieshub.win (Movies / Series), kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Movies / Series). v5.0.0: anime rows carry ANIME ids \u2014 mal:/anilist:/anikoto: \u2014 straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.3.0: pmh/pen rows open real detail-page meta (episodes included) so no row ever 404s on details. Other rows carry full TMDB metadata or source-scoped asian: fallback ids.",
           logo: cfg.pinoySite + PINOY_ICON,
           resources: ["catalog", "meta"],
           types: ["movie", "series"],
@@ -2138,7 +2238,7 @@ var require_core = __commonJS({
             });
           })],
           ["pencuri", timeProbe(function() {
-            return penPageRaw(cfg, cfg.pencuriSite + "/country/malaysia/").then(function(items) {
+            return penPageRaw(cfg, cfg.pencuriSite + "/movies/").then(function(items) {
               return { ok: items.length > 0, items: items.length, error: items.length ? void 0 : "parsed 0 rows (site markup changed or mirror moved \u2014 set PENCURI_SITE)" };
             });
           })],
@@ -2317,7 +2417,7 @@ var require_core = __commonJS({
         var rows = defs.map(function(c) {
           return "<tr><td>" + c.name + "</td><td><code>" + c.type + "</code></td><td>" + (srcLabel[c.source] || c.source) + "</td><td><code>/catalog/" + c.type + "/" + c.id + ".json</code></td></tr>";
         }).join("");
-        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + ADDON_NAME + '</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 16px;color:#eee;background:#14141b}a{color:#7ab8ff}table{border-collapse:collapse;width:100%}td,th{border:1px solid #333;padding:8px;text-align:left;font-size:14px}code{color:#9ef}h2{margin-top:28px}</style></head><body><h1>' + ADDON_NAME + " <small>v" + VERSION + `</small></h1><p>Stremio-protocol catalog addon for Nuvio \u2014 mirrors each site's real sections:</p><ul><li><b>Pinoy Movies Hub</b> \u2014 <a href="` + cfg.pinoySite + '">' + cfg.pinoySite.replace(/^https:\/\//, "") + '</a> (New Releases, Recently Added Movies, Series, Featured, Coming Soon, 17 genre sections)</li><li><b>KissAsian</b> \u2014 <a href="' + cfg.kissasianSite + '">' + cfg.kissasianSite.replace(/^https:\/\//, "") + '</a> (Hot Series Update, Latest Release, Recommendation genres)</li><li><b>ViewAsian</b> \u2014 <a href="' + cfg.viewasianSite + '">' + cfg.viewasianSite.replace(/^https:\/\//, "") + "</a> (Recently Drama, Movie and Kshow)</li><li><b>KissKH</b> \u2014 JSON API via " + cfg.kisskhHosts.join(" / ") + ' (Latest Update, Top K/C-Drama, Hollywood, Anime, Upcoming; auto-rescued from TMDB lists when every mirror is CF-blocked)</li><li><b>AnimeTVSlash</b> \u2014 <a href="' + cfg.animoSite + '">' + cfg.animoSite.replace(/^https:\/\//, "") + '</a> (Latest Release)</li><li><b>Pencuri</b> \u2014 <a href="' + cfg.pencuriSite + '">' + cfg.pencuriSite.replace(/^https:\/\//, "") + '</a> (Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb)</li><li><b>Anikoto API</b> \u2014 <a href="' + cfg.anikotoApi + '">' + cfg.anikotoApi.replace(/^https:\/\//, "") + "</a> (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed; rows carry <code>mal:</code>/<code>anilist:</code>/<code>anikoto:</code> ids for the paired miruro plugin)</li></ul><p>Add this manifest URL in Nuvio (Settings &rarr; Addons): <b>" + (cfg.__selfUrl || "https://your-deployment") + '/manifest.json</b></p><p>Health probe: <a href="/health"><code>/health</code></a> (per-source status, latency, hints)</p><h2>Catalogs</h2><table><tr><th>Name</th><th>Type</th><th>Source</th><th>Endpoint</th></tr>' + rows + "</table><h2>Search examples</h2><p><code>/catalog/movie/pinoy-movies/search=hello love again.json</code><br><code>/catalog/series/asian-series/search=queen of tears.json</code><br><code>/catalog/series/kisskh-latest/search=queen of tears.json</code><br><code>/catalog/series/animo-latest/search=one piece.json</code></p><h2>Genre / section chips</h2><p><code>/catalog/series/asian-series-genre/genre=Romance.json</code><br><code>/catalog/series/pinoy-series-genre/genre=Tagalog Dubbed.json</code><br><code>/catalog/movie/pinoy-movies-genre/genre=Rated R&amp;skip=20.json</code> (site label for /genre/sexy)</p><p>Pair with the <b>PinoyMoviesHub</b>, <b>AsianHub</b> and <b>AnimeTVSlash</b> Nuvio plugins (xrexzerox/nv-plugins) for playable streams.</p></body></html>";
+        return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + ADDON_NAME + '</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 16px;color:#eee;background:#14141b}a{color:#7ab8ff}table{border-collapse:collapse;width:100%}td,th{border:1px solid #333;padding:8px;text-align:left;font-size:14px}code{color:#9ef}h2{margin-top:28px}</style></head><body><h1>' + ADDON_NAME + " <small>v" + VERSION + `</small></h1><p>Stremio-protocol catalog addon for Nuvio \u2014 mirrors each site's real sections:</p><ul><li><b>Pinoy Movies Hub</b> \u2014 <a href="` + cfg.pinoySite + '">' + cfg.pinoySite.replace(/^https:\/\//, "") + '</a> (New Releases, Recently Added Movies, Series, Featured, Coming Soon, 17 genre sections)</li><li><b>KissAsian</b> \u2014 <a href="' + cfg.kissasianSite + '">' + cfg.kissasianSite.replace(/^https:\/\//, "") + '</a> (Hot Series Update, Latest Release, Recommendation genres)</li><li><b>ViewAsian</b> \u2014 <a href="' + cfg.viewasianSite + '">' + cfg.viewasianSite.replace(/^https:\/\//, "") + "</a> (Recently Drama, Movie and Kshow)</li><li><b>KissKH</b> \u2014 JSON API via " + cfg.kisskhHosts.join(" / ") + ' (Latest Update, Top K/C-Drama, Hollywood, Anime, Upcoming; auto-rescued from TMDB lists when every mirror is CF-blocked)</li><li><b>AnimeTVSlash</b> \u2014 <a href="' + cfg.animoSite + '">' + cfg.animoSite.replace(/^https:\/\//, "") + '</a> (Latest Release)</li><li><b>Pencuri</b> \u2014 <a href="' + cfg.pencuriSite + '">' + cfg.pencuriSite.replace(/^https:\/\//, "") + '</a> (Movies / Series)</li><li><b>Anikoto API</b> \u2014 <a href="' + cfg.anikotoApi + '">' + cfg.anikotoApi.replace(/^https:\/\//, "") + "</a> (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed; rows carry <code>mal:</code>/<code>anilist:</code>/<code>anikoto:</code> ids for the paired miruro plugin)</li></ul><p>Add this manifest URL in Nuvio (Settings &rarr; Addons): <b>" + (cfg.__selfUrl || "https://your-deployment") + '/manifest.json</b></p><p>Health probe: <a href="/health"><code>/health</code></a> (per-source status, latency, hints)</p><h2>Catalogs</h2><table><tr><th>Name</th><th>Type</th><th>Source</th><th>Endpoint</th></tr>' + rows + "</table><h2>Search examples</h2><p><code>/catalog/movie/pinoy-movies/search=hello love again.json</code><br><code>/catalog/series/asian-series/search=queen of tears.json</code><br><code>/catalog/series/kisskh-latest/search=queen of tears.json</code><br><code>/catalog/movie/pencuri-movies/search=moana.json</code><br><code>/catalog/series/animo-latest/search=one piece.json</code></p><h2>Genre / section chips</h2><p><code>/catalog/series/asian-series-genre/genre=Romance.json</code></p><p>Pair with the <b>PinoyMoviesHub</b>, <b>AsianHub</b>, <b>AnimeTVSlash</b> and <b>Pencuri</b> Nuvio plugins (xrexzerox/nv-plugins) for playable streams.</p></body></html>";
       }
       function handle(urlString, env) {
         var cfg = makeConfig(env || {});

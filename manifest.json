@@ -1,14 +1,14 @@
 {
   "name": "NV Plugins",
-  "version": "4.12.0",
+  "version": "4.13.0",
   "description": "Canonical Nuvio provider collection. v4.10.0: asian-catalog addon 5.1.0 makes /meta/mal/{id} survive MyAnimeList/Jikan outages (200-wrapped UpstreamException bodies and 504s are retried once then treated as down; the Anikoto series mapped from the feed scan builds the details page instead - Anikoto episodes preferred so the newest episode of airing shows appears immediately, Jikan details preferred and Anikoto fills every gap) - this was the real cause of Anikoto Latest Episode items opening empty; miruro 2.6.0 enriches mal: catalog ids with their AniList id via ani.zip (MegaPlay mal+ani routes both resolve fresh episodes), benches the 403-dead pipe lane for 15min, and memoizes master-probe verdicts. v4.8.0: miruro 2.4.0 reads catalog-issued anime ids (mal:/anilist:/kitsu:/anikoto:) verbatim and hits MegaPlay mal/ani/s-2 routes directly with zero mapping latency; asian-catalog addon 5.0.0 adds 5 Anikoto sections (Latest Episode / New Release / New Added / Upcoming / Just Completed) emitting anime ids + a /meta resource (Jikan/Anikoto). Also in 4.7.0: miruro 2.3.0 maps deterministically off the TMDB id itself via ani.zip themoviedb_id (mal+anilist in one CDN request, verified on Frieren/Suzume/One Piece/Shippuden/Solo Leveling/Demon Slayer); Kitsu/Jikan/AniList title search demoted to fallback and skipped when ani.zip wins. v4.0.0 BFS wave (bestfreestreaming.org review, review-not-merge honored): NEW site-anchored scrapers zoechip/himovies/moviesjoy/hdtoday (FMovies-family platform, shared id space, per-episode server chain -> vixsrc.to + vidsrcme.ru + primesrc.me backends), movish (TMDB-keyed player-sources API, direct dlproxy mp4s) and vixsrc (direct token-HLS lanes for any TMDB id); netmirror 5.0.0 (English + Tagalog/Filipino caption priority, Tagalog-dub audio lanes from fallback HLS, subtitle filter setting); cinemacity 5.0.0 (English first + Tagalog/Filipino dub detection, Italian demoted); torrents 1.3.0 + tagalogtorrents 1.3.0 (torrents without seeders are never surfaced).",
   "author": "xrexzerox",
   "scrapers": [
     {
       "id": "pinoymovieshub",
       "name": "PinoyMoviesHub",
-      "description": "Pinoy movies & series from pinoymovieshub.win: direct pmh- slug lanes, and headerless-probe emission for Mixdrop/Dood direct links (TV-safe when the CDN allows; Byse stays first)",
-      "version": "5.7.0",
+      "description": "Pinoy movies & series from pinoymovieshub.win: direct pmh- slug lanes, and headerless-probe emission for Mixdrop/Dood direct links (TV-safe when the CDN allows; Byse stays first). v5.8.0: tolerant catalog-id parsing for the addon's new episode ids (asian:pmh-<slug>:<s>:<e>) so every pmh series episode tap keeps its season/episode even when the app passes no args.",
+      "version": "5.8.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -1032,8 +1032,8 @@
     {
       "id": "pencuri",
       "name": "Pencuri",
-      "description": "Malaysian/Indonesian/Japanese/Thai movies & series from pencurimovie.baby (paired with the asian-catalog addon's 7 Pencuri sections). Plays catalog rows DIRECTLY by navigating the site's real page or episode page (asian:pen-<slug> rows, zero title searching) and resolves TMDB ids by site search for everything else. Extraction lanes (site recon 2026-09-11): MixDrop packed-script unpack to a direct mxcontent.net mp4 (verified HTTP 206 video/mp4 from the datacenter), Streamtape robotlink get_video token (final hop resolves on residential egress), Dood-family pass_md5 with instant Cloudflare-Turnstile skip, Voe JS-redirect follow, plus a cheap inline probe for unknown hosts - every embed the page offers is attempted in parallel and all lanes fail open so one dead host can never zero the provider. Series pages resolve per-episode via the site's /episode/{base}-season-N-episode-M shape (year-stripped base verified). Hermes-safe: no unescape/escape/btoa/atob.",
-      "version": "1.0.0",
+      "description": "Malaysian/Indonesian/Japanese/Thai movies & series from pencurimovie.baby (paired with the asian-catalog addon's Pencuri Movies + Series sections). Plays catalog rows DIRECTLY by navigating the site's real page or episode page (asian:pen-<slug> rows, zero title searching) and resolves TMDB ids by site search for everything else. v1.1.0: tolerates the tapped-episode ids Nuvio passes for series (tmdb:<id>:<s>:<e> - previously rejected in 0ms, the exact 'no streamable link' report) and the site's /series/ prefixed row hrefs so the search lane now matches series. Extraction lanes (site recon 2026-09-11): MixDrop packed-script unpack to a direct mxcontent.net mp4 (verified HTTP 206 video/mp4 from the datacenter), Streamtape robotlink get_video token (final hop resolves on residential egress), Dood-family pass_md5 with instant Cloudflare-Turnstile skip, Voe JS-redirect follow, plus a cheap inline probe for unknown hosts - every embed the page offers is attempted in parallel and all lanes fail open so one dead host can never zero the provider. Series pages resolve per-episode via the site's /episode/{base}-season-N-episode-M shape (year-stripped base verified). Hermes-safe: no unescape/escape/btoa/atob.",
+      "version": "1.1.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
