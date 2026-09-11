@@ -1,5 +1,35 @@
 /**
- * Miruro - Nuvio provider (v2.6.0)
+ * Miruro - Nuvio provider (v2.7.0)
+ *
+ * v2.7.0 (2026-09-11) "its work with movie example Shin Gintama Movie:
+ * Yoshiwara Daienjou but for tv or series is not showing stream link"
+ * (on the deployed 4.10.0) - THE CATALOG-ID PARSER WAS THE LAST MILE:
+ * the user's own report proved the whole device chain works for MOVIES
+ * (same MegaPlay route, same ani.zip, same post-filter), so the break had
+ * to sit between the addon meta and getStreams. Reproduced live in 4.10.0:
+ *   getStreams("mal:61240", "series", 1, 9)     -> 2 rows   (bare meta id)
+ *   getStreams("mal:61240:1:9", "series", 1, 9) -> 0 rows   (EPISODE id)
+ *   getStreams("mal%3A61240%3A1%3A9", ...)      -> 0 rows   (urlencoded)
+ *   getStreams("mal:61240.json", ...)           -> 0 rows   (.json)
+ *   getStreams("mal:61240/1/9", ...)            -> 0 rows   (path style)
+ * The addon meta (Stremio protocol) gives each episode its own id
+ * "mal:{id}:1:{ep}" (asian-catalog core.js: id = key + ':1:' + num), and
+ * Nuvio passes the TAPPED EPISODE's id as the stream videoId - the app only
+ * passes the bare meta id for MOVIES (no episodes). The strict regex
+ * ^(mal|anilist|kitsu|anikoto):(\\d+)$ rejected every decorated shape and
+ * the request fell into the numeric-TMDB branch -> 0 rows. Every
+ * battle-tested parser in this repo (pinoyhub.js/asianhub.js/animotvslash.js)
+ * already tolerates exactly these decorations - miruro's was the only one
+ * written from the "arrives verbatim" assumption and never device-tested.
+ * Changes:
+ *   - parseCatalogAnimeId(): token-based tolerant parser - percent-decodes,
+ *     strips query/hash/.json, accepts ":" or "/" separators anywhere in the
+ *     string, and EXTRACTS the trailing ":s:e" (or "/s/e", or single ":e")
+ *     so the episode number survives even when Nuvio sends only the id.
+ *   - getStreams now prefers the explicit season/episode args (4-arg Nuvio
+ *     contract) and falls back to the id-suffix numbers when they are
+ *     missing; mediaType slot is auto-detected so legacy 3-arg callers
+ *     (tmdbId, season, episode) can no longer shift season/episode.
  *
  * v2.6.0 (2026-09-11) "Anikoto latest episode - Though I am an Inept
  * Villainess S1 E9 - still comes up empty" (on the deployed 4.9.0):
@@ -1382,9 +1412,58 @@ function absoluteEpisode(tmdbId, season, episode) {
 
 // ----------------------------------------------------------------- core
 
+// v2.7.0: tolerant catalog-id parser. Nuvio hands the stream provider the
+// TAPPED EPISODE's id for series (Stremio protocol: the meta's videos[].id,
+// "mal:61240:1:9") and the bare meta id for movies; shapes seen in the wild
+// across this repo's parsers: urlencoded (%3A), "/"-separated (TVSmart path
+// style), a trailing ".json", and query/hash junk. Returns
+// { prefix, id, season, episode } (season/episode = 0 when absent) or null.
+function parseCatalogAnimeId(raw) {
+  var s = String(raw == null ? "" : raw).trim();
+  if (!s) return null;
+  if (s.indexOf("%") >= 0) {
+    try { var dec = decodeURIComponent(s); if (dec) s = dec; } catch (e) {}
+  }
+  s = String(s).trim();
+  var h = s.indexOf("#"); if (h >= 0) s = s.slice(0, h);
+  var q = s.indexOf("?"); if (q >= 0) s = s.slice(0, q);
+  s = s.replace(/\.json([^.].*)?$/i, "").replace(/\.json$/i, "").trim();
+  if (!s) return null;
+  var tokens = s.split(/[:\\/]/);
+  var PREFIX = { mal: 1, anilist: 1, kitsu: 1, anikoto: 1 };
+  for (var i = tokens.length - 2; i >= 0; i--) {
+    var t = String(tokens[i] || "").toLowerCase().trim();
+    if (!PREFIX[t]) continue;
+    var idTok = String(tokens[i + 1] || "").trim();
+    if (!/^\d+$/.test(idTok)) continue;
+    var out = { prefix: t, id: idTok, season: 0, episode: 0 };
+    var n1 = parseInt(String(tokens[i + 2] == null ? "" : tokens[i + 2]).trim(), 10);
+    var n2 = parseInt(String(tokens[i + 3] == null ? "" : tokens[i + 3]).trim(), 10);
+    if (isFinite(n1) && n1 > 0 && isFinite(n2) && n2 > 0) { out.season = n1; out.episode = n2; }
+    else if (isFinite(n1) && n1 > 0) { out.episode = n1; }
+    return out;
+  }
+  return null;
+}
+
 function getStreams(tmdbId, mediaType, season, episode) {
-  try { tmdbId = String(tmdbId); } catch (e) { tmdbId = ""; }
+  try { tmdbId = String(tmdbId == null ? "" : tmdbId); } catch (e) { tmdbId = ""; }
   if (!tmdbId) return Promise.resolve([]);
+  // v2.7.0: mediaType-slot detection (animotvslash/pinoyhub pattern). The
+  // 4-arg Nuvio contract is (id, type, season, episode); legacy 3-arg
+  // callers pass (id, season, episode) - detect which shape arrived so
+  // season/episode can never shift by one slot.
+  var mtSlot = String(mediaType == null ? "" : mediaType).toLowerCase();
+  if (mtSlot !== "movie" && mtSlot !== "tv" && mtSlot !== "series" &&
+      mtSlot !== "show" && mtSlot !== "tv_show" && mtSlot !== "tvshow") {
+    // slot 2 is not a media type: legacy 3-arg (or garbage) - shift left
+    if (mediaType !== undefined && mediaType !== null && mtSlot !== "") {
+      episode = season;
+      season = mediaType;
+      mediaType = undefined;
+    }
+  }
+  var argSeason = season, argEpisode = episode;
   // NuvioTV legacy paths may pass "series"/"show" verbatim (see asianhub.js)
   var isTv = mediaType === "tv" || mediaType === "series" || mediaType === "show";
   season = parseInt(season || 1, 10) || 1;
@@ -1435,13 +1514,18 @@ function getStreams(tmdbId, mediaType, season, episode) {
   }
 
   // v2.4.0: catalog-issued anime ids ("mal:52991", "anilist:154587",
-  // "kitsu:46474", "anikoto:8952") arrive VERBATIM from Nuvio (the app only
-  // rewrites tmdb:/tt ids) and skip the TMDB-mapping phase entirely.
-  var pm = tmdbId.match(/^(mal|anilist|kitsu|anikoto):(\d+)$/i);
+  // "kitsu:46474", "anikoto:8952") skip the TMDB-mapping phase entirely.
+  // v2.7.0: they do NOT arrive verbatim - series taps deliver the episode
+  // id "mal:61240:1:9" (urlencoded/path/.json variants seen too). Tolerant
+  // parse; the id-suffix season/episode are used only when the explicit
+  // args are missing so the 4-arg Nuvio contract stays authoritative.
+  var pm = parseCatalogAnimeId(tmdbId);
   var lanes;
   if (pm) {
-    var prefix = pm[1].toLowerCase();
-    var catId = pm[2];
+    var prefix = pm.prefix;
+    var catId = pm.id;
+    if (!(parseInt(argEpisode, 10) > 0) && pm.episode > 0) episode = pm.episode;
+    if (!(parseInt(argSeason, 10) > 0) && pm.season > 0) season = pm.season;
     console.log("[Miruro] start catalog id " + prefix + ":" + catId +
       (isTv ? " S" + season + "E" + episode : "") + " -> direct MegaPlay lane");
     var catEp = episode; // anime numbering is flat (season 1 per the meta addon)
@@ -1559,7 +1643,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
 }
 
 module.exports = {
-  getStreams: getStreams
+  getStreams: getStreams,
+  parseCatalogAnimeId: parseCatalogAnimeId
 };
 
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
