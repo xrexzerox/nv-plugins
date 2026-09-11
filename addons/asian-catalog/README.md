@@ -1,8 +1,20 @@
-# Asian Catalog (community.asian.catalog) — v4.1.0
+# Asian Catalog (community.asian.catalog) — v5.2.0
 
 Stremio-protocol **catalog addon** for Nuvio (NuvioMobile + NuvioTVSmart). The
 directory now **mirrors each website's real sections** (user enumerated them from
-the sites on 2026-09-10; every path below was fetched and verified live that day).
+the sites on 2026-09-10/11; every path below was fetched and verified live those
+days).
+
+**v5.2.0 (2026-09-11)**: NEW SOURCE **Pencuri** (pencurimovie.baby, ww44.
+mirror) — 7 catalogs from the user's own section list: Malaysia / Indonesia /
+Japan / Thailand countries, Most Viewed, Most Rating, Top IMDb (all paginated
+`/page/N/`). WordPress "MovieMo" markup (`ml-item` rows, `oldtitle="T (Year)"`,
+TMDB-hosted posters); rows are typed **series** when the site's `mli-eps`
+badge is present, else movie. TMDB-matched rows carry `tmdb:` ids; unmatched
+rows carry `asian:pen-<slug>` — played by the NEW paired **pencuri.js**
+plugin (direct page/episode navigation; MixDrop direct-mp4 lane verified
+HTTP 206 from the datacenter, Streamtape token lane, Dood/Voe best-effort
+with turnstile skip).
 
 **v4.1.0 (2026-09-10)**: the deployed worker confirmed kisskh.co/.ovh/.nl ALL
 Cloudflare-403 its datacenter egress (free CORS proxies get the same challenge
@@ -99,6 +111,23 @@ same CF challenge or error) and the kisskh.org/.asia/.cc WordPress clones
 |---------|------|--------------------|
 | AnimeTVSlash Latest Release | series | `/anime/?status=&type=&order=update` — the home section's own View All URL |
 
+### Pencuri — pencurimovie.baby (ww44.)
+
+| Catalog | Type | Site section / URL |
+|---------|------|--------------------|
+| Pencuri Malaysia | movie | `/country/malaysia/` (paginated `/country/malaysia/page/N/`) |
+| Pencuri Indonesia | movie | `/country/indonesia/` |
+| Pencuri Japan | movie | `/country/japan/` |
+| Pencuri Thailand | movie | `/country/thailand/` |
+| Pencuri Most Viewed | movie | `/most-viewed/` |
+| Pencuri Most Rating | movie | `/most-rating/` |
+| Pencuri Top IMDb | movie | `/top-imdb/` (paginated `/top-imdb/page/N/`; `/page` alone is a 404) |
+
+Sections mix movies and series; rows are typed individually from the site's
+`mli-eps` badge and the paired pencuri.js plugin re-sniffs the real page shape
+when playing (episode links present = series). Search is WordPress-standard
+`/?s=query` (verified live: returns `ml-item` rows).
+
 ## Metadata
 
 Every row carries as much metadata as the source + TMDB can provide:
@@ -116,6 +145,7 @@ Every row carries as much metadata as the source + TMDB can provide:
 | `asian:va-<slug>` | asianhub.js | viewasian `/drama/{slug}/` → episode → extractors |
 | `asian:kh-<dramaId>` | asianhub.js v2.6.0 | kisskh API detail → episode → local kkey → HLS |
 | `asian:an-<slug>` | animotvslash.js v5.3.0 | `/anime/{slug}/` → real `-episode-{n}` link → extract |
+| `asian:pen-<slug>` | pencuri.js v1.0.0 | `/{slug}/` (movie) or its real `/episode/{base}-season-N-episode-M` page → tab embeds → extract |
 
 Generic `asian:<slug>` rows (stale CDN cache) stay supported as a search-based
 fallback. Plugins that do NOT own a prefix skip it fast (no wasted searches, no

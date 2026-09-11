@@ -24,14 +24,15 @@ const cfg = Core.makeConfig({ __fetchFn: () => Promise.reject(new Error('offline
 
 (async () => {
 // ---------------------------------------------------------------- manifest
-section('manifest shape (v4.1.0, 21 catalogs mirroring the site sections)');
+section('manifest shape (v5.2.0, 33 catalogs mirroring the site sections)');
 {
   const man = Core.manifest(cfg);
-  ok('version 4.1.0', man.version === '4.1.0', man.version);
+  ok('version 5.2.0', man.version === '5.2.0', man.version);
   ok('description mentions TMDB rescue', /auto-rescued from TMDB/.test(man.description), man.description.slice(0, 80));
+  ok('description mentions Pencuri', /pencurimovie\.baby/.test(man.description));
   ok('id community.asian.catalog', man.id === 'community.asian.catalog');
   ok('types movie+series', man.types.join(',') === 'movie,series');
-  ok('idPrefixes tmdb+asian', man.idPrefixes.join(',') === 'tmdb:,asian:');
+  ok('idPrefixes tmdb+asian+mal+anikoto', man.idPrefixes.join(',') === 'tmdb:,asian:,mal:,anikoto:', man.idPrefixes.join(','));
   const ids = man.catalogs.map(c => c.id);
   const want = [
     'pinoy-new-releases', 'pinoy-new-releases-tv', 'pinoy-movies', 'pinoy-series',
@@ -41,9 +42,13 @@ section('manifest shape (v4.1.0, 21 catalogs mirroring the site sections)');
     'asian-series-viewasian',
     'kisskh-latest', 'kisskh-top-kdrama', 'kisskh-top-cdrama',
     'kisskh-hollywood', 'kisskh-hollywood-movies', 'kisskh-anime', 'kisskh-upcoming',
-    'animo-latest'
+    'animo-latest',
+    'pencuri-malaysia', 'pencuri-indonesia', 'pencuri-japan', 'pencuri-thailand',
+    'pencuri-most-viewed', 'pencuri-most-rating', 'pencuri-top-imdb',
+    'anikoto-latest-episode', 'anikoto-new-release', 'anikoto-new-added',
+    'anikoto-upcoming', 'anikoto-just-completed'
   ];
-  ok('21 catalogs', man.catalogs.length === 21, man.catalogs.length);
+  ok('33 catalogs', man.catalogs.length === 33, man.catalogs.length);
   ok('exact id set', ids.length === want.length && want.every(w => ids.indexOf(w) !== -1), ids);
   ok('no duplicate ids', new Set(ids).size === ids.length);
   ok('every catalog declares skip', man.catalogs.every(c => c.extra.some(e => e.name === 'skip')));
@@ -123,6 +128,28 @@ section('animotvslash: /anime/?order=update listing');
   ok('animo: 2 rows parsed', items.length === 2, items.length);
   ok('animo: /anime/ row kept as-is', items[0].slug === 'tomb-raider-king' && items[0].url === 'https://animotvslash.org/anime/tomb-raider-king/');
   ok('animo: episode row deduped to /anime/ url', items[1].slug === 'one-piece' && items[1].source === 'an');
+}
+
+section('pencuri: ml-item listing (v5.2.0 source)');
+{
+  const html = '<div data-movie-id="72912" class="ml-item ml-item-sticky">' +
+    '<a href="https://ww44.pencurimovie.baby/tarung-unforgiven-2026/" data-url="" class="ml-mask jt" data-hasqtip="112" oldtitle="Tarung: Unforgiven (2026)" title="">' +
+    '<span class="mli-quality"><span class="mli-quality-text">Web-dl</span></span>' +
+    '<span class="mli-resolution-stack"><span class="mli-resolution mli-resolution-1080">1080p</span></span>' +
+    '<img src="https://image.tmdb.org/t/p/w185/abc123.jpg" class="thumb mli-thumb"></a></div>' +
+    '<div data-movie-id="81001" class="ml-item">' +
+    '<a href="https://ww44.pencurimovie.baby/boboiboy-galaxy-baraju-2025/" class="ml-mask jt" oldtitle="BoBoiBoy Galaxy Baraju (2025)" title="">' +
+    '<span class="mli-eps">Eps<i>10</i></span>' +
+    '<img src="https://image.tmdb.org/t/p/w185/def456.jpg" class="thumb mli-thumb"></a></div>' +
+    '<div data-movie-id="81002" class="ml-item">' +
+    '<a href="https://ww44.pencurimovie.baby/series/" class="ml-mask jt" oldtitle="Series (nav)" title="">' +
+    '<img src="https://image.tmdb.org/t/p/w185/x.jpg"></a></div>';
+  const items = Core.penParseListPage(cfg, html);
+  ok('pen: 2 rows (nav slug skipped)', items.length === 2, items.length);
+  ok('pen: movie row typed from no-eps badge', items[0].type === 'movie' && items[0].slug === 'tarung-unforgiven-2026' && items[0].year === '2026' && items[0].title === 'Tarung: Unforgiven');
+  ok('pen: series row from mli-eps badge', items[1].type === 'series' && items[1].episodes === 10);
+  ok('pen: source-scoped id tail', Core.fallbackIdTail(items[0]) === 'pen-tarung-unforgiven-2026');
+  ok('pen: quality badge captured', items[0].quality === 'Web-dl');
 }
 
 // ------------------------------------------------------- genre slug mapping
@@ -339,10 +366,11 @@ section('handle(): routing + extras');
   ok('unknown catalog 404', r404.status === 404);
   const rJson = await Core.handle('/manifest.json', {});
   const man = await rJson.json();
-  ok('manifest served', man.version === '4.1.0' && man.catalogs.length === 21);
+  ok('manifest served', man.version === '5.2.0' && man.catalogs.length === 33);
   const health = await (await Core.handle('/health', {})).json();
   ok('health shape', !!health.status && typeof health.sources === 'object');
-  ok('health probes 6 sources', Object.keys(health.sources).length === 6, Object.keys(health.sources));
+  ok('health probes 8 sources', Object.keys(health.sources).length === 8, Object.keys(health.sources));
+  ok('health pencuri probe present', !!health.sources.pencuri);
   ok('health kisskh probe reports mode', health.sources.kisskh && (health.sources.kisskh.mode === 'api' || health.sources.kisskh.mode === 'tmdb-rescue'), health.sources.kisskh);
 }
 

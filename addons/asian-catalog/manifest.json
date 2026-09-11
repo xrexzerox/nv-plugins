@@ -1,8 +1,8 @@
 {
   "id": "community.asian.catalog",
-  "version": "5.1.0",
+  "version": "5.2.0",
   "name": "Asian Catalog",
-  "description": "Asian catalogs mirroring each site's real sections: pinoymovieshub.win, kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org and the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed). v5.0.0: anime rows carry ANIME ids - mal:/anilist:/anikoto: - straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.1.0: /meta/mal/{id} no longer dies with Jikan/MAL outages - Jikan failure shapes (200-wrapped UpstreamException, 504/429) are retried once then treated as down, and the Anikoto series mapped from the feed builds the details page instead: Anikoto episodes preferred (freshest for airing shows), Jikan details preferred and Anikoto fills every gap. Anikoto Latest Episode items now open even during full MyAnimeList outages.",
+  "description": "Asian catalogs mirroring each site's real sections: pinoymovieshub.win, kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). v5.0.0: anime rows carry ANIME ids — mal:/anilist:/anikoto: — straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. Other rows carry full TMDB metadata or source-scoped asian: fallback ids.",
   "logo": "https://pinoymovieshub.win/wp-content/uploads/2025/04/cropped-favicon-11-192x192.png",
   "resources": [
     "catalog",
@@ -330,6 +330,104 @@
       "type": "series",
       "id": "animo-latest",
       "name": "AnimeTVSlash Latest Release",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pencuri-malaysia",
+      "name": "Pencuri Malaysia",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pencuri-indonesia",
+      "name": "Pencuri Indonesia",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pencuri-japan",
+      "name": "Pencuri Japan",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pencuri-thailand",
+      "name": "Pencuri Thailand",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pencuri-most-viewed",
+      "name": "Pencuri Most Viewed",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pencuri-most-rating",
+      "name": "Pencuri Most Rating",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pencuri-top-imdb",
+      "name": "Pencuri Top IMDb",
       "pageSize": 20,
       "extra": [
         {
