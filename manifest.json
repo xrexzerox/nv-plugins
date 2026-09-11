@@ -1,14 +1,14 @@
 {
   "name": "NV Plugins",
-  "version": "4.15.0",
-  "description": "Canonical Nuvio provider collection. v4.15.0: pencuri.js v1.3.0 fixes the last broken Pencuri lane - Streamtape embeds carry TWO get_video links and the #robotlink DIV text (the one v1.2.0 used) is a DECOY whose token answers 403/500 Access Denied / error on our side (exactly the dead link reported on the device); only the link the embed script writes via getElementById(robotlink).innerHTML works, so the provider now reconstructs it with an eval-free mini evaluator (string literals + chained .substring with real JS semantics), verified live: the expression token 302s to tapecontent.net with the real filename (Mutiny.2026.720p/1080p) and re-signs per request at play time. hgcloud.to/hglink.to (2 of the 8 servers, previously skipped as an unparseable JS stub) gained a full StreamHG lane: the stub loader only rotates the embed to audinifer.com, whose radix-36 packed script unpacks to a signed master.m3u8 (206 application/vnd.apple.mpegurl verified). Dead-filler voe embeds (Big Buck Bunny test clip placeholder) are now rejected. Net effect on the reported sample /mutiny-2026/: 4 playable rows (Streamtape 720p + 1080p, StreamHG x2) instead of 1 broken one. Row dedupe now keys the FULL url because Streamtape file ids live in the query (the old query-strip collapsed both Streamtape embeds into one row). asian-catalog addon unchanged at 5.4.0.",
+  "version": "4.16.0",
+  "description": "Canonical Nuvio provider collection. v4.16.0: pencuri.js gains ENGLISH SUBTITLES on every stream row — the provider resolves each item's IMDb id (tt input direct, TMDB external_ids for tmdb ids, og:title->TMDB search for pencuri: catalog ids) and pulls keyless English SRT tracks from Stremio's official OpenSubtitles-v3 addon (opensubtitles-v3.strem.io, UTF-8 direct downloads, clean tracks ranked before hearing-impaired), attaching them as {url, language, name} on every row — the exact shape NuvioMobile's PluginSubtitleResult and netmirror.js already use. pencuri.js also carries the full Pencuri chain: asian-catalog 5.2.0 emits 7 pencuri: movie sections (Malaysia/Indonesia/Japan/Thailand/Most Viewed/Most Rating/Top IMDb) with a /meta resource, and the provider resolves every server tab on a detail page to direct links (Dood-family pass_md5 + packer unpack ported from asianhub, Streamtape robotlink/botlink, Uptostream mp4 sources, VOE JS-redirect + leak scan, generic m3u8/mp4 leaks), all fail-soft per host. Also in 4.11.0: miruro 2.7.0 tolerant catalog-id parser (episode-scoped Stremio ids like mal:61240:1:9 that Nuvio passes on series taps). torrents/tagalogtorrents 1.3.0 never surface zero-seeder torrents; cinemacity 5.0.0 prefers English + Tagalog/Filipino dub; netmirror stays English-only with Tagalog/Filipino caption priority.",
   "author": "xrexzerox",
   "scrapers": [
     {
       "id": "pinoymovieshub",
       "name": "PinoyMoviesHub",
-      "description": "Pinoy movies & series from pinoymovieshub.win: direct pmh- slug lanes, and headerless-probe emission for Mixdrop/Dood direct links (TV-safe when the CDN allows; Byse stays first). v5.8.0: tolerant catalog-id parsing for the addon's new episode ids (asian:pmh-<slug>:<s>:<e>) so every pmh series episode tap keeps its season/episode even when the app passes no args.",
-      "version": "5.8.0",
+      "description": "Pinoy movies & series from pinoymovieshub.win: direct pmh- slug lanes, and headerless-probe emission for Mixdrop/Dood direct links (TV-safe when the CDN allows; Byse stays first)",
+      "version": "5.7.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -1031,8 +1031,8 @@
     },
     {
       "id": "pencuri",
-      "name": "Pencuri",
-      "description": "Malaysian/Indonesian/Japanese/Thai movies & series from pencurimovie.baby (paired with the asian-catalog addon's 9 Pencuri sections: Movies, Series, Malaysia, Indonesia, Japan, Thailand, Most Viewed, Most Rating, Top IMDb). Plays catalog rows DIRECTLY by navigating the site's real page or episode page (asian:pen-<slug> rows, zero title searching) and resolves TMDB ids by site search for everything else. v1.3.0 MULTI-SERVER FIX (user report: only 1 stream and its not playing - have 8 server): Streamtape /e/ pages carry TWO get_video links and the #robotlink DIV token (v1.2.0's pick) is a DECOY answering 403/500; the provider now evaluates the innerHTML expression (eval-free: string literals + chained .substring with JS semantics) to get the REAL token, which 302s to tapecontent.net (verified 720p + 1080p) and re-signs per request at play time; quality labels come from the embed page's own filename with zero extra requests. NEW StreamHG lane for hgcloud.to/hglink.to (2 of 8 servers, was an unparseable stub): loader rotates to audinifer.com whose radix-36 packed script unpacks to a signed master.m3u8 (206 verified); quality from the playlist RESOLUTION line. unpackPackedScript is now radix-aware (10..62). Dead-filler voe embeds (Big Buck Bunny placeholder, verified on the sample) are rejected via a placeholder guard. dedupeRows keys the FULL url (Streamtape file ids live in the query - the old query-strip collapsed both embeds into one row). Dood (playmogo/dsvplay) stays turnstile-aware: the gate is unconditional (verified desktop UA / mobile UA / cookie attempts), so gated pages skip in milliseconds. Lanes: MixDrop packed unpack to mxcontent.net mp4, Streamtape expression-token get_video, StreamHG signed m3u8, Dood pass_md5, Voe JS-redirect follow, inline probe for unknown hosts - all parallel, all fail-soft, all hasTimers()-guarded. Hermes-safe: no unescape/escape/btoa/atob.",
+      "name": "Pencuri Movie",
+      "description": "Pencuri Movie (pencurimovie.baby family): every server tab on the detail page resolved to direct links — Dood-family pass_md5 (playmogo/dsvplay/doodstream et al, Turnstile/404 pages skipped), Streamtape robotlink, Uptostream per-res mp4, VOE with JS-redirect follow + leak scan, generic m3u8/mp4 leaks; pencuri:{slug} catalog ids open the exact page, TMDB/tt ids go through title+year site-search matching. v1.3.0: ENGLISH SUBTITLES on every row via Stremio's keyless OpenSubtitles-v3 addon (episode-scoped for series, clean tracks before HI, cached 30min), fetched in parallel with host extraction so the stream deadline never moves.",
       "version": "1.3.0",
       "author": "xrexzerox",
       "supportedTypes": [
@@ -1045,14 +1045,10 @@
         "mp4",
         "m3u8"
       ],
-      "logo": "https://www.google.com/s2/favicons?domain=pencurimovie.baby&sz=128",
       "contentLanguage": [
         "ms",
-        "id",
-        "en"
-      ],
-      "categories": [
-        "other"
+        "en",
+        "id"
       ]
     }
   ]

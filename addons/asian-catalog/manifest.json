@@ -1,1 +1,501 @@
-{"id":"community.asian.catalog","version":"5.4.0","name":"Asian Catalog","description":"Asian catalogs mirroring each site's real sections: pinoymovieshub.win (Movies / Series), kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). v5.0.0: anime rows carry ANIME ids — mal:/anilist:/anikoto: — straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.3.0: pmh/pen rows open real detail-page meta (episodes included) so no row ever 404s on details. v5.4.0: the Pencuri country and feature boards are back. Other rows carry full TMDB metadata or source-scoped asian: fallback ids.","logo":"https://pinoymovieshub.win/wp-content/uploads/2025/04/cropped-favicon-11-192x192.png","resources":["catalog","meta"],"types":["movie","series"],"idPrefixes":["tmdb:","asian:","mal:","anikoto:"],"catalogs":[{"type":"movie","id":"pinoy-movies","name":"Pinoy Movies","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"series","id":"pinoy-series","name":"Pinoy Series","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"series","id":"asian-series-hot","name":"KissAsian Hot Series Update","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"series","id":"asian-series","name":"KissAsian Latest Release","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"series","id":"asian-series-genre","name":"KissAsian by Genre","pageSize":20,"extra":[{"name":"genre","options":["Fantasy","Friendship","Law","Romance","Sports"]},{"name":"skip"}]},{"type":"series","id":"asian-series-viewasian","name":"ViewAsian Recently Drama, Movie and Kshow","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"series","id":"kisskh-latest","name":"KissKH Latest Update","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"series","id":"kisskh-top-kdrama","name":"KissKH Top K-Drama","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"series","id":"kisskh-top-cdrama","name":"KissKH Top C-Drama","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"series","id":"kisskh-hollywood","name":"KissKH Hollywood","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"movie","id":"kisskh-hollywood-movies","name":"KissKH Hollywood Movies","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"series","id":"kisskh-anime","name":"KissKH Anime","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"series","id":"kisskh-upcoming","name":"KissKH Upcoming","pageSize":20,"extra":[{"name":"skip"}]},{"type":"series","id":"animo-latest","name":"AnimeTVSlash Latest Release","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"movie","id":"pencuri-movies","name":"Pencuri Movies","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"series","id":"pencuri-series","name":"Pencuri Series","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"movie","id":"pencuri-malaysia","name":"Pencuri Malaysia","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"movie","id":"pencuri-indonesia","name":"Pencuri Indonesia","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"movie","id":"pencuri-japan","name":"Pencuri Japan","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"movie","id":"pencuri-thailand","name":"Pencuri Thailand","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"movie","id":"pencuri-most-viewed","name":"Pencuri Most Viewed","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"movie","id":"pencuri-most-rating","name":"Pencuri Most Rating","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"movie","id":"pencuri-top-imdb","name":"Pencuri Top IMDb","pageSize":20,"extra":[{"name":"search"},{"name":"skip"}]},{"type":"series","id":"anikoto-latest-episode","name":"Anikoto Latest Episode","pageSize":20,"extra":[{"name":"skip"}]},{"type":"series","id":"anikoto-new-release","name":"Anikoto New Release","pageSize":20,"extra":[{"name":"skip"}]},{"type":"series","id":"anikoto-new-added","name":"Anikoto New Added","pageSize":20,"extra":[{"name":"skip"}]},{"type":"series","id":"anikoto-upcoming","name":"Anikoto Upcoming Anime","pageSize":20,"extra":[{"name":"skip"}]},{"type":"series","id":"anikoto-just-completed","name":"Anikoto Just Completed","pageSize":20,"extra":[{"name":"skip"}]}],"behaviorHints":{"configurable":false}}
+{
+  "id": "community.asian.catalog",
+  "version": "5.2.0",
+  "name": "Asian Catalog",
+  "description": "Asian catalogs mirroring each site's real sections: pinoymovieshub.win, kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and Pencuri Movie (Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). Anime rows carry mal:/anilist:/anikoto: ids (MegaPlay-backed playback via the paired miruro plugin) and Pencuri rows carry pencuri: ids (every-server playback + English subtitles via the paired pencuri plugin); the /meta resource serves Jikan/Anikoto and Pencuri details. Other rows carry full TMDB metadata or source-scoped asian: fallback ids.",
+  "logo": "https://pinoymovieshub.win/wp-content/uploads/2025/04/cropped-favicon-11-192x192.png",
+  "resources": [
+    "catalog",
+    "meta"
+  ],
+  "types": [
+    "movie",
+    "series"
+  ],
+  "idPrefixes": [
+    "tmdb:",
+    "asian:",
+    "mal:",
+    "anikoto:",
+    "pencuri:"
+  ],
+  "catalogs": [
+    {
+      "type": "movie",
+      "id": "pinoy-new-releases",
+      "name": "Pinoy New Releases",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "pinoy-new-releases-tv",
+      "name": "Pinoy New Releases • Series",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pinoy-movies",
+      "name": "Pinoy Recently Added Movies",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "pinoy-series",
+      "name": "Pinoy Series",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pinoy-featured",
+      "name": "Pinoy Featured (Movies)",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "pinoy-featured-tv",
+      "name": "Pinoy Featured • Series",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pinoy-coming-soon",
+      "name": "Pinoy Coming Soon",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pinoy-movies-genre",
+      "name": "Pinoy Movies by Genre",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "genre",
+          "options": [
+            "Action",
+            "Animation",
+            "Comedy",
+            "Concert",
+            "Digitally Restored",
+            "Crime",
+            "Documentary",
+            "Drama",
+            "Fantasy",
+            "Horror",
+            "Indie",
+            "Romance",
+            "Rated R",
+            "Sports",
+            "Stageplay",
+            "Tagalog Dubbed",
+            "Wattpad Presents"
+          ]
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "pinoy-series-genre",
+      "name": "Pinoy Series by Genre",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "genre",
+          "options": [
+            "Action",
+            "Animation",
+            "Comedy",
+            "Concert",
+            "Digitally Restored",
+            "Crime",
+            "Documentary",
+            "Drama",
+            "Fantasy",
+            "Horror",
+            "Indie",
+            "Romance",
+            "Rated R",
+            "Sports",
+            "Stageplay",
+            "Tagalog Dubbed",
+            "Wattpad Presents"
+          ]
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "asian-series-hot",
+      "name": "KissAsian Hot Series Update",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "asian-series",
+      "name": "KissAsian Latest Release",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "asian-series-genre",
+      "name": "KissAsian by Genre",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "genre",
+          "options": [
+            "Fantasy",
+            "Friendship",
+            "Law",
+            "Romance",
+            "Sports"
+          ]
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "asian-series-viewasian",
+      "name": "ViewAsian Recently Drama, Movie and Kshow",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "kisskh-latest",
+      "name": "KissKH Latest Update",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "kisskh-top-kdrama",
+      "name": "KissKH Top K-Drama",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "kisskh-top-cdrama",
+      "name": "KissKH Top C-Drama",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "kisskh-hollywood",
+      "name": "KissKH Hollywood",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "kisskh-hollywood-movies",
+      "name": "KissKH Hollywood Movies",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "kisskh-anime",
+      "name": "KissKH Anime",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "kisskh-upcoming",
+      "name": "KissKH Upcoming",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "animo-latest",
+      "name": "AnimeTVSlash Latest Release",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "anikoto-latest-episode",
+      "name": "Anikoto Latest Episode",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "anikoto-new-release",
+      "name": "Anikoto New Release",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "anikoto-new-added",
+      "name": "Anikoto New Added",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "anikoto-upcoming",
+      "name": "Anikoto Upcoming Anime",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "anikoto-just-completed",
+      "name": "Anikoto Just Completed",
+      "pageSize": 20,
+      "extra": [
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pencuri-malaysia",
+      "name": "Pencuri Movie Malaysia",
+      "description": "Malaysian movies on pencurimovie (pairs with the Pencuri plugin)",
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pencuri-indonesia",
+      "name": "Pencuri Movie Indonesia",
+      "description": "Indonesian movies on pencurimovie (pairs with the Pencuri plugin)",
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pencuri-japan",
+      "name": "Pencuri Movie Japan",
+      "description": "Japanese movies on pencurimovie (pairs with the Pencuri plugin)",
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pencuri-thailand",
+      "name": "Pencuri Movie Thailand",
+      "description": "Thai movies on pencurimovie (pairs with the Pencuri plugin)",
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pencuri-most-viewed",
+      "name": "Pencuri Most Viewed",
+      "description": "Most-viewed movies on pencurimovie (pairs with the Pencuri plugin)",
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pencuri-most-rating",
+      "name": "Pencuri Most Rating",
+      "description": "Highest-rated movies on pencurimovie (pairs with the Pencuri plugin)",
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "pencuri-top-imdb",
+      "name": "Pencuri Top IMDb",
+      "description": "Top IMDb movies on pencurimovie (pairs with the Pencuri plugin)",
+      "extra": [
+        {
+          "name": "search"
+        },
+        {
+          "name": "skip"
+        }
+      ]
+    }
+  ],
+  "behaviorHints": {
+    "configurable": false
+  }
+}

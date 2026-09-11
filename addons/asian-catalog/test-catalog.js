@@ -2,7 +2,7 @@
 /**
  * Asian Catalog v4.1.0 — offline regression suite (no network).
  * Run: node test-catalog.js
- * Covers: manifest shape (28 catalogs), all five site parsers (fixtures
+ * Covers: manifest shape (21 catalogs), all five site parsers (fixtures
  * inline), genre label -> real slug mapping, meta shapes (TMDB-enriched +
  * source-scoped fallbacks), page-URL builders via canned fetch, request
  * routing (search/genre/skip/404), and the v4.1.0 kisskh TMDB rescue
@@ -24,52 +24,39 @@ const cfg = Core.makeConfig({ __fetchFn: () => Promise.reject(new Error('offline
 
 (async () => {
 // ---------------------------------------------------------------- manifest
-section('manifest shape (v5.4.0, 28 catalogs mirroring the site sections)');
+section('manifest shape (v4.1.0, 21 catalogs mirroring the site sections)');
 {
   const man = Core.manifest(cfg);
-  ok('version 5.4.0', man.version === '5.4.0', man.version);
+  ok('version 4.1.0', man.version === '4.1.0', man.version);
   ok('description mentions TMDB rescue', /auto-rescued from TMDB/.test(man.description), man.description.slice(0, 80));
-  ok('description mentions Pencuri', /pencurimovie\.baby/.test(man.description));
-  ok('description mentions v5.3.0 detail meta', /detail-page meta/.test(man.description));
-  ok('description mentions v5.4.0 boards', /boards are back/.test(man.description));
   ok('id community.asian.catalog', man.id === 'community.asian.catalog');
   ok('types movie+series', man.types.join(',') === 'movie,series');
-  ok('idPrefixes tmdb+asian+mal+anikoto', man.idPrefixes.join(',') === 'tmdb:,asian:,mal:,anikoto:', man.idPrefixes.join(','));
+  ok('idPrefixes tmdb+asian', man.idPrefixes.join(',') === 'tmdb:,asian:');
   const ids = man.catalogs.map(c => c.id);
   const want = [
-    'pinoy-movies', 'pinoy-series',
+    'pinoy-new-releases', 'pinoy-new-releases-tv', 'pinoy-movies', 'pinoy-series',
+    'pinoy-featured', 'pinoy-featured-tv', 'pinoy-coming-soon',
+    'pinoy-movies-genre', 'pinoy-series-genre',
     'asian-series-hot', 'asian-series', 'asian-series-genre',
     'asian-series-viewasian',
     'kisskh-latest', 'kisskh-top-kdrama', 'kisskh-top-cdrama',
     'kisskh-hollywood', 'kisskh-hollywood-movies', 'kisskh-anime', 'kisskh-upcoming',
-    'animo-latest',
-    'pencuri-movies', 'pencuri-series',
-    'pencuri-malaysia', 'pencuri-indonesia', 'pencuri-japan', 'pencuri-thailand',
-    'pencuri-most-viewed', 'pencuri-most-rating', 'pencuri-top-imdb',
-    'anikoto-latest-episode', 'anikoto-new-release', 'anikoto-new-added',
-    'anikoto-upcoming', 'anikoto-just-completed'
+    'animo-latest'
   ];
-  ok('28 catalogs', man.catalogs.length === 28, man.catalogs.length);
+  ok('21 catalogs', man.catalogs.length === 21, man.catalogs.length);
   ok('exact id set', ids.length === want.length && want.every(w => ids.indexOf(w) !== -1), ids);
   ok('no duplicate ids', new Set(ids).size === ids.length);
   ok('every catalog declares skip', man.catalogs.every(c => c.extra.some(e => e.name === 'skip')));
-  ok('pinoy pair points at the site archives', (() => {
-    const defs = Core.catalogDefinitions();
-    const pm = defs.find(c => c.id === 'pinoy-movies');
-    const ps = defs.find(c => c.id === 'pinoy-series');
-    return pm.type === 'movie' && ps.type === 'series' && pm.mode === 'archive' && ps.mode === 'archive';
-  })());
-  ok('pencuri pair typed movies/series', (() => {
-    const defs = Core.catalogDefinitions();
-    const pm = defs.find(c => c.id === 'pencuri-movies');
-    const ps = defs.find(c => c.id === 'pencuri-series');
-    return pm.type === 'movie' && pm.penPath === 'movies' && ps.type === 'series' && ps.penPath === 'series';
-  })());
   const searchable = man.catalogs.filter(c => c.extra.some(e => e.name === 'search')).map(c => c.id);
-  ok('search absent only on finite widgets', ['asian-series-genre', 'kisskh-upcoming']
+  ok('search absent only on finite widgets', ['pinoy-new-releases', 'pinoy-new-releases-tv', 'pinoy-featured', 'pinoy-featured-tv', 'pinoy-coming-soon', 'pinoy-movies-genre', 'pinoy-series-genre', 'asian-series-genre', 'kisskh-upcoming']
     .every(id => searchable.indexOf(id) === -1) &&
-    ['pinoy-movies', 'pinoy-series', 'pencuri-movies', 'pencuri-series', 'asian-series-hot', 'asian-series', 'asian-series-viewasian', 'animo-latest', 'kisskh-latest']
+    ['pinoy-movies', 'pinoy-series', 'asian-series-hot', 'asian-series', 'asian-series-viewasian', 'animo-latest', 'kisskh-latest']
       .every(id => searchable.indexOf(id) !== -1), searchable);
+  const pmg = man.catalogs.find(c => c.id === 'pinoy-movies-genre');
+  const pinoyChips = pmg.extra.find(e => e.name === 'genre').options;
+  ok('pinoy chips = 17 site sections', pinoyChips.length === 17 &&
+    pinoyChips.indexOf('Rated R') !== -1 && pinoyChips.indexOf('Wattpad Presents') !== -1 &&
+    pinoyChips.indexOf('Tagalog Dubbed') !== -1 && pinoyChips.indexOf('Digitally Restored') !== -1, pinoyChips);
   const ksg = man.catalogs.find(c => c.id === 'asian-series-genre');
   const ksChips = ksg.extra.find(e => e.name === 'genre').options;
   ok('kissasian chips = recommendation tabs', ksChips.join(',') === 'Fantasy,Friendship,Law,Romance,Sports', ksChips);
@@ -138,31 +125,6 @@ section('animotvslash: /anime/?order=update listing');
   ok('animo: episode row deduped to /anime/ url', items[1].slug === 'one-piece' && items[1].source === 'an');
 }
 
-section('pencuri: ml-item listing (v5.3.0 source, /series/ prefixed rows)');
-{
-  const html = '<div data-movie-id="72912" class="ml-item ml-item-sticky">' +
-    '<a href="https://ww44.pencurimovie.baby/tarung-unforgiven-2026/" data-url="" class="ml-mask jt" data-hasqtip="112" oldtitle="Tarung: Unforgiven (2026)" title="">' +
-    '<span class="mli-quality"><span class="mli-quality-text">Web-dl</span></span>' +
-    '<span class="mli-resolution-stack"><span class="mli-resolution mli-resolution-1080">1080p</span></span>' +
-    '<img src="https://image.tmdb.org/t/p/w185/abc123.jpg" class="thumb mli-thumb"></a></div>' +
-    '<div data-movie-id="81001" class="ml-item">' +
-    '<a href="https://ww44.pencurimovie.baby/series/agent-kim-reactivated-2026/" class="ml-mask jt" oldtitle="Agent Kim Reactivated (2026)" title="">' +
-    '<span class="mli-quality tv"><span class="mli-quality-text">WEB-DL</span></span>' +
-    '<span class="mli-eps">Eps<i>10</i></span>' +
-    '<img src="https://image.tmdb.org/t/p/w185/def456.jpg" class="thumb mli-thumb"></a></div>' +
-    '<div data-movie-id="81002" class="ml-item">' +
-    '<a href="https://ww44.pencurimovie.baby/series/" class="ml-mask jt" oldtitle="Series (nav)" title="">' +
-    '<img src="https://image.tmdb.org/t/p/w185/x.jpg"></a></div>';
-  const items = Core.penParseListPage(cfg, html);
-  ok('pen: 2 rows (nav slug skipped)', items.length === 2, items.length);
-  ok('pen: movie row typed from no-eps badge', items[0].type === 'movie' && items[0].slug === 'tarung-unforgiven-2026' && items[0].year === '2026' && items[0].title === 'Tarung: Unforgiven');
-  ok('pen: movie row url stays bare', items[0].url === 'https://ww44.pencurimovie.baby/tarung-unforgiven-2026/', items[0].url);
-  ok('pen: series row typed from /series/ href', items[1].type === 'series' && items[1].slug === 'agent-kim-reactivated-2026' && items[1].episodes === 10);
-  ok('pen: series row url carries /series/ prefix', items[1].url === 'https://ww44.pencurimovie.baby/series/agent-kim-reactivated-2026/', items[1].url);
-  ok('pen: source-scoped id tail', Core.fallbackIdTail(items[0]) === 'pen-tarung-unforgiven-2026');
-  ok('pen: quality badge captured', items[0].quality === 'Web-dl');
-}
-
 // ------------------------------------------------------- genre slug mapping
 section('pinoy genre labels -> real site slugs');
 ok('Rated R -> sexy (site see-all target)', Core.pinoyGenreSlug('Rated R') === 'sexy');
@@ -211,26 +173,32 @@ section('page URL builders via getCatalogMetas (canned fetch)');
   Core.resetCaches();
   const cfg1 = Core.makeConfig({
     __fetchFn: canned(u => {
-      if (u === 'https://pinoymovieshub.win/movies/') return fakePage();
-      if (/\/movies\/page\/2/.test(u)) return '<article id="post-2" class="item movies"><div class="poster"><img src="https://pinoymovieshub.win/b.jpg" alt="B"></div><div class="details"><div class="title"><a href="https://pinoymovieshub.win/movies/b-2021">B</a></div><span>2021</span></div></article>';
+      if (u === 'https://pinoymovieshub.win/genre/sexy') return fakePage();
+      if (/\/genre\/sexy\/page\/2/.test(u)) return '<article id="post-2" class="item movies"><div class="poster"><img src="https://pinoymovieshub.win/b.jpg" alt="B"></div><div class="details"><div class="title"><a href="https://pinoymovieshub.win/movies/b-2021">B</a></div><span>2021</span></div></article>';
       return '';
     }),
     TMDB_API_KEY: 'x', __nowFn: () => Date.now()
   });
   // TMDB calls will fail (offline fetch) -> rows become fallbacks; fine.
+  cfg1.fetchFn = canned(u => {
+    if (u === 'https://pinoymovieshub.win/genre/sexy') return fakePage();
+    if (/\/genre\/sexy\/page\/2/.test(u)) return '<article id="post-2" class="item movies"><div class="poster"><img src="https://pinoymovieshub.win/b.jpg" alt="B"></div><div class="details"><div class="title"><a href="https://pinoymovieshub.win/movies/b-2021">B</a></div><span>2021</span></div></article>';
+    return Promise.resolve(new Response('{}', { status: 200 }));
+  });
+  // simpler: wrap html fetch, pass TMDB through a rejecting fn
   cfg1.fetchFn = function (url) {
     const u = String(url);
     requested.push(u);
     if (u.indexOf('api.themoviedb.org') !== -1) return Promise.reject(new Error('offline'));
-    if (u === 'https://pinoymovieshub.win/movies/') return Promise.resolve(new Response(fakePage(), { status: 200 }));
-    if (u.indexOf('/movies/page/2') !== -1) return Promise.resolve(new Response('<article id="post-2" class="item movies"><div class="poster"><img src="https://pinoymovieshub.win/b.jpg" alt="B"></div><div class="details"><div class="title"><a href="https://pinoymovieshub.win/movies/b-2021">B</a></div><span>2021</span></div></article>', { status: 200 }));
+    if (u === 'https://pinoymovieshub.win/genre/sexy') return Promise.resolve(new Response(fakePage(), { status: 200 }));
+    if (u.indexOf('/genre/sexy/page/2') !== -1) return Promise.resolve(new Response('<article id="post-2" class="item movies"><div class="poster"><img src="https://pinoymovieshub.win/b.jpg" alt="B"></div><div class="details"><div class="title"><a href="https://pinoymovieshub.win/movies/b-2021">B</a></div><span>2021</span></div></article>', { status: 200 }));
     return Promise.reject(new Error('offline'));
   };
-  const g1 = await Core.getCatalogMetas(cfg1, def('pinoy-movies'), {});
-  ok('pinoy-movies fetches /movies/', requested.some(u => u === 'https://pinoymovieshub.win/movies/'), requested.slice(0, 3));
+  const g1 = await Core.getCatalogMetas(cfg1, def('pinoy-movies-genre'), { genre: 'Rated R' });
+  ok('Rated R fetches /genre/sexy', requested.some(u => u === 'https://pinoymovieshub.win/genre/sexy'), requested.slice(0, 3));
   ok('page1 row present', g1.some(m => m.id === 'asian:pmh-a-2020'), g1.map(m => m.id));
-  const g2 = await Core.getCatalogMetas(cfg1, def('pinoy-movies'), { skip: 1 });
-  ok('archive pagination page 2', requested.some(u => u.indexOf('/movies/page/2') !== -1), requested.slice(-2));
+  const g2 = await Core.getCatalogMetas(cfg1, def('pinoy-movies-genre'), { genre: 'Rated R', skip: 1 });
+  ok('genre pagination page 2', requested.some(u => u.indexOf('/genre/sexy/page/2') !== -1), requested.slice(-2));
   ok('skip window returns page-2 row (stable slice)', g2.some(m => m.id === 'asian:pmh-b-2021'), g2.map(m => m.id));
 }
 
@@ -364,56 +332,6 @@ section('kisskh TMDB rescue (v4.1.0: every mirror CF-blocked)');
   ok('total failure stays fail-soft (empty, not 500)', Array.isArray(empty) && empty.length === 0, empty);
 }
 
-// ------------------------------------------------------- v5.3.0 detail meta
-section('v5.3.0 detail-page meta for asian:pmh- / asian:pen- (canned fetch)');
-{
-  const pmhSeries = '<html><body><div class="sheader"><div class="poster"><img itemprop="image" src="https://pinoymovieshub.win/wp-content/uploads/cm.jpg" alt="Call My Manager"></div><div class="data"><h1>Call My Manager</h1><span class="date" itemprop="dateCreated">Aug. 13, 2026</span></div></div>' +
-    '<div class="wp-content"><p>Follows three talent managers.</p></div>' +
-    '<div id=\'episodes\'><div id=\'seasons\'><div class=\'se-c\'><ul class=\'episodios\'>' +
-    "<li class='mark-1'><div class='numerando'>1 - 1</div><div class='episodiotitle'><a href='https://pinoymovieshub.win/episodes/cm-1x1'>Episode 1</a> <span class='date'>Aug. 13, 2026</span></div></li>" +
-    "<li class='mark-2'><div class='numerando'>1 - 2</div><div class='episodiotitle'><a href='https://pinoymovieshub.win/episodes/cm-1x2'>Episode 2</a></div></li>" +
-    '</ul></div></div></div></body></html>';
-  const pmhMovie = '<html><body><div class="sheader"><div class="poster"><img src="https://pinoymovieshub.win/wp-content/uploads/sp.jpg" alt="Spit Or Swallow"></div><div class="data"><h1>Spit Or Swallow</h1><span class="date" itemprop="dateCreated">Sep. 11, 2026</span></div></div><div class="wp-content"><p>Movie synopsis here.</p></div></body></html>';
-  const penSeries = '<html><head><meta property="og:title" content="Agent Kim Reactivated (2026) - Pencuri Movie Official Website"><meta property="og:image" content="https://image.tmdb.org/t/p/w300/ak.jpg"><meta property="og:description" content="A dad tracks her missing daughter."></head><body>' +
-    '<a href="/episode/agent-kim-reactivated-season-1-episode-1">1</a><a href="/episode/agent-kim-reactivated-season-1-episode-2">2</a></body></html>';
-  const penMovie = '<html><head><meta property="og:title" content="Moana (2026) - Pencuri Movie Official Website"><meta property="og:image" content="https://image.tmdb.org/t/p/w300/mo.jpg"><meta property="og:description" content="Teenage Moana answers the Ocean\'s call."></head><body>x</body></html>';
-
-  const cfgM = Core.makeConfig({});
-  cfgM.fetchFn = function (url) {
-    const u = String(url);
-    if (u.indexOf('pinoymovieshub.win/series/call-my-manager') !== -1) return Promise.resolve(new Response(pmhSeries, { status: 200 }));
-    if (u.indexOf('pinoymovieshub.win/movies/spit-or-swallow') !== -1) return Promise.resolve(new Response(pmhMovie, { status: 200 }));
-    if (u.indexOf('/series/agent-kim-reactivated-2026/') !== -1) return Promise.resolve(new Response(penSeries, { status: 200 }));
-    if (u.indexOf('/moana-2026/') !== -1) return Promise.resolve(new Response(penMovie, { status: 200 }));
-    return Promise.reject(new Error('HTTP 404 for ' + u));
-  };
-  Core.resetCaches();
-
-  const ms = await Core.addonMeta(cfgM, 'series', 'asian:pmh-call-my-manager');
-  ok('pmh series meta served', !!ms && ms.id === 'asian:pmh-call-my-manager' && ms.type === 'series', ms && ms.id);
-  ok('pmh series name from h1', ms && ms.name === 'Call My Manager', ms && ms.name);
-  ok('pmh series poster+desc+year', !!ms.poster && /talent managers/.test(ms.description || '') && ms.releaseInfo === '2026');
-  ok('pmh series videos from static seasons block', ms && ms.videos && ms.videos.length === 2 &&
-    ms.videos[0].id === 'asian:pmh-call-my-manager:1:1' && ms.videos[0].season === 1 && ms.videos[0].episode === 1 &&
-    ms.videos[1].episode === 2, ms && ms.videos);
-
-  const mm = await Core.addonMeta(cfgM, 'movie', 'asian:pmh-spit-or-swallow');
-  ok('pmh movie meta served (no videos)', !!mm && mm.type === 'movie' && mm.name === 'Spit Or Swallow' && !mm.videos, mm && mm.id);
-  ok('pmh movie year from dateCreated', mm && mm.releaseInfo === '2026', mm && mm.releaseInfo);
-
-  const ps = await Core.addonMeta(cfgM, 'series', 'asian:pen-agent-kim-reactivated-2026');
-  ok('pen series meta from og-tags', !!ps && ps.name === 'Agent Kim Reactivated' && ps.releaseInfo === '2026' && !!ps.poster && !!ps.description, ps && ps.name);
-  ok('pen series videos from /episode/ links', ps && ps.videos && ps.videos.length === 2 &&
-    ps.videos[0].id === 'asian:pen-agent-kim-reactivated-2026:1:1' && ps.videos[1].episode === 2, ps && ps.videos);
-
-  const pm2 = await Core.addonMeta(cfgM, 'movie', 'asian:pen-moana-2026');
-  ok('pen movie meta served', !!pm2 && pm2.name === 'Moana' && pm2.type === 'movie' && !pm2.videos, pm2 && pm2.id);
-
-  ok('foreign tails still 404 (null)', await Core.addonMeta(cfgM, 'series', 'asian:ks-some-drama') === null);
-  ok('encoded id tolerated', !!(await Core.addonMeta(cfgM, 'series', 'asian%3Apen-agent-kim-reactivated-2026')));
-  ok('non-asian id untouched (mal served)', !!(await Core.addonMeta(cfgM, 'series', 'mal:1')) === false || true); // offline: jikan fails -> null, no throw
-}
-
 // ---------------------------------------------------------------- routing
 section('handle(): routing + extras');
 {
@@ -421,11 +339,10 @@ section('handle(): routing + extras');
   ok('unknown catalog 404', r404.status === 404);
   const rJson = await Core.handle('/manifest.json', {});
   const man = await rJson.json();
-  ok('manifest served', man.version === '5.4.0' && man.catalogs.length === 28);
+  ok('manifest served', man.version === '4.1.0' && man.catalogs.length === 21);
   const health = await (await Core.handle('/health', {})).json();
   ok('health shape', !!health.status && typeof health.sources === 'object');
-  ok('health probes 8 sources', Object.keys(health.sources).length === 8, Object.keys(health.sources));
-  ok('health pencuri probe present', !!health.sources.pencuri);
+  ok('health probes 6 sources', Object.keys(health.sources).length === 6, Object.keys(health.sources));
   ok('health kisskh probe reports mode', health.sources.kisskh && (health.sources.kisskh.mode === 'api' || health.sources.kisskh.mode === 'tmdb-rescue'), health.sources.kisskh);
 }
 
