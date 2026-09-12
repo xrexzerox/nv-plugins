@@ -894,6 +894,55 @@ function nmResolveCandidate(nmId, type, se, ep, meta, tmdbId) {
   }).catch(function () { return []; });
 }
 
+/**
+ * v11: net27 embed lane (reverse-engineered from the All-in-One-Nuvio
+ * netmirror build, verified live). One GET, no signing, no title mapping:
+ *   movie https://net27.cc/api/embed-tmdb/{tmdbId}
+ *   tv    https://net27.cc/api/embed-tmdb/{tmdbId}?type=tv&s={s}&e={e}
+ * Response: { ok:true, streams:[{resolution,url}], mp4, captions:[{url,lang,name}] }
+ * Rows are UNLABELED default-audio (kept by the nvio language gate); the
+ * quality gate drops sub-720p entries automatically. Fast (1-3s) and fully
+ * independent of the netmirror.center search2 title mapping.
+ */
+function nmNet27Rows(type, tmdbId, se, ep) {
+  var url = "https://net27.cc/api/embed-tmdb/" + tmdbId;
+  if (type === "tv") url += "?type=tv&s=" + (se || 1) + "&e=" + (ep || 1);
+  return fetchText(url, {
+    Referer: "https://net27.cc/",
+    Accept: "application/json, text/plain, */*",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+  }, 8000).then(function (txt) {
+    var j = null;
+    try { j = JSON.parse(txt); } catch (e0) { j = null; }
+    if (!j || j.ok !== true) return { rows: [], subs: [] };
+    var rows = [];
+    (j.streams || []).forEach(function (s) {
+      if (!s || !s.url) return;
+      var u = String(s.url);
+      if (u.charAt(0) === "/") u = "https://net27.cc" + u;
+      var q = qualityLabel(s.resolution ? (parseInt(s.resolution, 10) || 0) + "p" : "");
+      if (!q || q === "Auto") q = "Auto";
+      rows.push({
+        name: "NetMirror | Direct " + q,
+        title: "NetMirror direct " + q,
+        url: u,
+        quality: q,
+        headers: { Referer: "https://net27.cc/" }
+      });
+    });
+    if (!rows.length && j.mp4) {
+      var u2 = String(j.mp4);
+      if (u2.charAt(0) === "/") u2 = "https://net27.cc" + u2;
+      rows.push({ name: "NetMirror | Direct", title: "NetMirror direct", url: u2, quality: "Auto", headers: { Referer: "https://net27.cc/" } });
+    }
+    var subs = [];
+    (j.captions || []).forEach(function (c) {
+      if (c && c.url) subs.push({ label: c.name || c.lang || "", url: c.url });
+    });
+    return { rows: rows, subs: subsFor(subs) };
+  }).catch(function () { return { rows: [], subs: [] }; });
+}
+
 function getStreams(tmdbId, mediaType, season, episode) {
   var rawId = "";
   try { rawId = String(tmdbId == null ? "" : tmdbId); } catch (e0) { rawId = ""; }
@@ -906,7 +955,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
   }
   if (_nmState.inflight[key]) return _nmState.inflight[key];
 
-  console.log("[NetMirror] v10 start " + mediaType + " " + rawId + " S" + season + "E" + episode);
+  console.log("[NetMirror] v11 start " + mediaType + " " + rawId + " S" + season + "E" + episode);
   var type = mediaType === "tv" ? "tv" : "movie";
 
   var run = parseTmdbId(rawId, mediaType, season, episode).then(function (p) {
@@ -929,6 +978,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
     // netmirror.center title mapping - TMDB id direct, so even a failed
     // search2 mapping still yields rows.
     var vsP = vsResolve(type, p.tmdbId, se, ep);
+    // v11: net27 embed lane - TMDB id direct, no signing, fastest lane
+    var n27P = nmNet27Rows(type, p.tmdbId, se, ep);
     var alphaP = tmdbMeta(p.tmdbId, mediaType).then(function (meta) {
       if (!meta.title) {
         console.log("[NetMirror] no TMDB meta for " + p.tmdbId + " - VidSpark only");
@@ -950,26 +1001,62 @@ function getStreams(tmdbId, mediaType, season, episode) {
       });
     }).catch(function () { return []; });
 
-    return Promise.all([alphaP, vsP]).then(function (res) {
-      var alphaRows = res[0] || [];
-      var vs = res[1] || { rows: [], subs: [] };
-      var vsSubs = subsFor(vs.subs || []);
+    function nmCombine(alphaRows, n27, vs) {
       var rows = [];
-      // Alpha rows first (the user's proven lane), VidSpark fills in after
-      alphaRows.forEach(function (r) { rows.push(r); });
-      (vs.rows || []).forEach(function (r) {
-        if (vsSubs.length) r.subtitles = vsSubs;
+      // Alpha rows first (the user's proven lane), then the fast net27
+      // direct lane, then VidSpark fills in after
+      (alphaRows || []).forEach(function (r) { rows.push(r); });
+      ((n27 && n27.rows) || []).forEach(function (r) {
+        if (n27.subs && n27.subs.length) r.subtitles = n27.subs;
         rows.push(r);
       });
-      console.log("[NetMirror] returning " + rows.length + " stream(s) (alpha " + alphaRows.length + ", vidspark " + (vs.rows || []).length + ")");
+      (vs.rows || []).forEach(function (r) {
+        if (vsSubsOf(vs)) r.subtitles = vsSubsOf(vs);
+        rows.push(r);
+      });
       return rows;
+    }
+    function vsSubsOf(vs) { return subsFor(vs.subs || []); }
+
+    // v11: the Alpha lane (search2 mapping + 3 signed watchpvr attempts) is
+    // the SLOWEST lane; serve after 10s with whatever arrived, then keep
+    // collecting and write the FULL combined result into the cache so the
+    // next play of the same episode is instant.
+    var alphaCapP = hasTimers()
+      ? Promise.race([alphaP, new Promise(function (res) { setTimeout(function () { res([]); }, 10000); })])
+      : alphaP;
+    var servedP = Promise.all([alphaCapP, n27P.catch(function () { return { rows: [], subs: [] }; }), vsP.catch(function () { return { rows: [], subs: [] }; })]).then(function (res) {
+      var rows = nmCombine(res[0], res[1], res[2]);
+      console.log("[NetMirror] serving " + rows.length + " stream(s) (alpha " + (res[0] || []).length + ", net27 " + ((res[1] && res[1].rows) || []).length + ", vidspark " + ((res[2] && res[2].rows) || []).length + ")");
+      return rows;
+    });
+    return servedP.then(function (rows) {
+      if (rows.length) _nmState.cache[key] = { ts: Date.now(), streams: rows };
+      return rows;
+    }).then(function (rows) {
+      // late-cache: wait for the full Alpha result; if it added rows that the
+      // early serve missed, store the combined set for the next play.
+      return Promise.all([alphaP.catch(function () { return []; }), n27P.catch(function () { return { rows: [], subs: [] }; }), vsP.catch(function () { return { rows: [], subs: [] }; })]).then(function (res) {
+        var full = nmCombine(res[0], res[1], res[2]);
+        var cur = _nmState.cache[key];
+        if (full.length && (!cur || ((cur.streams || []).length < full.length))) {
+          console.log("[NetMirror] late alpha result cached (" + full.length + " rows)");
+          _nmState.cache[key] = { ts: Date.now(), streams: full };
+        }
+        return rows;
+      });
     });
   }).catch(function (error) {
     console.log("[NetMirror] failed: " + (error && error.message ? error.message : error));
     return [];
   }).then(function (streams) {
     delete _nmState.inflight[key];
-    if (streams && streams.length) _nmState.cache[key] = { ts: Date.now(), streams: streams };
+    // v11: never clobber a cache entry that already holds MORE rows (the
+    // late-cache branch may have stored the full Alpha result already)
+    var cur = _nmState.cache[key];
+    if (streams && streams.length && (!cur || ((cur.streams || []).length <= streams.length))) {
+      _nmState.cache[key] = { ts: Date.now(), streams: streams };
+    }
     return streams || [];
   });
   _nmState.inflight[key] = run;

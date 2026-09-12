@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "4.21.0",
-  "description": "Canonical Nuvio provider collection. v4.20.0 fixes the netmirror 429 + single-stream report: netmirror 9.0.0 discovers the site's second delivery stack (the Multi-Lang Server's watchpvr.php page) whose HLS/DASH sources are fully proxied through relay workers - verified master -> variant -> segment end-to-end, no contact with the 429-throttled video CDN - filters its per-source labels to English/unlabeled audio only, ranks those rows first, and additionally resolves ALL six watchbox mirrors in parallel and merges their mp4 quality sets (the backends are inconsistent; single-host resolution stranded titles on low-quality-only variants). Both player pages now carry tm_id like the site. cinejoy 1.6.1 re-verified the whole chain live and logs the missing-relay cause instead of failing silently when the NuvioMobile relay setting is absent (the binary /g legs are structurally impossible on the device bridge - the asian-catalog worker v5.7.0+ relay stays required there; TV/PC work with no config). English/Tagalog lanes, the post-filter quality rules and all other providers are unchanged.",
+  "version": "4.22.0",
+  "description": "Canonical Nuvio provider collection. v4.22.0 = All-in-One-Nuvio merge + dead-provider cleanup: 25 dead scrapers removed (their upstream APIs/dns are gone), 11 working providers adopted from All-in-One-Nuvio (castle, cineby, movieshunt, movix, playimdb, topcartoons, vegamovies, movieblast, dahmermovies, uhdmovies, animezey - no Hindi-only providers taken), the StreamFlix orphan file registered, and netmirror rebuilt as a triple-lane resolver (Alpha relay + net27 embed + VidSpark) that serves in ~2-3s instead of 15s+. Sheet loads faster because every remaining scraper answers.",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -47,32 +47,6 @@
       "logo": "https://www.google.com/s2/favicons?domain=vidlink.pro&sz=128",
       "contentLanguage": [
         "en"
-      ]
-    },
-    {
-      "id": "videasy",
-      "name": "Videasy",
-      "description": "VideoEasy: 8s hard per-request deadline so dead api.videasy.net routes fail fast instead of stalling 60s (upstream surface currently 404/hang)",
-      "version": "1.2.1",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/videasy.js",
-      "enabled": true,
-      "formats": [
-        "m3u8",
-        "mp4",
-        "mkv"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=videasy.net&sz=128",
-      "contentLanguage": [
-        "en",
-        "hi",
-        "es",
-        "fr",
-        "de"
       ]
     },
     {
@@ -161,26 +135,6 @@
       ]
     },
     {
-      "id": "vidcore",
-      "name": "Vidcore",
-      "description": "Vidcore multi-server streaming with subtitles (Streamline port of CineStream).",
-      "version": "1.2.0",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/vidcore.js",
-      "enabled": true,
-      "formats": [
-        "m3u8"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=vidcore.io&sz=128",
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
       "id": "vaplayer",
       "name": "VaPlayer",
       "description": "VaPlayer HLS streams with subtitles (Streamline port of CineStream).",
@@ -198,98 +152,6 @@
       "logo": "https://www.google.com/s2/favicons?domain=vaplayer.ru&sz=128",
       "contentLanguage": [
         "en"
-      ]
-    },
-    {
-      "id": "primesrc",
-      "name": "PrimeSrc",
-      "description": "PrimeSrc multi-server direct links (Streamline port of CineStream).",
-      "version": "1.2.0",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/primesrc.js",
-      "enabled": true,
-      "hasSettings": true,
-      "formats": [
-        "mp4",
-        "m3u8"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=primesrc.me&sz=128",
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
-      "id": "showbox",
-      "name": "ShowBox",
-      "description": "ShowBox/FebBox quality lists. Needs a FebBox token (Streamline port of CineStream).",
-      "version": "1.2.0",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/showbox.js",
-      "enabled": true,
-      "hasSettings": true,
-      "formats": [
-        "mp4",
-        "m3u8"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=showbox.media&sz=128",
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
-      "id": "moviebox",
-      "name": "MovieBox",
-      "description": "MovieBox multi-language streams with captions (Streamline port of CineStream).",
-      "version": "1.2.0",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/moviebox.js",
-      "enabled": true,
-      "formats": [
-        "mp4",
-        "m3u8"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=moviebox.ph&sz=128",
-      "contentLanguage": [
-        "en",
-        "hi",
-        "ta",
-        "te"
-      ]
-    },
-    {
-      "id": "allmovieland",
-      "name": "AllMovieLand",
-      "description": "AllMovieLand multi-language HLS (Streamline port of CineStream).",
-      "version": "1.2.0",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/allmovieland.js",
-      "enabled": true,
-      "hasSettings": true,
-      "formats": [
-        "m3u8"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=allmovieland.one&sz=128",
-      "contentLanguage": [
-        "en",
-        "hi",
-        "ta",
-        "te"
       ]
     },
     {
@@ -315,187 +177,6 @@
       ]
     },
     {
-      "id": "uhdmovies",
-      "name": "UHDMovies",
-      "description": "UHDMovies multi-resolution direct links (Streamline port of CineStream).",
-      "version": "1.4.0",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/uhdmovies.js",
-      "enabled": true,
-      "hasSettings": true,
-      "formats": [
-        "mkv",
-        "mp4"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=uhdmovies.pink&sz=128",
-      "contentLanguage": [
-        "en",
-        "hi"
-      ]
-    },
-    {
-      "id": "moviesmod",
-      "name": "MoviesMod",
-      "description": "MoviesMod multi-quality direct links (Streamline port of CineStream).",
-      "version": "1.4.0",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/moviesmod.js",
-      "enabled": true,
-      "hasSettings": true,
-      "formats": [
-        "mkv",
-        "mp4"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=moviesmod.farm&sz=128",
-      "contentLanguage": [
-        "en",
-        "hi"
-      ]
-    },
-    {
-      "id": "moviesdrive",
-      "name": "MoviesDrive",
-      "description": "MoviesDrive HubCloud/GDrive extraction (Streamline port of CineStream).",
-      "version": "1.4.0",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/moviesdrive.js",
-      "enabled": true,
-      "hasSettings": true,
-      "formats": [
-        "mkv",
-        "mp4"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=moviesdrives.my&sz=128",
-      "contentLanguage": [
-        "en",
-        "hi"
-      ]
-    },
-    {
-      "id": "vegamovies",
-      "name": "VegaMovies",
-      "description": "VegaMovies high-quality direct links, full REMUX kept (Streamline port of CineStream).",
-      "version": "1.4.0",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/vegamovies.js",
-      "enabled": true,
-      "hasSettings": true,
-      "formats": [
-        "mkv",
-        "mp4"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=vegamovies.to&sz=128",
-      "contentLanguage": [
-        "en",
-        "hi"
-      ]
-    },
-    {
-      "id": "rogmovies",
-      "name": "RogMovies",
-      "description": "RogMovies for Indian titles, full quality kept (Streamline port of CineStream).",
-      "version": "1.4.0",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/rogmovies.js",
-      "enabled": true,
-      "hasSettings": true,
-      "formats": [
-        "mkv",
-        "mp4"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=rogmovies.top&sz=128",
-      "contentLanguage": [
-        "en",
-        "hi"
-      ]
-    },
-    {
-      "id": "bollyflix",
-      "name": "Bollyflix",
-      "description": "Bollyflix multi-quality direct links (Streamline port of CineStream).",
-      "version": "1.4.0",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/bollyflix.js",
-      "enabled": true,
-      "hasSettings": true,
-      "formats": [
-        "mkv",
-        "mp4"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=bollyflix.in&sz=128",
-      "contentLanguage": [
-        "en",
-        "hi"
-      ]
-    },
-    {
-      "id": "anizone",
-      "name": "Anizone",
-      "description": "Anizone multi-audio anime streams (Streamline port of CineStream).",
-      "version": "1.2.0",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/anizone.js",
-      "enabled": true,
-      "formats": [
-        "m3u8"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=anizone.to&sz=128",
-      "contentLanguage": [
-        "en",
-        "ja"
-      ]
-    },
-    {
-      "id": "anidb",
-      "name": "AniDB",
-      "description": "AniDB subbed/dubbed anime with multi-audio HLS (Streamline clean-room port).",
-      "version": "1.1.0",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/anidb.js",
-      "enabled": true,
-      "formats": [
-        "m3u8"
-      ],
-      "logo": "https://i.postimg.cc/rmMzZ45K/anidb.png",
-      "contentLanguage": [
-        "en",
-        "ja",
-        "ko"
-      ]
-    },
-    {
       "id": "torrents",
       "name": "Torrents",
       "description": "Torrentio + TorrentsDB lanes; v1.3.0 drops torrents with no (or unreadable) seeder counts entirely - only >=20-seeder offers are surfaced",
@@ -516,47 +197,6 @@
       "contentLanguage": [
         "en",
         "hi"
-      ]
-    },
-    {
-      "id": "animotvslash",
-      "name": "ANIMOTVSLASH",
-      "description": "Anime episodes/movies from animotvslash.org: plyr/jw player configs -> direct headerless HLS (variants parsed), WordPress search fallback for romanization mismatches, asian-catalog direct lane. v5.4.0: quality whitelist per user request - 480p/720p/1080p/Auto rows only (360p and other labels dropped).",
-      "version": "5.4.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/animotvslash.js",
-      "enabled": true,
-      "formats": [
-        "m3u8",
-        "mp4"
-      ],
-      "contentLanguage": [
-        "en",
-        "ja"
-      ]
-    },
-    {
-      "id": "animepahe",
-      "name": "AnimePahe",
-      "description": "AnimePahe Sub/Dub streams - direct-first fetching (dead proxy demoted to fallback), Jikan title-search fallback for MAL mapping, kwik unpack",
-      "version": "5.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/animepahe.js",
-      "enabled": true,
-      "formats": [
-        "m3u8"
-      ],
-      "contentLanguage": [
-        "en",
-        "ja"
       ]
     },
     {
@@ -629,67 +269,6 @@
       ]
     },
     {
-      "id": "okru",
-      "name": "OK.ru",
-      "description": "DISABLED: provider maps TMDB ids to ok.ru video ids (invalid) and ok.ru embed is now client-rendered",
-      "version": "4.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/okru.js",
-      "enabled": false,
-      "formats": [
-        "mp4",
-        "m3u8"
-      ],
-      "contentLanguage": [
-        "ru",
-        "en"
-      ]
-    },
-    {
-      "id": "castle",
-      "name": "Castle",
-      "description": "Castle streaming provider",
-      "version": "4.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/castle.js",
-      "enabled": true,
-      "formats": [
-        "m3u8",
-        "mp4"
-      ],
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
-      "id": "dooflix",
-      "name": "DooFlix",
-      "description": "DooFlix streaming provider",
-      "version": "4.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/dooflix.js",
-      "enabled": true,
-      "formats": [
-        "m3u8",
-        "mp4"
-      ],
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
       "id": "dvdplay",
       "name": "DVDPlay",
       "description": "DVDPlay streaming provider",
@@ -710,94 +289,10 @@
       ]
     },
     {
-      "id": "hdhub4u",
-      "name": "HDHub4u",
-      "description": "HDHub4u provider",
-      "version": "4.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/hdhub4u.js",
-      "enabled": true,
-      "formats": [
-        "m3u8",
-        "mp4",
-        "mkv"
-      ],
-      "contentLanguage": [
-        "en",
-        "hi"
-      ]
-    },
-    {
-      "id": "mallumv",
-      "name": "MallumV",
-      "description": "MallumV provider",
-      "version": "4.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/mallumv.js",
-      "enabled": true,
-      "formats": [
-        "m3u8",
-        "mp4"
-      ],
-      "contentLanguage": [
-        "en",
-        "ml"
-      ]
-    },
-    {
-      "id": "movieblast",
-      "name": "MovieBlast",
-      "description": "MovieBlast provider",
-      "version": "4.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/movieblast.js",
-      "enabled": true,
-      "formats": [
-        "m3u8",
-        "mp4"
-      ],
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
-      "id": "mycima",
-      "name": "MyCima",
-      "description": "MyCima provider",
-      "version": "4.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/mycima.js",
-      "enabled": true,
-      "formats": [
-        "m3u8",
-        "mp4"
-      ],
-      "contentLanguage": [
-        "en",
-        "ar"
-      ]
-    },
-    {
       "id": "netmirror",
       "name": "NetMirror",
-      "description": "NetMirror v10: Alpha-only + VidSpark dual-lane. The netmirror.center watchpvr lane now emits ONLY the Alpha English sources (user-verified playable) and the broken watchbox mp4 fan-out is removed; NEW VidSpark lane (moviesapi.to vidora API - the same public provider stack the net77.cc Netmirror app embeds) resolves any TMDB id directly to proxied HLS with English/Tagalog VTT subtitles. Both lanes are plain text GETs - zero config on Mobile/TV/PC.",
-      "version": "10.0.0",
+      "description": "NetMirror v11: triple-lane resolver. NEW net27.cc embed lane (reverse-engineered from the All-in-One-Nuvio build, verified live) runs in parallel with the user-proven Alpha relay lane and the VidSpark (net77 stack) lane; the Alpha lane serves after 10s with whatever arrived and its full result is late-cached for instant recall. English-only rule, tolerant id parser, subtitle language filter and the nvio post-filter all kept.",
+      "version": "11.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -805,26 +300,6 @@
       ],
       "filename": "providers/netmirror.js",
       "enabled": true,
-      "formats": [
-        "m3u8",
-        "mp4"
-      ],
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
-      "id": "myflixer",
-      "name": "MyFlixer",
-      "description": "MyFlixer rebuilt: fetch-based axios/cheerio/url shims (npm requires crashed Nuvio load), getStreams(tmdbId,...) adapter over the class chain (search -> details -> servers -> videostr m3u8). Was silently dead since introduction.",
-      "version": "1.1.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/myflixer-extractor.js",
-      "enabled": false,
       "formats": [
         "m3u8",
         "mp4"
@@ -880,90 +355,6 @@
       ]
     },
     {
-      "id": "zoechip",
-      "name": "Zoechip",
-      "description": "Zoechip site-anchored (zoechip.bz, FMovies-family): search + per-episode server chain, backends VixCloud (vixsrc.to HLS), AKCloud (vidsrcme.ru signed player), PrimeSrc (imdb API); UpCloud lane covered by dedicated Vidfast provider",
-      "version": "1.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/zoechip.js",
-      "enabled": true,
-      "formats": [
-        "m3u8",
-        "mp4"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=zoechip.bz&sz=128",
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
-      "id": "himovies",
-      "name": "HiMovies",
-      "description": "HiMovies site-anchored (himovies.ac) - shares the FMovies-family platform and id space with Zoechip/MoviesJoy/HDToday; same server chain (VixCloud/AKCloud/PrimeSrc verified live)",
-      "version": "1.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/himovies.js",
-      "enabled": true,
-      "formats": [
-        "m3u8",
-        "mp4"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=himovies.ac&sz=128",
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
-      "id": "moviesjoy",
-      "name": "MoviesJoy",
-      "description": "MoviesJoy site-anchored (moviesjoy.bz) - same FMovies-family platform as Zoechip/HiMovies/HDToday; per-episode server chain with VixCloud/AKCloud/PrimeSrc extraction",
-      "version": "1.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/moviesjoy.js",
-      "enabled": true,
-      "formats": [
-        "m3u8",
-        "mp4"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=moviesjoy.bz&sz=128",
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
-      "id": "hdtoday",
-      "name": "HDToday",
-      "description": "HDToday site-anchored (hdtoday24.at, domain rotates - BASE_CANDIDATES carries mirrors + baseUrl setting) - FMovies-family server chain, VixCloud/AKCloud/PrimeSrc extraction",
-      "version": "1.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/hdtoday.js",
-      "enabled": true,
-      "formats": [
-        "m3u8",
-        "mp4"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=hdtoday24.at&sz=128",
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
       "id": "movish",
       "name": "Movish",
       "description": "Movish (movish.to) - Vidstack app with TMDB-id-keyed player-sources API: /player-sources/{server}/{type}/{tmdbId} returns direct dlproxy mp4/HLS rows, quality-labeled; no site search needed",
@@ -982,27 +373,6 @@
       "logo": "https://www.google.com/s2/favicons?domain=movish.to&sz=128",
       "contentLanguage": [
         "en"
-      ]
-    },
-    {
-      "id": "vixsrc",
-      "name": "VixSrc",
-      "description": "VixSrc (vixsrc.to) direct lanes for any TMDB id: window.masterPlaylist token HLS; the same backend Zoechip/HiMovies/MoviesJoy/HDToday expose as their VixCloud server",
-      "version": "1.0.0",
-      "author": "Streamline",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/vixsrc.js",
-      "enabled": true,
-      "formats": [
-        "m3u8"
-      ],
-      "logo": "https://www.google.com/s2/favicons?domain=vixsrc.to&sz=128",
-      "contentLanguage": [
-        "en",
-        "it"
       ]
     },
     {
@@ -1053,6 +423,271 @@
       ],
       "categories": [
         "other"
+      ]
+    },
+    {
+      "id": "castle",
+      "name": "Castle",
+      "description": "Multi-server movie & TV streams (Original + language-labeled HLS lanes) via the Castle app API. Merged from All-in-One-Nuvio after the old Castle API host died; verified 1080p/720p/480p live.",
+      "version": "2.0.0",
+      "author": "Nuvio Team (AIO merge)",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/castle.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true,
+      "logo": "https://i.postimg.cc/0NvGzFyK/castle.png"
+    },
+    {
+      "id": "cineby",
+      "name": "Cineby",
+      "description": "Multi-server movie & TV streams up to 4K from the Videasy network. Merged from All-in-One-Nuvio; verified 2160p/1080p/720p/480p live.",
+      "version": "1.9.2",
+      "author": "Nuvio Team (AIO merge)",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/cineby.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true,
+      "logo": "https://i.postimg.cc/dV1HWbqX/cineby.png"
+    },
+    {
+      "id": "movieshunt",
+      "name": "MoviesHunt",
+      "description": "Hollywood movies in 1080p/720p direct links from R2-backed storage (dual-audio encoded; English track standard). Merged from All-in-One-Nuvio.",
+      "version": "1.0.0",
+      "author": "piratezoro9 (AIO merge)",
+      "supportedTypes": [
+        "movie"
+      ],
+      "filename": "providers/movieshunt.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "en"
+      ],
+      "logo": "https://i.postimg.cc/3Rc34LJj/movieshunt.png"
+    },
+    {
+      "id": "movix",
+      "name": "Movix",
+      "description": "Movies & series HLS in English/French with quality labels. Merged from All-in-One-Nuvio; shares the fastest verified lane in that family.",
+      "version": "1.0.0",
+      "author": "wooodyhood (AIO merge)",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/movix.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "en",
+        "fr"
+      ],
+      "hasSettings": true,
+      "logo": "https://i.postimg.cc/XYrPQm87/movix.png"
+    },
+    {
+      "id": "playimdb",
+      "name": "PlayIMDb",
+      "description": "High-speed direct streaming keyed by IMDb/TMDB id (Original-Audio rows). Merged from All-in-One-Nuvio; verified 1080p live.",
+      "version": "2.0.0",
+      "author": "PirateZoro9 (AIO merge)",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/playimdb.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv",
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true,
+      "logo": "https://i.postimg.cc/KzjPtYWY/imdb.png"
+    },
+    {
+      "id": "topcartoons",
+      "name": "TopCartoons",
+      "description": "Classic cartoons and animated series from topcartoons.tv. Merged from All-in-One-Nuvio.",
+      "version": "1.0.0",
+      "author": "Phisher (AIO merge)",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/topcartoons.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true,
+      "logo": "https://i.postimg.cc/3xVsbwp8/topcartoons.png"
+    },
+    {
+      "id": "vegamovies",
+      "name": "VegaMovies",
+      "description": "High-quality direct links (English-labeled rows; dual-audio encoded site). Rebuilt from the All-in-One-Nuvio extractor after the old VegaMovies scrape path died; verified 1080p/720p live.",
+      "version": "2.1.0",
+      "author": "piratezoro9 (AIO merge)",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/vegamovies.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv"
+      ],
+      "contentLanguage": [
+        "en",
+        "hi"
+      ],
+      "hasSettings": true,
+      "logo": "https://i.postimg.cc/TwYK26jn/vegamovies.png"
+    },
+    {
+      "id": "movieblast",
+      "name": "MovieBlast",
+      "description": "Multi-quality English-labeled movies & series. Rebuilt from the All-in-One-Nuvio extractor (faster lane than the previous implementation).",
+      "version": "1.1.0",
+      "author": "Nuvio Team (AIO merge)",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/movieblast.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv",
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true,
+      "logo": "https://i.postimg.cc/qqkLSyhN/movieblast.png"
+    },
+    {
+      "id": "dahmermovies",
+      "name": "DahmerMovies",
+      "description": "4K/1080p movies & series with per-file size labels and Original-audio lanes. Merged from All-in-One-Nuvio; the file was present in this repo but no longer registered.",
+      "version": "1.0.0",
+      "author": "Nuvio Team (AIO merge)",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/dahmermovies.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv",
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true,
+      "logo": "https://i.postimg.cc/hGt3dV6Z/dhamermovies.png"
+    },
+    {
+      "id": "uhdmovies",
+      "name": "UHDMovies",
+      "description": "Multi-resolution UHD/1080p direct links via worker-proxied storage. Rebuilt from the All-in-One-Nuvio extractor after uhdmovies.pink went offline; verified live.",
+      "version": "1.1.0",
+      "author": "Nuvio Team (AIO merge)",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/uhdmovies.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true,
+      "logo": "https://i.postimg.cc/KzDBBdbK/uhdmovies.png"
+    },
+    {
+      "id": "animezey",
+      "name": "AnimeZeY",
+      "description": "Anime movies & series indexed by TMDB (dual-audio downloads). Merged from All-in-One-Nuvio.",
+      "version": "1.0.0",
+      "author": "Nuvio Team (AIO merge)",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/animezey.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv",
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "en",
+        "pt"
+      ],
+      "hasSettings": true,
+      "logo": "https://i.postimg.cc/RVTy2djk/ainimezey.png"
+    },
+    {
+      "id": "streamflix",
+      "name": "StreamFlix",
+      "description": "Movies & series from the StreamFlix app API (wasabi-S3 primary + mirror CDNs), English rows with explicit quality labels. File revived from this repo and registered after a live re-check showed it fully working.",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/streamflix.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "en"
       ]
     }
   ]
