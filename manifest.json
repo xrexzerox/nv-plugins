@@ -1,6 +1,6 @@
 {
   "name": "NV Plugins",
-  "version": "4.20.0",
+  "version": "4.21.0",
   "description": "Canonical Nuvio provider collection. v4.20.0 fixes the netmirror 429 + single-stream report: netmirror 9.0.0 discovers the site's second delivery stack (the Multi-Lang Server's watchpvr.php page) whose HLS/DASH sources are fully proxied through relay workers - verified master -> variant -> segment end-to-end, no contact with the 429-throttled video CDN - filters its per-source labels to English/unlabeled audio only, ranks those rows first, and additionally resolves ALL six watchbox mirrors in parallel and merges their mp4 quality sets (the backends are inconsistent; single-host resolution stranded titles on low-quality-only variants). Both player pages now carry tm_id like the site. cinejoy 1.6.1 re-verified the whole chain live and logs the missing-relay cause instead of failing silently when the NuvioMobile relay setting is absent (the binary /g legs are structurally impossible on the device bridge - the asian-catalog worker v5.7.0+ relay stays required there; TV/PC work with no config). English/Tagalog lanes, the post-filter quality rules and all other providers are unchanged.",
   "author": "xrexzerox",
   "scrapers": [
@@ -295,8 +295,8 @@
     {
       "id": "cinejoy",
       "name": "Cinejoy",
-      "description": "Cinejoy chain re-verified live end-to-end (3 rows for Mutiny from Node). The NuvioMobile failure mode is config, not code: the device bridge is string-only so the binary /g legs are structurally impossible and the asian-catalog worker relay (v5.7.0+ bundle, cjRelay setting) stays required there. v1.6.1 logs the missing-relay cause instead of failing silently. TV/PC keep the direct chain with zero config.",
-      "version": "1.6.1",
+      "description": "Cinejoy v1.7.0: chain re-verified live end-to-end (servers -> enc -> binary /g -> dec -> playable HLS). Fast-fail lane memo skips doomed attempts when the runtime cannot send the binary /g request and no relay is configured; server sweep widened to all 8 servers. NuvioMobile still requires the asian-catalog worker relay (cjRelay setting, bundle v5.7.0+); TV/PC work with zero config.",
+      "version": "1.7.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -796,8 +796,8 @@
     {
       "id": "netmirror",
       "name": "NetMirror",
-      "description": "NetMirror dual-lane resolve (v9): primary = the site's Multi-Lang Server (watchpvr.php) whose HLS/DASH sources are fully proxied through relay workers - immune to the video CDN's 429 rate limiting - with per-source labels filtered to English/unlabeled audio only; secondary = all six watchbox mirrors resolved in parallel with merged mp4 quality sets. TMDB title -> netmirror id via search2 with [English]-variant preference, HMAC-SHA256-signed player pages (pure-JS HMAC), SRT subtitles, tm_id fidelity. All lanes are plain GETs - no binary transport, no relay.",
-      "version": "9.0.0",
+      "description": "NetMirror v10: Alpha-only + VidSpark dual-lane. The netmirror.center watchpvr lane now emits ONLY the Alpha English sources (user-verified playable) and the broken watchbox mp4 fan-out is removed; NEW VidSpark lane (moviesapi.to vidora API - the same public provider stack the net77.cc Netmirror app embeds) resolves any TMDB id directly to proxied HLS with English/Tagalog VTT subtitles. Both lanes are plain text GETs - zero config on Mobile/TV/PC.",
+      "version": "10.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
