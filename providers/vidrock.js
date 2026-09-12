@@ -186,11 +186,17 @@ function decryptVidrockUrl(enc) {
 }
 
 function fetchJson(url) {
-  return fetch(url, { method: "GET", redirect: "follow", headers: mergeHeaders(HEADERS, { Origin: VIDROCK_API, Referer: VIDROCK_API + "/" }) })
+  // 4.23.0: hard 6s cap - the .ru API can stall >20s and hang the whole sheet
+  var p = fetch(url, { method: "GET", redirect: "follow", headers: mergeHeaders(HEADERS, { Origin: VIDROCK_API, Referer: VIDROCK_API + "/" }) })
     .then(function (res) {
       if (!res.ok) throw new Error("HTTP " + res.status);
       return res.json();
     });
+  if (typeof setTimeout !== "function") return p;
+  return Promise.race([p, new Promise(function (_res, rej) {
+    var t = setTimeout(function () { rej(new Error("vidrock api deadline 6s")); }, 6000);
+    if (t && typeof t.unref === "function") t.unref();
+  })]);
 }
 
 function mergeHeaders(a, b) {
@@ -449,6 +455,13 @@ if (typeof module !== "undefined" && module.exports) {
       try {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
+          if (typeof setTimeout === "function") {
+            // nv best-settings 4.23.0: hard 12s cap on the whole provider run
+            r = Promise.race([r, new Promise(function (res) {
+              var dl = setTimeout(function () { res([]); }, 12000);
+              if (dl && typeof dl.unref === "function") dl.unref();
+            })]);
+          }
           return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);

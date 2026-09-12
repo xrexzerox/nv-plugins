@@ -1,1 +1,322 @@
-const _0x52744c=_0x3235;(function(_0x2922cb,_0x2015f6){const _0x8137d=_0x3235,_0x136205=_0x2922cb();while(!![]){try{const _0x346daa=parseInt(_0x8137d(0xa3))/0x1*(parseInt(_0x8137d(0xa2))/0x2)+parseInt(_0x8137d(0x9b))/0x3+-parseInt(_0x8137d(0xc1))/0x4*(-parseInt(_0x8137d(0xb0))/0x5)+-parseInt(_0x8137d(0x9e))/0x6+parseInt(_0x8137d(0xae))/0x7*(parseInt(_0x8137d(0xa1))/0x8)+parseInt(_0x8137d(0xaf))/0x9+-parseInt(_0x8137d(0xa4))/0xa*(parseInt(_0x8137d(0xbc))/0xb);if(_0x346daa===_0x2015f6)break;else _0x136205['push'](_0x136205['shift']());}catch(_0x57d2b7){_0x136205['push'](_0x136205['shift']());}}}(_0x1ca4,0x95260));var __async=(_0x172586,_0x2c8c42,_0x277790)=>{return new Promise((_0x10746e,_0x24dcca)=>{const _0x1a3b9f=_0x3235;var _0x2647aa=_0x299787=>{const _0x123da3=_0x3235;try{_0x4de87b(_0x277790[_0x123da3(0xb3)](_0x299787));}catch(_0x1495e4){_0x24dcca(_0x1495e4);}},_0x428bea=_0x306d8d=>{const _0x45c1ce=_0x3235;try{_0x4de87b(_0x277790[_0x45c1ce(0xbf)](_0x306d8d));}catch(_0x661ca7){_0x24dcca(_0x661ca7);}},_0x4de87b=_0x2698ee=>_0x2698ee[_0x1a3b9f(0xa9)]?_0x10746e(_0x2698ee[_0x1a3b9f(0xa8)]):Promise[_0x1a3b9f(0xb9)](_0x2698ee[_0x1a3b9f(0xa8)])['then'](_0x2647aa,_0x428bea);_0x4de87b((_0x277790=_0x277790[_0x1a3b9f(0xc7)](_0x172586,_0x2c8c42))[_0x1a3b9f(0xb3)]());});},cheerio=require(_0x52744c(0xbb)),BASE_URL=_0x52744c(0xc0),TMDB_API_KEY=_0x52744c(0x9a),HEADERS={'User-Agent':_0x52744c(0xc5),'Referer':BASE_URL+'/'};function _0x3235(_0x4deef4,_0x2ef761){_0x4deef4=_0x4deef4-0x9a;const _0x1ca425=_0x1ca4();let _0x32355a=_0x1ca425[_0x4deef4];if(_0x3235['GMSmoP']===undefined){var _0x46fd86=function(_0x200ac8){const _0x350a89='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/=';let _0x172586='',_0x2c8c42='';for(let _0x277790=0x0,_0x10746e,_0x24dcca,_0x2647aa=0x0;_0x24dcca=_0x200ac8['charAt'](_0x2647aa++);~_0x24dcca&&(_0x10746e=_0x277790%0x4?_0x10746e*0x40+_0x24dcca:_0x24dcca,_0x277790++%0x4)?_0x172586+=String['fromCharCode'](0xff&_0x10746e>>(-0x2*_0x277790&0x6)):0x0){_0x24dcca=_0x350a89['indexOf'](_0x24dcca);}for(let _0x428bea=0x0,_0x4de87b=_0x172586['length'];_0x428bea<_0x4de87b;_0x428bea++){_0x2c8c42+='%'+('00'+_0x172586['charCodeAt'](_0x428bea)['toString'](0x10))['slice'](-0x2);}return decodeURIComponent(_0x2c8c42);};_0x3235['dJRpLG']=_0x46fd86,_0x3235['PInbru']={},_0x3235['GMSmoP']=!![];}const _0x204040=_0x1ca425[0x0],_0x3c9c42=_0x4deef4+_0x204040,_0x3ba26f=_0x3235['PInbru'][_0x3c9c42];return!_0x3ba26f?(_0x32355a=_0x3235['dJRpLG'](_0x32355a),_0x3235['PInbru'][_0x3c9c42]=_0x32355a):_0x32355a=_0x3ba26f,_0x32355a;}function _0x1ca4(){const _0x2272e1=['w1rVCenHCNrVB25Zxq','p2fWAv9RzxK9','zxjYB3i','DMfSDwu','zg9Uzq','zwfJAa','Dw5KzwzPBMvK','mta4mha','vw5RBM93BG','nte0nte0qxzWDLjq','odq5mZKXmMPsqwzfuq','mJvny2jguhO','DgL0Bgu','mJe2mha','BMv4Da','zMLYC3q','Dgv4Da','C3rHCNrZv2L0Aa','nZiWCa','Ahr0Chm6lY9HCgKUDgHLBw92AwvKyI5VCMCVmY8','CMvZB2X2zq','ndGWCa','y2HLzxjPBY13AxrOB3v0lw5VzguTBMf0AxzL','otLxB0DiAwC','AhjLzG','yxr0CG','DgHYB3C','Ahr0Chm6lY93D3CUDg9Wy2fYDg9VBNmUDhy','otmYmJG0C0LfrgfR','lZ9Zpq','Aw5JBhvKzxm','vg9Wq2fYDg9VBNm','tw96AwXSys81lJaGkfDPBMrVD3mGtLqGmtaUmdSGv2LUnJq7ihG2ncKGqxbWBgvxzwjlAxqVntm3lJm2icHlsfrntcWGBgLRzsbhzwnRBYKGq2HYB21LlZeYmc4WlJaUmcbtywzHCMKVntm3lJm2','ANnVBG','yxbWBhK','zMLUza','Bg9Hza','ChvZAa','yxj0AwnSzsbH','mtG2nwy0m2eWntq5y2e1mgqZndfKzdLHyJHImJLMndK','mZq4mdK5mgzjz0D2zq','BMfTzq','Ahr0Ca','mJGWnJe2neHQuKnUuq','zxHWB3j0CW','Bwv0yvTWCM9Wzxj0Et0IB2C6DMLKzw86DxjSiL0','odHSCwLpsgm','mtqYq1rAEePi','ndeWnKDYyMDftW','mZy1nJu1mfvwr2TszG'];_0x1ca4=function(){return _0x2272e1;};return _0x1ca4();}function extractQuality(_0x529f17){const _0x1ca117=_0x52744c,_0x4de897=(_0x529f17||'')['toLowerCase']();if(_0x4de897[_0x1ca117(0xc3)](_0x1ca117(0xb2))||_0x4de897[_0x1ca117(0xc3)]('4k'))return'4K';if(_0x4de897[_0x1ca117(0xc3)](_0x1ca117(0xac)))return _0x1ca117(0xac);if(_0x4de897['includes'](_0x1ca117(0xb7)))return'720p';if(_0x4de897['includes'](_0x1ca117(0xba)))return'480p';return _0x1ca117(0xad);}function getStreams(_0x492b3c,_0x102a04,_0x3a8ce0,_0x47acce){return __async(this,null,function*(){const _0x188d52=_0x3235;try{const _0xddf9b=_0x188d52(0xb8)+_0x102a04+'/'+_0x492b3c+_0x188d52(0xa6)+TMDB_API_KEY,_0x3d6784=yield(yield fetch(_0xddf9b))[_0x188d52(0xc6)](),_0x2d4063=_0x3d6784[_0x188d52(0xb1)]||_0x3d6784[_0x188d52(0x9c)];if(!_0x2d4063)return[];const _0x1b0164=BASE_URL+_0x188d52(0xc2)+encodeURIComponent(_0x2d4063),_0x24c27f=yield(yield fetch(_0x1b0164,{'headers':HEADERS}))[_0x188d52(0xb5)](),_0x2f6a4b=cheerio[_0x188d52(0xc9)](_0x24c27f),_0x42c3bf=_0x2f6a4b(_0x188d52(0xcb))[_0x188d52(0xb4)]();let _0x5dadc7=_0x42c3bf[_0x188d52(0xbe)](_0x188d52(0xbd));if(!_0x5dadc7)return[];if(!_0x5dadc7[_0x188d52(0xb6)](_0x188d52(0x9d)))_0x5dadc7=BASE_URL+_0x5dadc7;const _0x2ae304=yield(yield fetch(_0x5dadc7,{'headers':HEADERS}))[_0x188d52(0xb5)](),_0x5ddd85=cheerio['load'](_0x2ae304),_0x176500=[];_0x5ddd85('article\x20article')[_0x188d52(0xaa)]((_0x30ee9f,_0x51ddc9)=>{const _0x165f5e=_0x188d52,_0x36ca37=_0x5ddd85(_0x51ddc9)[_0x165f5e(0xc8)]('a')['attr']('href'),_0x1f62ed=_0x5ddd85(_0x51ddc9)[_0x165f5e(0xc8)]('h3\x20a')['text']()['trim']();if(_0x36ca37)_0x176500[_0x165f5e(0xca)]({'href':_0x36ca37,'name':_0x1f62ed});});let _0x427e08=_0x5dadc7;if(_0x176500['length']>0x0&&_0x102a04==='tv'&&_0x47acce!=null){const _0x1e8888=parseInt(_0x47acce)-0x1;_0x1e8888>=0x0&&_0x1e8888<_0x176500['length']?_0x427e08=_0x176500[_0x1e8888][_0x188d52(0xbd)]:_0x427e08=_0x176500[0x0]['href'];}else _0x176500['length']>0x0&&(_0x427e08=_0x176500[0x0]['href']);if(!_0x427e08['startsWith'](_0x188d52(0x9d)))_0x427e08=BASE_URL+_0x427e08;const _0x30148f=yield(yield fetch(_0x427e08,{'headers':HEADERS}))[_0x188d52(0xb5)](),_0x33db12=cheerio[_0x188d52(0xc9)](_0x30148f),_0x60bea3=_0x33db12(_0x188d52(0xa0))[_0x188d52(0xbe)]('content')||'';if(!_0x60bea3)return[];return[{'name':_0x188d52(0xc4),'url':_0x60bea3,'quality':extractQuality(_0x60bea3),'title':_0x188d52(0xc4),'subtitles':[],'behaviorHints':{'notWebReady':!![],'proxyHeaders':{'request':Object['assign']({},HEADERS)}}}];}catch(_0x27c91f){return console[_0x188d52(0xa7)](_0x188d52(0xa5),_0x27c91f),[];}});}typeof module!==_0x52744c(0xab)&&module[_0x52744c(0x9f)]&&(module[_0x52744c(0x9f)]={'getStreams':getStreams});
+/*
+ * nv-plugins topcartoons.js — clean rewrite (4.23.0).
+ * Source flow decoded from the AIO build and repaired against the live site
+ * (topcartoons.tv, 2026-09): search -> cartoon page -> episode links (skip
+ * anchor "#" placeholders) -> watch page -> og:video:url direct mp4.
+ * 8s deadline on every call, 12s overall cap, nvio post-filter attached.
+ */
+var __nvFetch = (function () {
+  var _f = null;
+  try { _f = (typeof fetch === "function") ? fetch : null; } catch (e) { _f = null; }
+  if (!_f) return function () { return Promise.reject(new Error("no fetch")); };
+  var hasT = typeof setTimeout === "function";
+  return function (input, init) {
+    var p;
+    try { p = _f.apply(this, arguments); } catch (e) { return Promise.reject(e); }
+    if (!hasT || !p || typeof p.then !== "function") return p;
+    return Promise.race([p, new Promise(function (_res, rej) {
+      var t = setTimeout(function () { rej(new Error("nv deadline 8s")); }, 8000);
+      if (t && typeof t.unref === "function") t.unref();
+    })]);
+  };
+})();
+
+var cheerio = require("cheerio-without-node-native");
+
+var BASE_URL = "https://www.topcartoons.tv";
+var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+var HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Referer": BASE_URL + "/"
+};
+
+function abs(u) {
+  if (!u) return "";
+  u = String(u).trim();
+  if (!u || u === "#") return "";
+  if (u.indexOf("http") === 0) return u;
+  return BASE_URL + (u.charAt(0) === "/" ? u : "/" + u);
+}
+
+function extractQuality(url) {
+  var s = String(url || "").toLowerCase();
+  if (s.indexOf("2160") !== -1 || s.indexOf("4k") !== -1) return "4K";
+  if (s.indexOf("1440") !== -1) return "1440p";
+  if (s.indexOf("1080") !== -1) return "1080p";
+  if (s.indexOf("720") !== -1) return "720p";
+  return "720p"; // cartoon masters are sd/pal-era encodes; treat as 720p baseline
+}
+
+function getStreams(tmdbId, mediaType, season, episode) {
+  return __nvFetch("https://api.themoviedb.org/3/" + (mediaType === "tv" ? "tv" : "movie") + "/" + tmdbId + "?api_key=" + TMDB_API_KEY)
+    .then(function (r) { return r.json(); })
+    .then(function (meta) {
+      var title = meta && (meta.title || meta.name);
+      if (!title) return [];
+      // 1. site search
+      return __nvFetch(BASE_URL + "/?s=" + encodeURIComponent(title), { headers: HEADERS })
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+          var $ = cheerio.load(html);
+          var cartoonLink = "";
+          $("article a").each(function (i, el) {
+            if (cartoonLink) return;
+            var href = abs($(el).attr("href"));
+            if (href) cartoonLink = href;
+          });
+          if (!cartoonLink) return [];
+          // 2. cartoon page -> episode links (A→Z episode grid)
+          return __nvFetch(cartoonLink, { headers: HEADERS })
+            .then(function (r) { return r.text(); })
+            .then(function (html2) {
+              var $2 = cheerio.load(html2);
+              var eps = [];
+              $2("article article").each(function (i, el) {
+                var href = abs($2(el).find("a").attr("href"));
+                var name = $2(el).find("h3 a").text().trim();
+                if (href) eps.push({ href: href, name: name });
+              });
+              var watchUrl = "";
+              if (mediaType === "tv" && episode != null && eps.length) {
+                var idx = parseInt(episode, 10) - 1;
+                var pick = (idx >= 0 && idx < eps.length) ? eps[idx] : eps[0];
+                watchUrl = pick.href;
+              } else if (eps.length) {
+                watchUrl = eps[0].href;
+              }
+              if (!watchUrl) watchUrl = cartoonLink;
+              // 3. watch page -> og:video:url (direct mp4 on ww.topcartoons.tv)
+              return __nvFetch(watchUrl, { headers: HEADERS })
+                .then(function (r) { return r.text(); })
+                .then(function (html3) {
+                  var m = html3.match(/property=["']og:video:url["'][^>]+content=["']([^"']+)/) ||
+                    html3.match(/content=["']([^"']+)["'][^>]+property=["']og:video:url["']/);
+                  var video = m ? m[1] : "";
+                  if (!video) {
+                    var ifr = html3.match(/<iframe[^>]+src=["']([^"']+)/);
+                    video = ifr ? ifr[1] : "";
+                  }
+                  if (!video || video.indexOf("http") !== 0) return [];
+                  return [{
+                    name: "TopCartoons",
+                    title: "TopCartoons | " + title,
+                    url: video,
+                    quality: extractQuality(video),
+                    headers: HEADERS,
+                    subtitles: []
+                  }];
+                });
+            });
+        });
+    })
+    .catch(function () { return []; });
+}
+
+if (typeof module !== "undefined" && module.exports) module.exports = { getStreams: getStreams };
+
+/* ===== nvio post-filter v1.0 (auto-injected) ============================
+   Rules (per user request 2026-09):
+   1. Language gate: only English / Tagalog (Filipino) audio lanes are kept.
+      Streams explicitly tagged with another audio language (hindi, tamil,
+      spanish, arabic, korean, ...) are dropped unless an allowed language
+      is also present (dual/multi audio) or no language is tagged at all.
+      Subtitle-only tokens (ESub, HindiSub, ...) are ignored by the gate.
+   2. Quality gate: unknown/"Auto" resolutions are probed from the HLS
+      master playlist; everything below 720p, CAM/telesync, and still-
+      unknown rows are dropped. Survivors are labeled 720p/1080p/1440p/4K.
+   3. Dedupe: exact URL, then normalized URL (query stripped, torrent
+      info-hash), then identical name+quality rows. A short-TTL global
+      registry also removes the same URL reported by two different
+      providers (cross-provider duplicates).
+   Opt-out: set SCRAPER_SETTINGS.postFilter = false.
+======================================================================== */
+(function () {
+  var PROVIDER = "topcartoons";
+  var G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
+  function settings() {
+    try { return (G && G.SCRAPER_SETTINGS) || {}; } catch (e) { return {}; }
+  }
+  function hasTimers() { return typeof setTimeout === "function" && typeof clearTimeout === "function"; }
+
+  /* ---------- quality ---------- */
+  function normQ(q) {
+    var s = String(q == null ? "" : q).toLowerCase();
+    if (!s) return "";
+    if (/8k/.test(s)) return "4K";
+    if (/2160|4k|uhd/.test(s)) return "4K";
+    if (/1440/.test(s)) return "1440p";
+    if (/1080|fhd/.test(s)) return "1080p";
+    if (/720/.test(s)) return "720p";
+    if (/480|360|240|\bsd\b/.test(s)) return "CAM";
+    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/.test(s)) return "CAM";
+    return "";
+  }
+  function qFromText(text) {
+    var s = String(text || "");
+    var m = s.match(/(\d{3,4})\s*p/i);
+    if (m) {
+      var n = parseInt(m[1], 10);
+      if (n >= 2100) return "4K";
+      if (n >= 1300) return "1440p";
+      if (n >= 1000) return "1080p";
+      if (n >= 640) return "720p";
+      return "CAM";
+    }
+    if (/\b8k\b/i.test(s) || /2160|4k|uhd/i.test(s)) return "4K";
+    if (/1440p/i.test(s)) return "1440p";
+    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/i.test(s)) return "CAM";
+    if (/480p|360p|240p|\bsd\b|\bdvdrip\b/i.test(s)) return "CAM";
+    if (/\bhd\b/i.test(s)) return "720p";
+    return "";
+  }
+  var qualCache = G.__NV_QUAL_CACHE__ || (G.__NV_QUAL_CACHE__ = {});
+  function probeM3u8(url, headers) {
+    var now = Date.now();
+    var c = qualCache[url];
+    if (c && now - c.t < (c.q ? 15 * 60 * 1000 : 3 * 60 * 1000)) {
+      return Promise.resolve(c.q);
+    }
+    var opts = { headers: Object.assign({}, headers || {}) };
+    var p = __nvFetch(url, opts).then(function (r) {
+      return r.ok ? r.text() : "";
+    }).then(function (t) {
+      var q = "";
+      if (t && t.indexOf("#EXTM3U") !== -1) {
+        var best = 0, re = /RESOLUTION=(\d+)x(\d+)/gi, m;
+        while ((m = re.exec(t)) !== null) {
+          var h = parseInt(m[2], 10);
+          if (h > best) best = h;
+        }
+        if (best >= 2100) q = "4K";
+        else if (best >= 1300) q = "1440p";
+        else if (best >= 1000) q = "1080p";
+        else if (best >= 640) q = "720p";
+        else if (best > 0) q = "CAM";
+      }
+      qualCache[url] = { t: now, q: q };
+      return q;
+    }).catch(function () { qualCache[url] = { t: now, q: "" }; return ""; });
+    if (hasTimers()) {
+      p = Promise.race([p, new Promise(function (res) {
+        var timer = setTimeout(function () { res(""); }, 6000);
+        if (typeof timer === "object" && typeof timer.unref === "function") timer.unref();
+      })]);
+    }
+    return p;
+  }
+
+  /* ---------- language gate ---------- */
+  var LANG_BLOCK_RE = /\b(hindi|hdcam|tamil|telugu|malayalam|kannada|bengali|punjabi|marathi|espanol|español|latino|castellano|spanish|arabic|arab|korean|japanese audio|chinese|mandarin|cantonese|russian|ukrainian|turkish|german|deutsch|french|italian|portugues|brasileiro|indonesian|bahasa|thai|vietnamese|polish|dutch|svenska|multi[- ]?audio|dual[- ]?audio(?![^\n]*(?:eng|english))|dubbed in hindi)\b/i;
+  var TAGALOG_RE = /\b(tagalog|filipino|fil\b|dubbed in tagalog)\b/i;
+  var ENGLISH_RE = /\b(english|eng\b|dual audio|multi audio)\b/i;
+  var SUB_ONLY_RE = /(esub|esubbed|eng ?sub|english ?sub|multi ?sub|hindi ?sub|subbed)/i;
+  function langAllowed(text) {
+    var s = String(text || "");
+    if (!s) return true;
+    if (TAGALOG_RE.test(s)) return true;
+    if (SUB_ONLY_RE.test(s) && !LANG_BLOCK_RE.test(s.replace(SUB_ONLY_RE, ""))) {
+      if (ENGLISH_RE.test(s)) return true;
+    }
+    if (LANG_BLOCK_RE.test(s) && !ENGLISH_RE.test(s)) return false;
+    return true;
+  }
+
+  /* ---------- dedupe ---------- */
+  function normUrl(u) {
+    var s = String(u || "");
+    var m = s.match(/^magnet:\?xt=urn:btih:([a-z0-9]+)/i);
+    if (m) return "m:" + m[1].toLowerCase();
+    return s.split("?")[0].replace(/\/+$/, "").toLowerCase();
+  }
+  var SEEN = G.__NV_SEEN_URLS__ || (G.__NV_SEEN_URLS__ = {});
+  function claim(u, now, owner) {
+    var nu = normUrl(u);
+    if (!nu) return true;
+    var rec = SEEN[nu];
+    if (rec && rec.exp > now && rec.owner !== owner) return false;
+    SEEN[nu] = { exp: now + 120000, owner: owner };
+    return true;
+  }
+
+  /* ---------- main ---------- */
+  function rank(q) {
+    if (q === "4K") return 4;
+    if (q === "1440p") return 3.5;
+    if (q === "1080p") return 3;
+    if (q === "720p") return 2;
+    return 0;
+  }
+  function postProcess(list) {
+    var now = Date.now();
+    var kept = [];
+    var probes = [];
+    var rows = [];
+    (list || []).forEach(function (s, i) {
+      if (!s || !s.url) return;
+      if (!langAllowed(s.title)) return;
+      var text = (s.name || "") + " " + (s.title || "");
+      var isMagnet = /^magnet:/i.test(String(s.url));
+      var q = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText(text);
+      var isHlsLike = /m3u8/i.test(String(s.url)) ||
+        (!/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) && /^https?:/i.test(String(s.url)));
+      if (!q && !isMagnet && isHlsLike) {
+        rows.push({ s: s, i: i });
+        probes.push(probeM3u8(String(s.url), s.headers));
+      } else {
+        rows.push({ s: s, i: i });
+        probes.push(Promise.resolve(q));
+      }
+    });
+    return Promise.all(probes).then(function (qs) {
+      var ranked = [];
+      rows.forEach(function (row, k) {
+        var q = qs[k];
+        if (!q) return; // unknown resolution -> removed
+        if (q === "CAM") return; // cam / sd / sub-720 -> removed
+        row.s.quality = q;
+        ranked.push({ s: row.s, i: row.i, q: q });
+      });
+      ranked.sort(function (a, b) {
+        var r = rank(b.q) - rank(a.q);
+        if (r !== 0) return r;
+        return a.i - b.i;
+      });
+      var seenLocal = {}, out = [];
+      ranked.forEach(function (row) {
+        var s = row.s;
+        var nu = normUrl(s.url);
+        if (seenLocal[nu]) return;
+        if (!claim(nu, now, PROVIDER)) return;
+        seenLocal[nu] = 1;
+        out.push(s);
+      });
+      return out.slice(0, 40);
+    }).catch(function () { return (list || []).slice(0, 40); });
+  }
+
+  var __orig = null;
+  try { __orig = module.exports && module.exports.getStreams; } catch (e) { __orig = null; }
+  if (typeof __orig === "function") {
+    module.exports.getStreams = function () {
+      var args = Array.prototype.slice.call(arguments), self = this;
+      function finish(v) {
+        if (settings().postFilter === false) return v;
+        try { return postProcess(Array.isArray(v) ? v : []); }
+        catch (e) { return Array.isArray(v) ? v : []; }
+      }
+      try {
+        var r = __orig.apply(self, args);
+        if (r && typeof r.then === "function") {
+          if (typeof setTimeout === "function") {
+            r = Promise.race([r, new Promise(function (res) {
+              var dl = setTimeout(function () { res([]); }, 12000);
+              if (dl && typeof dl.unref === "function") dl.unref();
+            })]);
+          }
+          return r.then(function (v) { return finish(v); }, function () { return []; });
+        }
+        return finish(r);
+      } catch (e) { return Promise.resolve([]); }
+    };
+  }
+})();

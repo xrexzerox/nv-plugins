@@ -105,7 +105,7 @@ function fetchWithTimeout(url, options, timeoutMs) {
     if (!hasTimers()) {
       return fetch(url, options || {});
     }
-    const timeout = timeoutMs || 2e4;
+    const timeout = timeoutMs || 8000;
     let timer = null;
     try {
       const fetchPromise = fetch(url, options || {});
@@ -1104,6 +1104,13 @@ module.exports = { getStreams, onSettings };
       try {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
+          if (typeof setTimeout === "function") {
+            // nv best-settings 4.23.0: hard 12s cap on the whole provider run
+            r = Promise.race([r, new Promise(function (res) {
+              var dl = setTimeout(function () { res([]); }, 12000);
+              if (dl && typeof dl.unref === "function") dl.unref();
+            })]);
+          }
           return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);

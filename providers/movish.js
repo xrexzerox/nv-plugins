@@ -57,7 +57,7 @@ function fetchText(url, options) {
     });
   }
   return new Promise(function (resolve, reject) {
-    var timer = setTimeout(function () { reject(new Error("fetch timeout")); }, options.timeout || 15000);
+    var timer = setTimeout(function () { reject(new Error("fetch timeout")); }, options.timeout || 8000);
     fetch(url, opts).then(function (res) {
       clearTimeout(timer);
       if (!res.ok) throw new Error("HTTP " + res.status);
@@ -101,7 +101,7 @@ function serverKeys(base, isTv, tmdbId, season, episode) {
     : "/player/movie/" + tmdbId;
   return fetchText(base + playerPath, {
     headers: { "User-Agent": UA, "Accept": "text/html,*/*", "Referer": base + "/" },
-    timeout: 14000
+    timeout: 8000
   }).then(function (html) {
     var keys = [];
     var m = html.match(/\[\s*\{\s*["']key["']\s*:\s*["']([a-z0-9_-]+)["']/i);
@@ -148,7 +148,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
             : "/player-sources/" + k.key + "/movie/" + tmdbId;
           return fetchJson(base + srcPath, {
             headers: { "User-Agent": UA, "Accept": "application/json", "Referer": base + "/" },
-            timeout: 14000
+            timeout: 8000
           }).then(function (payload) {
             var streams = (payload && payload.streams) || [];
             streams.forEach(function (st) {
@@ -394,6 +394,13 @@ module.exports = { getStreams: getStreams, onSettings: onSettings };
       try {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
+          if (typeof setTimeout === "function") {
+            // nv best-settings 4.23.0: hard 12s cap on the whole provider run
+            r = Promise.race([r, new Promise(function (res) {
+              var dl = setTimeout(function () { res([]); }, 12000);
+              if (dl && typeof dl.unref === "function") dl.unref();
+            })]);
+          }
           return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);

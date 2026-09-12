@@ -1,7 +1,34 @@
 /**
- * NetMirror - Nuvio provider (v10.0.0)
+ * NetMirror - Nuvio provider (v12.0.0)
  *
- * v10.0.0: Alpha-only + VidSpark lane (2026-09-12).
+ * v12.0.0: full AIO decode applied - NewTV lane added, net27 lane REMOVED (2026-09-12).
+ *  - User report on 4.22.0: "netmirror not providing stream".
+ *  - Root cause (full decode of the AIO netmirror + live probes):
+ *      (a) v11's net27 embed lane returns rows whose URLs point at
+ *          bcdnw/bcdnxw.hakunaymatata.com - the SAME CDN the user's device
+ *          gets 429-blocked on (that is WHY v10 removed the watchbox rows;
+ *          v11 accidentally re-added them via net27). REMOVED again here.
+ *      (b) The decoded AIO build's REAL device path is its "NewTV" lane:
+ *          24 base64 mobiledetect and mobidetect domains -> GET /checknewtv.php
+ *          (X-Requested-With: NetmirrorNewTV v1.0) -> {token_hash} -> base64
+ *          decode = the LIVE API base (verified: mobiledetects.com ->
+ *          tv.imgcdn.kim). Then /newtv/search.php?s=title -> /newtv/post.php
+ *          -> /newtv/episodes.php -> /newtv/player.php?id= -> {video_link,
+ *          referer}. Datacenter IPs get 403 "Page Not Found" on the API
+ *          (IP-gated) - which is exactly why this lane looked dead before;
+ *          on retail/mobile IPs it is the lane AIO users stream with.
+ *          Ported 1:1 here (headers incl. the Ott: <ott> app header, exact
+ *          episode matching incl. E/S-number parsing + pagination).
+ *      (c) v11 capped the Alpha relay lane at 10s - on mobile the relay
+ *          needs 12-15s, so the sheet served BEFORE the only user-proven
+ *          lane had rows. Cap raised to 16s (inside Nuvio's ~20s budget;
+ *          the fast lanes still serve first when they have rows).
+ *  - v12 lanes (parallel): Alpha relay (watchpvr, /^Alpha/ only) + NewTV
+ *    (AIO device lane) + VidSpark (net77 stack, proxied CDNs). Combine:
+ *    Alpha first, then NewTV, then VidSpark. English-only + Tagalog caption
+ *    rules unchanged; caches and tolerant id parsing unchanged.
+ *
+ * v10.0.0 history: Alpha-only + VidSpark lane (2026-09-12).
  *  - User report: "netmirror only alpha stream works - remove not working
  *    stream just leave alpha" + "review net77.cc for netmirror to get more
  *    streams" + cinejoy still broken.
@@ -895,52 +922,183 @@ function nmResolveCandidate(nmId, type, se, ep, meta, tmdbId) {
 }
 
 /**
- * v11: net27 embed lane (reverse-engineered from the All-in-One-Nuvio
- * netmirror build, verified live). One GET, no signing, no title mapping:
- *   movie https://net27.cc/api/embed-tmdb/{tmdbId}
- *   tv    https://net27.cc/api/embed-tmdb/{tmdbId}?type=tv&s={s}&e={e}
- * Response: { ok:true, streams:[{resolution,url}], mp4, captions:[{url,lang,name}] }
- * Rows are UNLABELED default-audio (kept by the nvio language gate); the
- * quality gate drops sub-720p entries automatically. Fast (1-3s) and fully
- * independent of the netmirror.center search2 title mapping.
+ * v12: NewTV lane - the decoded AIO netmirror's REAL device path (1:1 port).
+ * 1. resolveNtvApi(): GET {base}/checknewtv.php across the 24 mobiledetect/
+ *    mobidetect domains (X-Requested-With: NetmirrorNewTV v1.0, GatuNewTV user agent)
+ *    -> {token_hash: base64} -> decode = live API base (memoized module-wide;
+ *    verified 2026-09: mobiledetects.com -> tv.imgcdn.kim; the API itself is
+ *    IP-gated - 403 "Page Not Found" from datacenter, works on retail IPs).
+ * 2. GET {api}/newtv/search.php?s={title} -> searchResult[0].id
+ * 3. GET {api}/newtv/post.php?id= (Lastep/Usertoken headers) -> type,
+ *    episodes[{id,ep|epNum,sNum}], main_id, season[], nextPageShow
+ * 4. tv: match season/episode (incl. pagination via /newtv/episodes.php?id=
+ *    &page=N while nextPageShow==1); movie: main_id (skip when type==="t")
+ * 5. GET {api}/newtv/player.php?id={id} -> {status:"ok",video_link,referer}
+ *    -> one Auto row, Referer = resp.referer || api base.
+ * Fail-soft everywhere; resolution memoized across calls; platforms tried in
+ * AIO order (netflix -> primevideo -> hotstar) until one yields a stream.
  */
-function nmNet27Rows(type, tmdbId, se, ep) {
-  var url = "https://net27.cc/api/embed-tmdb/" + tmdbId;
-  if (type === "tv") url += "?type=tv&s=" + (se || 1) + "&e=" + (ep || 1);
-  return fetchText(url, {
-    Referer: "https://net27.cc/",
-    Accept: "application/json, text/plain, */*",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
-  }, 8000).then(function (txt) {
-    var j = null;
-    try { j = JSON.parse(txt); } catch (e0) { j = null; }
-    if (!j || j.ok !== true) return { rows: [], subs: [] };
-    var rows = [];
-    (j.streams || []).forEach(function (s) {
-      if (!s || !s.url) return;
-      var u = String(s.url);
-      if (u.charAt(0) === "/") u = "https://net27.cc" + u;
-      var q = qualityLabel(s.resolution ? (parseInt(s.resolution, 10) || 0) + "p" : "");
-      if (!q || q === "Auto") q = "Auto";
-      rows.push({
-        name: "NetMirror | Direct " + q,
-        title: "NetMirror direct " + q,
-        url: u,
-        quality: q,
-        headers: { Referer: "https://net27.cc/" }
+var NM_NTV_DOMAINS = [
+  "aHR0cHM6Ly9tb2JpbGVkZXRlY3RzLmNvbQ==", "aHR0cHM6Ly9tb2JpbGVkZXRlY3QuYXBw", "aHR0cHM6Ly9tb2JpZGV0ZWN0LmFydA==",
+  "aHR0cHM6Ly9tb2JpZGV0ZWN0LmNj", "aHR0cHM6Ly9tb2JpZGV0ZWN0LmNsaWNr", "aHR0cHM6Ly9tb2JpZGV0ZWN0Lmluaw==",
+  "aHR0cHM6Ly9tb2JpZGV0ZWN0LmxpdmU=", "aHR0cHM6Ly9tb2JpZGV0ZWN0LnBybw==", "aHR0cHM6Ly9tb2JpZGV0ZWN0LnNob3A=",
+  "aHR0cHM6Ly9tb2JpZGV0ZWN0LnNpdGU=", "aHR0cHM6Ly9tb2JpZGV0ZWN0LnNwYWNl", "aHR0cHM6Ly9tb2JpZGV0ZWN0LnN0b3Jl",
+  "aHR0cHM6Ly9tb2JpZGV0ZWN0LnZpcA==", "aHR0cHM6Ly9tb2JpZGV0ZWN0Lndpa2k=", "aHR0cHM6Ly9tb2JpZGV0ZWN0Lnh5eg==",
+  "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5hcnQ=", "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5jYw==", "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5pbmZv",
+  "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5pbms=", "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5saXZl", "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5wcm8=",
+  "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5zdG9yZQ==", "aHR0cHM6Ly9tb2JpZGV0ZWN0cy50b3A=", "aHR0cHM6Ly9tb2JpZGV0ZWN0cy54eXo="
+];
+var NM_NTV_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0";
+
+function nmNtvHeaders(ott, extra) {
+  var h = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+    "X-Requested-With": "NetmirrorNewTV v1.0",
+    "User-Agent": NM_NTV_UA,
+    "Accept": "application/json, text/plain, */*",
+    "Ott": ott || "nf"
+  };
+  return merge(h, extra || {});
+}
+
+function nmB64Decode(s) {
+  try {
+    if (typeof atob === "function") return atob(s);
+  } catch (e0) { }
+  try {
+    if (typeof Buffer !== "undefined" && Buffer.from) return Buffer.from(s, "base64").toString("binary");
+  } catch (e1) { }
+  var B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=", out = "", bits = 0, acc = 0;
+  for (var i = 0; i < s.length; i++) {
+    var c = B64.indexOf(s.charAt(i));
+    if (c < 0 || c === 64) continue;
+    acc = (acc << 6) | c; bits += 6;
+    if (bits >= 8) { bits -= 8; out += String.fromCharCode((acc >> bits) & 0xff); }
+  }
+  return out;
+}
+
+function nmNtvResolve() {
+  if (_nmState.ntvApi) return Promise.resolve(_nmState.ntvApi);
+  if (_nmState.ntvResolving) return _nmState.ntvResolving;
+  var resolved = null;
+  var tryOne = function (i) {
+    if (resolved || i >= NM_NTV_DOMAINS.length) return Promise.resolve();
+    var base = nmB64Decode(NM_NTV_DOMAINS[i]).replace(/\/$/, "");
+    return fetchJson(base + "/checknewtv.php", null, 3000).then(function (j) {
+      if (j && j.token_hash) {
+        var api = nmB64Decode(j.token_hash).replace(/\/$/, "");
+        if (api) {
+          resolved = api;
+          _nmState.ntvApi = api;
+          console.log("[NetMirror] NewTV api resolved: " + api);
+          return;
+        }
+      }
+      return tryOne(i + 1);
+    }).catch(function () { return tryOne(i + 1); });
+  };
+  _nmState.ntvResolving = tryOne(0).then(function () {
+    _nmState.ntvResolving = null;
+    return resolved;
+  }).catch(function () {
+    _nmState.ntvResolving = null;
+    return null;
+  });
+  return _nmState.ntvResolving;
+}
+
+function nmNtvEpFromEntry(e) {
+  if (!e) return null;
+  var ep = null;
+  if (e.ep != null && e.ep !== "") ep = parseInt(e.ep, 10);
+  else if (e.epNum) ep = parseInt(String(e.epNum).replace("E", ""), 10);
+  var s = null;
+  if (e.sNum) s = parseInt(String(e.sNum).replace("S", ""), 10);
+  return { id: e.id, s: s, ep: ep };
+}
+
+function nmNtvRows(title, type, se, ep) {
+  return nmNtvResolve().then(function (api) {
+    if (!api || !title) return { rows: [] };
+    // platform order mirrors AIO: netflix -> primevideo -> hotstar
+    var platforms = ["nf", "pv", "hs"];
+    var names = { nf: "Netflix", pv: "Prime Video", hs: "Hotstar" };
+    var chain = Promise.resolve({ rows: [] });
+    platforms.forEach(function (ott) {
+      chain = chain.then(function (acc) {
+        if (acc && acc.rows && acc.rows.length) return acc;
+        return nmNtvPlatform(api, ott, names[ott] || ott, title, type, se, ep).catch(function () { return { rows: [] }; });
       });
     });
-    if (!rows.length && j.mp4) {
-      var u2 = String(j.mp4);
-      if (u2.charAt(0) === "/") u2 = "https://net27.cc" + u2;
-      rows.push({ name: "NetMirror | Direct", title: "NetMirror direct", url: u2, quality: "Auto", headers: { Referer: "https://net27.cc/" } });
-    }
-    var subs = [];
-    (j.captions || []).forEach(function (c) {
-      if (c && c.url) subs.push({ label: c.name || c.lang || "", url: c.url });
+    return chain;
+  }).catch(function () { return { rows: [] }; });
+}
+
+function nmNtvPlatform(api, ott, label, title, type, se, ep) {
+  var H = nmNtvHeaders(ott);
+  return fetchJson(api + "/newtv/search.php?s=" + encodeURIComponent(title), H, 5000).then(function (sr) {
+    var list = sr && sr.searchResult;
+    if (!list || !list.length) return { rows: [] };
+    var showId = list[0].id;
+    return fetchJson(api + "/newtv/post.php?id=" + showId, merge(H, { Lastep: "", Usertoken: "" }), 5000).then(function (post) {
+      if (!post) return { rows: [] };
+      var pid = showId;
+      if (type === "tv") {
+        var eps = (post.episodes || []).filter(function (x) { return !!x; }).map(nmNtvEpFromEntry);
+        var found = null;
+        for (var i = 0; i < eps.length; i++) {
+          if (eps[i] && eps[i].s === (parseInt(se, 10) || 1) && eps[i].ep === (parseInt(ep, 10) || 1)) { found = eps[i]; break; }
+        }
+        if (!found) {
+          var seasonId = null;
+          if (post.season && post.season.length) {
+            for (var k = 0; k < post.season.length; k++) {
+              if (post.season[k] && post.season[k].id) { seasonId = post.season[k].id; break; }
+            }
+          } else if (post.nextPageSeason) seasonId = post.nextPageSeason;
+          if (seasonId && post.nextPageShow === 1) {
+            return nmNtvEpisodesPage(api, H, seasonId, 2, parseInt(se, 10) || 1, parseInt(ep, 10) || 1);
+          }
+          return { rows: [] };
+        }
+        pid = found.id;
+      } else {
+        if (post.type === "t") return { rows: [] }; // it is a tv show, not a movie
+        pid = post.main_id || showId;
+      }
+      return fetchJson(api + "/newtv/player.php?id=" + pid, merge(H, { Usertoken: "" }), 5000).then(function (pl) {
+        if (!pl || pl.status !== "ok" || !pl.video_link) return { rows: [] };
+        return {
+          rows: [{
+            name: "NetMirror | " + label,
+            title: label + " | NetMirror NewTV",
+            url: pl.video_link,
+            quality: "Auto",
+            headers: { Referer: pl.referer || api }
+          }]
+        };
+      });
     });
-    return { rows: rows, subs: subsFor(subs) };
-  }).catch(function () { return { rows: [], subs: [] }; });
+  });
+}
+
+function nmNtvEpisodesPage(api, H, seasonId, page, se, ep) {
+  return fetchJson(api + "/newtv/episodes.php?id=" + seasonId + "&page=" + page, H, 5000).then(function (p) {
+    var eps = (p && p.episodes ? p.episodes : []).filter(function (x) { return !!x; }).map(nmNtvEpFromEntry);
+    for (var i = 0; i < eps.length; i++) {
+      if (eps[i] && (eps[i].s == null || eps[i].s === se) && eps[i].ep === ep) {
+        return fetchJson(api + "/newtv/player.php?id=" + eps[i].id, merge(H, { Usertoken: "" }), 5000).then(function (pl) {
+          if (!pl || pl.status !== "ok" || !pl.video_link) return { rows: [] };
+          return { rows: [{ name: "NetMirror | NewTV", title: "NetMirror NewTV", url: pl.video_link, quality: "Auto", headers: { Referer: pl.referer || api } }] };
+        });
+      }
+    }
+    if (p && p.nextPageShow === 1 && page < 6) return nmNtvEpisodesPage(api, H, seasonId, page + 1, se, ep);
+    return { rows: [] };
+  });
 }
 
 function getStreams(tmdbId, mediaType, season, episode) {
@@ -955,7 +1113,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
   }
   if (_nmState.inflight[key]) return _nmState.inflight[key];
 
-  console.log("[NetMirror] v11 start " + mediaType + " " + rawId + " S" + season + "E" + episode);
+  console.log("[NetMirror] v12 start " + mediaType + " " + rawId + " S" + season + "E" + episode);
   var type = mediaType === "tv" ? "tv" : "movie";
 
   var run = parseTmdbId(rawId, mediaType, season, episode).then(function (p) {
@@ -978,10 +1136,10 @@ function getStreams(tmdbId, mediaType, season, episode) {
     // netmirror.center title mapping - TMDB id direct, so even a failed
     // search2 mapping still yields rows.
     var vsP = vsResolve(type, p.tmdbId, se, ep);
-    // v11: net27 embed lane - TMDB id direct, no signing, fastest lane
-    var n27P = nmNet27Rows(type, p.tmdbId, se, ep);
-    var alphaP = tmdbMeta(p.tmdbId, mediaType).then(function (meta) {
-      if (!meta.title) {
+    // v12: ONE shared TMDB meta fetch feeds both the Alpha lane and the NewTV lane
+    var metaP = tmdbMeta(p.tmdbId, mediaType).catch(function () { return null; });
+    var alphaP = metaP.then(function (meta) {
+      if (!meta || !meta.title) {
         console.log("[NetMirror] no TMDB meta for " + p.tmdbId + " - VidSpark only");
         return [];
       }
@@ -1000,16 +1158,20 @@ function getStreams(tmdbId, mediaType, season, episode) {
         return chain;
       });
     }).catch(function () { return []; });
+    // v12: NewTV lane (decoded AIO device path) - 12s overall lane cap
+    var ntP = metaP.then(function (meta) {
+      var run = nmNtvRows(meta && meta.title, type, se, ep);
+      return hasTimers()
+        ? Promise.race([run, new Promise(function (res) { setTimeout(function () { res({ rows: [] }); }, 12000); })])
+        : run;
+    }).catch(function () { return { rows: [] }; });
 
-    function nmCombine(alphaRows, n27, vs) {
+    function nmCombine(alphaRows, nt, vs) {
       var rows = [];
-      // Alpha rows first (the user's proven lane), then the fast net27
-      // direct lane, then VidSpark fills in after
+      // Alpha rows first (the user's proven lane), then the AIO NewTV lane,
+      // then VidSpark fills in after
       (alphaRows || []).forEach(function (r) { rows.push(r); });
-      ((n27 && n27.rows) || []).forEach(function (r) {
-        if (n27.subs && n27.subs.length) r.subtitles = n27.subs;
-        rows.push(r);
-      });
+      ((nt && nt.rows) || []).forEach(function (r) { rows.push(r); });
       (vs.rows || []).forEach(function (r) {
         if (vsSubsOf(vs)) r.subtitles = vsSubsOf(vs);
         rows.push(r);
@@ -1018,16 +1180,16 @@ function getStreams(tmdbId, mediaType, season, episode) {
     }
     function vsSubsOf(vs) { return subsFor(vs.subs || []); }
 
-    // v11: the Alpha lane (search2 mapping + 3 signed watchpvr attempts) is
-    // the SLOWEST lane; serve after 10s with whatever arrived, then keep
-    // collecting and write the FULL combined result into the cache so the
-    // next play of the same episode is instant.
+    // v12: the Alpha relay lane needs 12-15s on mobile - the cap is raised to
+    // 16s so the user-proven rows are never cut off again (v11's 10s cap left
+    // the sheet with only fast-but-device-dead rows). The fast NewTV/VidSpark
+    // rows still arrive first in the merged order (alpha is prepended).
     var alphaCapP = hasTimers()
-      ? Promise.race([alphaP, new Promise(function (res) { setTimeout(function () { res([]); }, 10000); })])
+      ? Promise.race([alphaP, new Promise(function (res) { setTimeout(function () { res([]); }, 16000); })])
       : alphaP;
-    var servedP = Promise.all([alphaCapP, n27P.catch(function () { return { rows: [], subs: [] }; }), vsP.catch(function () { return { rows: [], subs: [] }; })]).then(function (res) {
+    var servedP = Promise.all([alphaCapP, ntP.catch(function () { return { rows: [] }; }), vsP.catch(function () { return { rows: [], subs: [] }; })]).then(function (res) {
       var rows = nmCombine(res[0], res[1], res[2]);
-      console.log("[NetMirror] serving " + rows.length + " stream(s) (alpha " + (res[0] || []).length + ", net27 " + ((res[1] && res[1].rows) || []).length + ", vidspark " + ((res[2] && res[2].rows) || []).length + ")");
+      console.log("[NetMirror] serving " + rows.length + " stream(s) (alpha " + (res[0] || []).length + ", newtv " + ((res[1] && res[1].rows) || []).length + ", vidspark " + ((res[2] && res[2].rows) || []).length + ")");
       return rows;
     });
     return servedP.then(function (rows) {
@@ -1036,7 +1198,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
     }).then(function (rows) {
       // late-cache: wait for the full Alpha result; if it added rows that the
       // early serve missed, store the combined set for the next play.
-      return Promise.all([alphaP.catch(function () { return []; }), n27P.catch(function () { return { rows: [], subs: [] }; }), vsP.catch(function () { return { rows: [], subs: [] }; })]).then(function (res) {
+      return Promise.all([alphaP.catch(function () { return []; }), ntP.catch(function () { return { rows: [] }; }), vsP.catch(function () { return { rows: [], subs: [] }; })]).then(function (res) {
         var full = nmCombine(res[0], res[1], res[2]);
         var cur = _nmState.cache[key];
         if (full.length && (!cur || ((cur.streams || []).length < full.length))) {
@@ -1285,6 +1447,15 @@ module.exports = {
       try {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
+          if (typeof setTimeout === "function") {
+            // nv best-settings 4.23.0: 17s overall cap - deliberately LONGER
+            // than the other providers because the Alpha relay lane (the only
+            // user-proven device lane) needs 12-15s; 16s lane cap + margin.
+            r = Promise.race([r, new Promise(function (res) {
+              var dl = setTimeout(function () { res([]); }, 17000);
+              if (dl && typeof dl.unref === "function") dl.unref();
+            })]);
+          }
           return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);
