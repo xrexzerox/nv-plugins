@@ -1,6 +1,18 @@
 /**
  * cinejoy - Built from src/cinejoy/ (run bun build.js to regenerate)
  *
+ * v1.6.1 (diagnostics, 2026-09-12):
+ *  User report: "cinejoy still not showing stream" on 4.19.0. Re-verified the
+ *  whole chain live (servers 8x, enc -> binary /g -> dec -> HLS master; 3 rows
+ *  for Mutiny 1288445 from Node) - the code is healthy on every runtime. The
+ *  remaining Mobile failure mode is CONFIG: NuvioMobile's bridge is
+ *  string-only (FetchBridge.kt takes the body via args.toString(), the
+ *  response is UTF-8-decoded Kotlin String), so the binary shegu /g legs are
+ *  structurally impossible and the worker relay (cjRelay setting + v5.7.0+
+ *  bundle with /cjg and /cjs) is REQUIRED. When rows come back empty and no
+ *  relay is configured, the provider now logs exactly that instead of failing
+ *  silently. No transport changes.
+ *
  * v1.6.0 (full-chain worker lane, 2026-09-12):
  *  User report: "netmirror and cinejoy still no stream showing" on 4.18.0.
  *  Re-verified live: the whole chain (servers -> enc -> binary /g -> dec) is
@@ -990,6 +1002,11 @@ function scrape(ctx) {
       if (!out.length && wave2.length) {
         const r2 = yield runWave(wave2);
         r2.forEach(function(arr) { out.push.apply(out, arr); });
+      }
+      // v1.6.1: say WHY the sheet is empty - on Mobile the binary /g legs are
+      // structurally impossible, so an unconfigured relay is the usual cause
+      if (!out.length && !relayBase()) {
+        console.log("[Streamline][cinejoy] 0 rows and no relay configured. On NuvioMobile set the 'Cinejoy relay base URL' setting to your asian-catalog worker URL (bundle v5.7.0+ with /cjg + /cjs). TV/PC resolve without it.");
       }
       return out;
     } catch (e) {

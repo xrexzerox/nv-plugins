@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "4.19.0",
-  "description": "Canonical Nuvio provider collection. v4.19.0 rebuilds the two never-streaming providers against their live sites: netmirror 8.0.0 follows the service's move to netmirror.center (the whole net27.cc embed API is gone) — it maps TMDB titles to netmirror's own id space via the search2 API, prefers the [English] variant, signs the watchbox player request with a pure-JS HMAC-SHA256 and hands Nuvio the site's direct mp4 quality variants (360p-1080p) plus SRT subtitle tracks, all plain GETs so NuvioMobile needs no relay; cinejoy 1.6.0 keeps the proven binary chain for TV/PC and adds a full-chain lane for NuvioMobile — one text POST to the asian-catalog worker's new /cjs route (addon 5.7.0 — redeploy the CF worker and set the Cinejoy relay base URL in the provider settings) runs enc -> /g -> dec server-side and returns final stream JSON. English/Tagalog lanes, the post-filter quality rules and all other providers are unchanged.",
+  "version": "4.20.0",
+  "description": "Canonical Nuvio provider collection. v4.20.0 fixes the netmirror 429 + single-stream report: netmirror 9.0.0 discovers the site's second delivery stack (the Multi-Lang Server's watchpvr.php page) whose HLS/DASH sources are fully proxied through relay workers - verified master -> variant -> segment end-to-end, no contact with the 429-throttled video CDN - filters its per-source labels to English/unlabeled audio only, ranks those rows first, and additionally resolves ALL six watchbox mirrors in parallel and merges their mp4 quality sets (the backends are inconsistent; single-host resolution stranded titles on low-quality-only variants). Both player pages now carry tm_id like the site. cinejoy 1.6.1 re-verified the whole chain live and logs the missing-relay cause instead of failing silently when the NuvioMobile relay setting is absent (the binary /g legs are structurally impossible on the device bridge - the asian-catalog worker v5.7.0+ relay stays required there; TV/PC work with no config). English/Tagalog lanes, the post-filter quality rules and all other providers are unchanged.",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -295,8 +295,8 @@
     {
       "id": "cinejoy",
       "name": "Cinejoy",
-      "description": "Cinejoy chain re-verified live; NuvioMobile gains a full-chain lane: one text POST to the asian-catalog worker /cjs route (v5.7.0+) runs enc -> /g -> dec server-side and returns final stream JSON - nothing binary crosses the device bridge. TV/PC runtimes keep the direct chain with zero config.",
-      "version": "1.6.0",
+      "description": "Cinejoy chain re-verified live end-to-end (3 rows for Mutiny from Node). The NuvioMobile failure mode is config, not code: the device bridge is string-only so the binary /g legs are structurally impossible and the asian-catalog worker relay (v5.7.0+ bundle, cjRelay setting) stays required there. v1.6.1 logs the missing-relay cause instead of failing silently. TV/PC keep the direct chain with zero config.",
+      "version": "1.6.1",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -796,8 +796,8 @@
     {
       "id": "netmirror",
       "name": "NetMirror",
-      "description": "NetMirror via netmirror.center (the net27.cc embed API died with the site rebuild): TMDB title -> netmirror id mapping through api2.imdb4.shop search2 with [English]-variant preference (dubbed variants skipped), detail + dp token from api2.imdb3.shop, HMAC-SHA256-signed watchbox.php player page (pure-JS HMAC), direct mp4 quality variants and SRT subtitles. All lanes are plain GETs - no binary transport, no relay.",
-      "version": "8.0.0",
+      "description": "NetMirror dual-lane resolve (v9): primary = the site's Multi-Lang Server (watchpvr.php) whose HLS/DASH sources are fully proxied through relay workers - immune to the video CDN's 429 rate limiting - with per-source labels filtered to English/unlabeled audio only; secondary = all six watchbox mirrors resolved in parallel with merged mp4 quality sets. TMDB title -> netmirror id via search2 with [English]-variant preference, HMAC-SHA256-signed player pages (pure-JS HMAC), SRT subtitles, tm_id fidelity. All lanes are plain GETs - no binary transport, no relay.",
+      "version": "9.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",

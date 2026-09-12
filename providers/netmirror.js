@@ -1,5 +1,40 @@
 /**
- * NetMirror - Nuvio provider (v8.0.0)
+ * NetMirror - Nuvio provider (v9.0.0)
+ *
+ * v9.0.0: the watchpvr multi-lane + watchbox fan-out rebuild (2026-09-12).
+ *  - User report: "netmirror 429 only 1 stream showing" (4.19.0).
+ *    Live recon findings:
+ *      (a) "only 1 stream": v8 resolved ONE watchbox host and stopped - the
+ *          watchbox backends are inconsistent (same title served with 360P-
+ *          1080P tran-audio files by some backends, only /bt/+resource low
+ *          variants by others), so the row count depended on which backend
+ *          answered first. All 6 watchbox hosts now resolve IN PARALLEL and
+ *          their quality URLs are merged (highest label wins per URL).
+ *      (b) the "429": every watchbox mp4 points at bcdnxw/bcdnt.hakunaymatata
+ *          .com, an nginx box that rate-limits aggressively (429s whole IP
+ *          ranges; the user's carrier IP got throttled at playback). The
+ *          site's own "Multi-Lang Server" (p==7) is a SECOND delivery stack:
+ *          play.watch21.shop/play/watchpvr.php renders a `const qualities`
+ *          JSON array of HLS/DASH/MP4 sources carried through
+ *          cinemaos-relay.qjkl1qn.workers.dev - a fully PROXIED path
+ *          (verified end-to-end: master 200 -> variant 200 -> segment 200
+ *          video/mp2t) that never touches bcdnxw -> no 429 possible.
+ *          v9 resolves BOTH lanes and puts the relay-proxied HLS/DASH rows
+ *          first, mp4 rows last.
+ *      (c) watchpvr carries per-source labels ("Alpha - English - 1080p",
+ *          "Hindi 2 (Multi-Audio)", ...): the English-only rule now filters
+ *          THE SOURCE LABEL too - only English or unlabeled (default-audio)
+ *          sources are emitted, dubbed/subbed variants are never streamed.
+ *      (d) the site appends tm_id=<tmdb id> to both player pages; v9 does
+ *          the same now (v8 omitted it).
+ *  - Watchbox flow (v8, kept, now parallel + tm_id):
+ *      search2 (api2.imdb4.shop) -> detail (api2.imdb3.shop) ->
+ *      HMAC-SHA256("{nmId}:{ts}","net###@@sss") -> watchbox.php on 6 hosts ->
+ *      ArtPlayer quality selector -> mp4 rows + SRT subs.
+ *  - All requests are plain GETs with text bodies - 100% NuvioMobile-safe
+ *    (no binary transport, no relay, no settings needed).
+ *  - HMAC-SHA256 is implemented in pure JS (no CryptoJS in the plugin
+ *    runtime); unit-tested against openssl vectors.
  *
  * v8.0.0: the netmirror.center rebuild (2026-09-12).
  *  - User report: "netmirror and cinejoy still no stream showing" (4.18.0).
@@ -341,7 +376,8 @@ var NM_PAGE_BASE = "https://netmirror.center";        // referer origin
 var NM_DETAIL_API = "https://api2.imdb3.shop/api";    // detail: /{movie|tv}/{nmId}
 var NM_SEARCH_API = "https://api2.imdb4.shop/api/search2";
 var NM_SIGN_KEY = "net###@@sss";
-// watchbox mirror hosts (the site randomizes p==1..7; we fail over in order)
+// watchbox mirror hosts (the site randomizes p==1..7; v9 queries ALL in
+// parallel and merges - the backends carry inconsistent file sets)
 var WB_HOSTS = [
   "https://bet.watch21.shop",
   "https://play.watch21.shop",
@@ -350,6 +386,17 @@ var WB_HOSTS = [
   "https://spedostream2.shop",
   "https://dv.watch22.shop"
 ];
+// v9: the site's "Multi-Lang Server" (p==7) - a second delivery stack whose
+// HLS/DASH sources are fully proxied through cinemaos-relay workers (no
+// bcdnxw contact -> immune to the video CDN's 429 rate limiting)
+var NM_PVR_URL = "https://play.watch21.shop/play/watchpvr.php";
+// watchpvr source labels: dubbed/subbed variants are never streamed (standing
+// English-only rule); unlabeled sources = the site's default-audio lanes
+var PVR_BLOCK_RE = new RegExp(
+  "\\b(hindi|arabic|russian|kurdish|french|spanish|portuguese|indonesian|bahasa|" +
+  "tamil|telugu|malayalam|kannada|korean|japanese|chinese|mandarin|cantonese|" +
+  "german|deutsch|turkish|thai|vietnamese|urdu|bangla|bengali|punjabi|malay|" +
+  "multi[\\s\\-]*audio)\\b", "i");
 
 // search-result title labels: [English] preferred; dubbed variants skipped
 // (standing rule: netmirror is English-only)
@@ -454,7 +501,7 @@ function nmSign(nmId) {
   return { ts: ts, sig: hmacSha256Hex(NM_SIGN_KEY, nmId + ":" + ts) };
 }
 
-function nmWatchboxUrl(host, d, se, ep) {
+function nmWatchboxUrl(host, d, se, ep, tmdbId) {
   var s = nmSign(d.id);
   var year = nmYearOf(d.release.split(",")[1] ? d.release : "");  // "Aug 21,2026" -> "2026"; "2013" -> ""
   var commaYear = "";
@@ -467,6 +514,7 @@ function nmWatchboxUrl(host, d, se, ep) {
     dp: d.dp,
     na: b64Utf8(d.title),
     year: year,
+    tm_id: tmdbId == null ? "" : String(tmdbId),
     ts: s.ts,
     sig: s.sig,
     nid: d.id,
@@ -476,21 +524,56 @@ function nmWatchboxUrl(host, d, se, ep) {
   });
 }
 
-/** Fetch the watchbox player page across mirror hosts; "" when all fail. */
-function nmWatchboxPage(d, se, ep) {
-  var chain = Promise.reject(new Error("start"));
-  WB_HOSTS.forEach(function (host) {
-    chain = chain.catch(function () {
-      return fetchText(nmWatchboxUrl(host, d, se, ep), { Referer: NM_PAGE_BASE + "/" }, 12000)
-        .then(function (html) {
-          if (!html || (html.indexOf("artplayer") === -1 && html.indexOf("quality_new") === -1)) {
-            throw new Error("no player page");
-          }
-          return html;
-        });
+/** Fetch + parse ONE watchbox host; { quals, subs } or null on any failure. */
+function nmWatchboxOne(host, d, se, ep, tmdbId) {
+  return fetchText(nmWatchboxUrl(host, d, se, ep, tmdbId), { Referer: NM_PAGE_BASE + "/" }, 12000)
+    .then(function (html) {
+      if (!html || (html.indexOf("artplayer") === -1 && html.indexOf("quality_new") === -1)) {
+        throw new Error("no player page");
+      }
+      var parsed = parseWatchbox(html);
+      if (!parsed.quals.length) throw new Error("no quals");
+      return parsed;
+    }).catch(function () { return null; });
+}
+
+/**
+ * v9: resolve ALL watchbox hosts in PARALLEL and merge their quality URLs.
+ * The backends are load-balanced and inconsistent (same title, different
+ * file sets) - a single-host resolution stranded titles on a low-quality-
+ * only backend and the merged view recovers the full set. Same-URL entries
+ * keep the highest label; subtitle tracks are unioned by URL.
+ */
+function nmWatchboxAll(d, se, ep, tmdbId) {
+  return Promise.all(WB_HOSTS.map(function (host) {
+    return nmWatchboxOne(host, d, se, ep, tmdbId);
+  })).then(function (results) {
+    var byUrl = {}, subByUrl = {};
+    results.forEach(function (r) {
+      if (!r) return;
+      r.quals.forEach(function (q) {
+        if (!q || !q.url) return;
+        var at = byUrl[q.url];
+        if (at) {
+          if (qRank(q.label) > qRank(at.label)) at.label = q.label;
+        } else {
+          byUrl[q.url] = { label: q.label, url: q.url };
+        }
+      });
+      (r.subs || []).forEach(function (s) {
+        if (s && s.url && !subByUrl[s.url]) subByUrl[s.url] = s;
+      });
     });
+    var quals = [], subs = [];
+    for (var u in byUrl) {
+      if (Object.prototype.hasOwnProperty.call(byUrl, u)) quals.push(byUrl[u]);
+    }
+    for (var s2 in subByUrl) {
+      if (Object.prototype.hasOwnProperty.call(subByUrl, s2)) subs.push(subByUrl[s2]);
+    }
+    quals.sort(function (a, b) { return qRank(b.label) - qRank(a.label); });
+    return { quals: quals, subs: subs };
   });
-  return chain.catch(function () { return ""; });
 }
 
 function qRank(txt) {
@@ -549,6 +632,145 @@ function qualityLabel(txt) {
   return n + "p";
 }
 
+// ================================================== watchpvr (Multi-Lang) lane
+
+/** Parse the `const qualities = [...]` JSON array out of a watchpvr page. */
+function parsePvr(html) {
+  var m = String(html || "").match(/(const|let|var)\s+qualities\s*=\s*(\[[\s\S]*?\])\s*;/);
+  if (!m) return [];
+  try {
+    var arr = JSON.parse(m[2].replace(/,\s*([}\]])/g, "$1"));
+    return Array.isArray(arr) ? arr : [];
+  } catch (e0) { return []; }
+}
+
+/** Parse the watchpvr page's subtitle array (fallback when watchbox is down). */
+function parsePvrSubs(html) {
+  var m = String(html || "").match(/(const|let|var)\s+subtitles\s*=\s*(\[[\s\S]*?\])\s*;/);
+  if (!m) return [];
+  try {
+    var arr = JSON.parse(m[2].replace(/,\s*([}\]])/g, "$1"));
+    if (!Array.isArray(arr)) return [];
+    var out = [];
+    arr.forEach(function (s) {
+      if (s && s.url) out.push({ label: s.name || s.html || s.lang || "", url: s.url });
+    });
+    return out;
+  } catch (e0) { return []; }
+}
+
+/** watchpvr source entries carry explicit quality fields ("720p"/"FHD"). */
+function pvrEntryQuality(entry) {
+  var q = qualityLabel(entry && entry.quality);
+  if (q === "Auto") {
+    var f = String((entry && entry.quality) || "").toLowerCase();
+    if (f === "fhd") return "1080p";
+    if (f === "hd") return "720p";
+    q = qualityLabel(entry && entry.html);
+    if (q === "Auto") {
+      var h = String((entry && entry.html) || "").toLowerCase();
+      if (/\bfhd\b/.test(h)) q = "1080p";
+      else if (/\bhd\b/.test(h)) q = "720p";
+    }
+  }
+  return q;
+}
+
+function pvrKind(entry) {
+  var t = String((entry && entry.type) || "").toLowerCase();
+  var u = String((entry && entry.url) || "");
+  if (/\.mpd(\?|$)/i.test(u)) return "DASH";
+  if (t === "dash" || /\.mpd/i.test(u)) return "DASH";
+  if (t === "m3u8" || /\.m3u8/i.test(u)) return "HLS";
+  if (t === "mp4" || /\.mp4/i.test(u)) return "MP4";
+  return "HLS";
+}
+
+/** watchpvr player URL (same signing scheme as watchbox, + tm_id). */
+function nmPvrUrl(d, se, ep, tmdbId) {
+  var s = nmSign(d.id);
+  var year = nmYearOf(d.release.split(",")[1] ? d.release : "");
+  var commaYear = "";
+  if (d.release.indexOf(",") !== -1) commaYear = d.release.split(",")[1] || "";
+  year = commaYear || year;
+  return NM_PVR_URL + "?" + formEncode({
+    id: d.subjectid,
+    se: se || 0,
+    ep: ep || 0,
+    dp: d.dp,
+    na: b64Utf8(d.title),
+    year: year,
+    tm_id: tmdbId == null ? "" : String(tmdbId),
+    ts: s.ts,
+    sig: s.sig,
+    nid: d.id,
+    exten: "",
+    tv: "",
+    token: ""
+  });
+}
+
+/**
+ * v9: the "Multi-Lang Server" lane. watchpvr.php renders a `const qualities`
+ * JSON array of sources carried through cinemaos-relay workers (fully proxied
+ * - the video CDN's 429 rate limiting never applies). The page is served by
+ * load-balanced backends and SOMETIMES lacks the array, so retry up to 3x
+ * with a fresh signature. Rows are ordered HLS -> DASH -> MP4 and labeled
+ * with the site's own source name ("Eos - 1080p", ...).
+ * Returns { rows, subs } - subs = raw SRT entries (also fed to watchbox rows).
+ */
+function nmPvrResolve(d, se, ep, tmdbId, attempts) {
+  var n = attempts || 3;
+  function attempt(i) {
+    return fetchText(nmPvrUrl(d, se, ep, tmdbId), { Referer: NM_PAGE_BASE + "/" }, 12000)
+      .then(function (html) {
+        var entries = parsePvr(html);
+        if (!entries.length) throw new Error("no qualities array");
+        return { html: html, entries: entries };
+      }).catch(function () {
+        if (i + 1 < n) {
+          return (hasTimers() ? new Promise(function (res) { setTimeout(res, 300); }) : Promise.resolve())
+            .then(function () { return attempt(i + 1); });
+        }
+        return { html: "", entries: [] };
+      });
+  }
+  return attempt(0).then(function (r) {
+    var rows = [], seen = {};
+    var order = { HLS: 0, DASH: 1, MP4: 2 };
+    var kept = [];
+    (r.entries || []).forEach(function (entry) {
+      if (!entry || !entry.url) return;
+      var label = String(entry.html || entry.label || "").trim();
+      if (!label) return;
+      if (PVR_BLOCK_RE.test(label)) return;          // dubbed/subbed variant
+      var kind = pvrKind(entry);
+      var q = pvrEntryQuality(entry);
+      if (!q || q === "Auto") return;                // unlabelable -> skip
+      if (seen[entry.url]) return;
+      seen[entry.url] = 1;
+      kept.push({ entry: entry, label: label, kind: kind, q: q });
+    });
+    kept.sort(function (a, b) {
+      var d1 = (order[a.kind] || 9) - (order[b.kind] || 9);
+      if (d1 !== 0) return d1;
+      return qRank(b.q) - qRank(a.q);
+    });
+    kept.forEach(function (k) {
+      var quality = qualityLabel(k.q);
+      if (quality === "Auto") quality = k.q;
+      rows.push({
+        name: "NetMirror | " + k.label,
+        title: k.label + " | " + quality + " | NetMirror " + k.kind + " relay",
+        url: k.entry.url,
+        quality: quality,
+        headers: { Referer: NM_PAGE_BASE + "/" }
+      });
+    });
+    return { rows: rows, subs: parsePvrSubs(r.html) };
+  });
+}
+
 // subtitle track labels seen in watchbox pages -> Nuvio language fields
 // (labels arrive in native scripts - Arabic/Cyrillic/Devanagari/... - so the
 // map matches script ranges too; anything unmatched stays "unk" and never
@@ -599,29 +821,44 @@ function subsFor(subEntries) {
   });
 }
 
-/** One netmirror candidate: detail -> signed watchbox -> stream rows. */
-function nmResolveCandidate(nmId, type, se, ep, meta) {
+/**
+ * One netmirror candidate: detail -> BOTH lanes in PARALLEL -> stream rows.
+ * Lane 1 (primary): watchpvr "Multi-Lang Server" - relay-proxied HLS/DASH
+ * sources, immune to the video CDN 429s. Lane 2: watchbox mp4 selector merged
+ * across all 6 mirror hosts (may 429 at playback on rate-limited IPs).
+ * Subtitles: watchbox SRT tracks preferred, watchpvr tracks as fallback.
+ */
+function nmResolveCandidate(nmId, type, se, ep, meta, tmdbId) {
   return nmDetail(nmId, type).then(function (d) {
     if (!d) return [];
-    return nmWatchboxPage(d, se, ep).then(function (html) {
-      if (!html) return [];
-      var parsed = parseWatchbox(html);
-      if (!parsed.quals.length) return [];
-      var subs = subsFor(parsed.subs);
-      var label = (meta && meta.title ? meta.title : d.title) || "NetMirror";
-      if (meta && meta.year) label += " (" + meta.year + ")";
-      var referer = { Referer: NM_PAGE_BASE + "/" };
+    var label = (meta && meta.title ? meta.title : d.title) || "NetMirror";
+    if (meta && meta.year) label += " (" + meta.year + ")";
+    var referer = { Referer: NM_PAGE_BASE + "/" };
+    return Promise.all([
+      nmPvrResolve(d, se, ep, tmdbId, 3),
+      nmWatchboxAll(d, se, ep, tmdbId)
+    ]).then(function (res) {
+      var pvr = res[0] || { rows: [], subs: [] };
+      var wb = res[1] || { quals: [], subs: [] };
+      var rawSubs = (wb.subs && wb.subs.length) ? wb.subs : (pvr.subs || []);
+      var subs = subsFor(rawSubs);
       var rows = [];
-      parsed.quals.forEach(function (q) {
+      (pvr.rows || []).forEach(function (r) {
+        r.headers = referer;
+        if (subs.length) r.subtitles = subs;
+        rows.push(r);
+      });
+      (wb.quals || []).forEach(function (q) {
         var quality = qualityLabel(q.label);
-        rows.push({
+        var row = {
           name: "NetMirror | " + quality,
           title: label + " | " + quality + " | NetMirror CDN",
           url: q.url,
           quality: quality,
           headers: referer
-        });
-        if (subs.length) rows[rows.length - 1].subtitles = subs;
+        };
+        if (subs.length) row.subtitles = subs;
+        rows.push(row);
       });
       return rows;
     });
@@ -640,7 +877,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
   }
   if (_nmState.inflight[key]) return _nmState.inflight[key];
 
-  console.log("[NetMirror] v8 start " + mediaType + " " + rawId + " S" + season + "E" + episode);
+  console.log("[NetMirror] v9 start " + mediaType + " " + rawId + " S" + season + "E" + episode);
   var type = mediaType === "tv" ? "tv" : "movie";
 
   var run = parseTmdbId(rawId, mediaType, season, episode).then(function (p) {
@@ -674,7 +911,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
         cands.forEach(function (nmId) {
           chain = chain.then(function (acc) {
             if (acc && acc.length) return acc;
-            return nmResolveCandidate(nmId, type, se, ep, meta);
+            return nmResolveCandidate(nmId, type, se, ep, meta, p.tmdbId);
           });
         });
         return chain.then(function (rows) {
