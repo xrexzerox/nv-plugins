@@ -1,5 +1,26 @@
 /**
- * NetMirror - Nuvio provider (v6.0.0)
+ * NetMirror - Nuvio provider (v7.0.0)
+ *
+ * v7.0.0: catalog-id tolerance + mirror restore (2026-09-12).
+ *  - User report: "netmirror never works at all, doesn't give stream". Live
+ *    recon proved the net27.cc API itself healthy, so the break sits in the
+ *    ID the app hands over: Nuvio only normalizes tmdb:/movie:/series:
+ *    prefixes, so asian-catalog fallback rows (asian:pen-<slug>, pen:<slug>,
+ *    asian:pmh-/kh-/ks-/va-/an-...) and raw tt ids reach this provider
+ *    UNPARSED, and the embed API 400s on every one of them -> zero rows on
+ *    exactly the catalogs the user browses.
+ *  - parseTmdbId (v7): tolerant parser - percent-decode, strip tmdb:/movie:/
+ *    series:/tmdb- prefixes and ":s:e" tails (s/e feed season+episode when
+ *    the caller passed none), then three resolution lanes:
+ *      1. digits -> used as-is (fast path, unchanged behavior)
+ *      2. tt... -> TMDB /find (external_source=imdb_id) -> tmdb id
+ *      3. slug (asian:pen-mutiny-2026, pen:mutiny-2026, bare slugs) -> strip
+ *         source prefix + trailing year -> TMDB /search with year, retry
+ *         without -> first hit. Same shape pencuri.js already proved live.
+ *  - Mirror restore: net77.cc + net52.cc are back as fallbacks. They 403 /
+ *    CF-challenge DATACENTER probes (why v6 pruned them) but the device is a
+ *    PH RESIDENTIAL IP - v6's datacenter-based sweep was wrong for it. They
+ *    are fail-soft: worst case two doomed requests after net27 dies.
  *
  * v6.0.0: mirror prune + Tagalog dub lane rewrite (2026-09-11).
  *  - Mirror sweep: net77.cc (403) and net52.cc (CF challenge) are dead;
@@ -39,10 +60,13 @@
  */
 
 var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
-// v6: mirror sweep 2026-09-11 - net77.cc 403, net52.cc CF challenge; net27.cc
-// is the only base still serving /api/embed-tmdb. Settings override still wins.
+// v7: net27.cc first (verified serving); net77/net52 restored as fail-soft
+// fallbacks (403/CF-challenge is a DATACENTER verdict - residential devices
+// may still be served). Settings override still wins.
 var CANDIDATE_BASES = [
-  "https://net27.cc"
+  "https://net27.cc",
+  "https://net77.cc",
+  "https://net52.cc"
 ];
 
 var COMMON_HEADERS = {
@@ -302,11 +326,27 @@ function fetchFromBase(base, tmdbId, mediaType, season, episode, meta) {
     var referer = { Referer: base + "/" };
 
     var seen = {};
+    var seenIdx = {};
+    // API quirk (observed live on Wednesday S1E1): the same URL is listed at
+    // 480p AND 720p. Keeping the first listing strands a sub-720p row in the
+    // post-filter's CAM gate while the 720p entry dies on the URL dedupe ->
+    // zero rows for that title. So: same URL twice = keep ONE row and upgrade
+    // it to the HIGHEST advertised resolution.
+    var Q_ORDER = { "CAM": 0, "Auto": 1, "720p": 2, "1080p": 3, "1440p": 3.5, "4K": 4 };
     function pushStream(u, q) {
       if (!u || typeof u !== "string") return;
       if (!/^https?:\/\//i.test(u)) return;
-      if (seen[u]) return;
+      if (seen[u]) {
+        var at = seenIdx[u];
+        if (at != null && streams[at] && ((Q_ORDER[q] || 0) > (Q_ORDER[streams[at].quality] || 0))) {
+          streams[at].quality = q;
+          streams[at].name = "NetMirror | " + q;
+          streams[at].title = title + " | " + q + " | NetMirror CDN";
+        }
+        return;
+      }
       seen[u] = 1;
+      seenIdx[u] = streams.length;
       streams.push({
         name: "NetMirror | " + q,
         title: title + " | " + q + " | NetMirror CDN",
@@ -346,21 +386,133 @@ function fetchFromBase(base, tmdbId, mediaType, season, episode, meta) {
 }
 
 function cacheKey(tmdbId, mediaType, season, episode) {
-  return (mediaType === "tv" ? "tv" : "movie") + ":" + tmdbId + ":" + (season || 1) + ":" + (episode || 1);
+  return (isTvType(mediaType) ? "tv" : "movie") + ":" + tmdbId + ":" + (season || 1) + ":" + (episode || 1);
+}
+
+// -------------------------------------------------------------- v7 id parser
+
+function isTvType(mediaType) {
+  return /tv|series|show/i.test(String(mediaType || ""));
+}
+
+/** TMDB /find: imdb tt id -> tmdb id. Fail-soft null. */
+function tmdbFindImdb(imdbId, mediaType) {
+  var url = "https://api.themoviedb.org/3/find/" + encodeURIComponent(String(imdbId).toLowerCase()) +
+    "?api_key=" + TMDB_API_KEY + "&external_source=imdb_id";
+  return fetchJson(url, null, 10000).then(function (d) {
+    if (!d) return null;
+    var mv = (d.movie_results || [])[0];
+    var tv = (d.tv_results || [])[0];
+    var hit = isTvType(mediaType) ? (tv || mv) : (mv || tv);
+    return (hit && hit.id) ? String(hit.id) : null;
+  }).catch(function () { return null; });
+}
+
+/** TMDB /search by title (+year first, retry without). Fail-soft null. */
+function tmdbSearchByTitle(title, year, mediaType) {
+  var endpoint = isTvType(mediaType) ? "search/tv" : "search/movie";
+  var yParam = isTvType(mediaType) ? "first_air_date_year" : "year";
+  function attempt(y) {
+    var url = "https://api.themoviedb.org/3/" + endpoint + "?api_key=" + TMDB_API_KEY +
+      "&query=" + encodeURIComponent(title) +
+      (y ? "&" + yParam + "=" + encodeURIComponent(y) : "") +
+      "&page=1&include_adult=false";
+    return fetchJson(url, null, 10000).then(function (d) {
+      if (d && Array.isArray(d.results) && d.results.length && d.results[0] && d.results[0].id) {
+        return String(d.results[0].id);
+      }
+      return null;
+    }).catch(function () { return null; });
+  }
+  if (!year) return attempt("");
+  return attempt(year).then(function (id) {
+    return id || attempt("");
+  });
+}
+
+/**
+ * v7: tolerant catalog-id parser -> { tmdbId, season, episode } or null.
+ * Accepts: bare digits, "109445:1:9" integer tails, tmdb:/movie:/series:/show:
+ * prefixes (also "tmdb-"), asian-catalog fallback ids ("asian:pen-<slug>",
+ * "pen:<slug>", "asian:pmh-/kh-/ks-/va-/ka-/an-...", bare slugs) resolved by
+ * TMDB title search, and raw tt ids resolved by TMDB find. All lanes fail-soft
+ * to null (caller returns []).
+ */
+function parseTmdbId(rawId, mediaType, season, episode) {
+  var raw = String(rawId == null ? "" : rawId).trim();
+  if (!raw) return Promise.resolve(null);
+  try { raw = decodeURIComponent(raw); } catch (e0) {}
+  raw = raw.split("#")[0].split("?")[0].replace(/\.json$/i, "").trim();
+
+  var s = (season != null && season !== "" ? parseInt(season, 10) || null : null);
+  var e = (episode != null && episode !== "" ? parseInt(episode, 10) || null : null);
+
+  // strip source prefixes (loop handles chained shapes like "tmdb:movie:...")
+  var prev = null;
+  while (prev !== raw) {
+    prev = raw;
+    raw = raw.replace(/^(tmdb|movie|series|show|asian|pen|pmh|kh|ks|va|ka|an|kisskh|kissasian|viewasian|animotv|anikoto|pencuri)[:/]/i, "");
+  }
+  raw = raw.replace(/^tmdb-/i, "");
+
+  // strip ":s:e" / "/s/e" tails (pure-integer last two parts). The tail is
+  // ALWAYS removed from the core id (it is id syntax, not title text); the
+  // numbers only ADOPT season/episode when the caller passed none.
+  var parts = raw.split(/[:/]/);
+  if (parts.length > 2) {
+    var t1 = parts[parts.length - 2], t2 = parts[parts.length - 1];
+    var n1 = parseInt(t1, 10), n2 = parseInt(t2, 10);
+    if (n1 > 0 && n2 > 0 && String(n1) === t1 && String(n2) === t2) {
+      s = s || n1;
+      e = e || n2;
+      parts = parts.slice(0, -2);
+    }
+  }
+  var core = parts.join(":").trim();
+  if (!core) return Promise.resolve(null);
+
+  // lane 1: digits (fast path)
+  if (/^\d+$/.test(core)) {
+    return Promise.resolve({ tmdbId: core, season: s, episode: e });
+  }
+
+  // lane 2: tt imdb id
+  if (/^tt\d+$/i.test(core)) {
+    return tmdbFindImdb(core, mediaType).then(function (id) {
+      return id ? { tmdbId: id, season: s, episode: e } : null;
+    });
+  }
+
+  // lane 3: slug -> title + year -> TMDB search
+  var srcPrefix = core.match(/^(pen|pmh|kh|ks|va|ka|an)-(?=[a-z0-9])/i);
+  if (srcPrefix) core = core.slice(srcPrefix[0].length);
+  var title = core.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!title) return Promise.resolve(null);
+  var year = "";
+  var ym = title.match(/[\s]((?:19|20)\d{2})$/);
+  if (ym) {
+    year = ym[1];
+    title = title.slice(0, ym.index).trim();
+  }
+  if (!title) return Promise.resolve(null);
+  return tmdbSearchByTitle(title, year, mediaType).then(function (id) {
+    return id ? { tmdbId: id, season: s, episode: e } : null;
+  });
 }
 
 function getStreams(tmdbId, mediaType, season, episode) {
-  try { tmdbId = String(tmdbId); } catch (e) { tmdbId = ""; }
-  if (!tmdbId) return Promise.resolve([]);
+  var rawId = "";
+  try { rawId = String(tmdbId == null ? "" : tmdbId); } catch (e0) { rawId = ""; }
+  if (!rawId) return Promise.resolve([]);
 
-  var key = cacheKey(tmdbId, mediaType, season, episode);
+  var key = cacheKey(rawId, mediaType, season, episode);
   var hit = _nmState.cache[key];
   if (hit && Date.now() - hit.ts < CACHE_TTL) {
     return Promise.resolve(hit.streams);
   }
   if (_nmState.inflight[key]) return _nmState.inflight[key];
 
-  console.log("[NetMirror] start " + mediaType + " " + tmdbId + " S" + season + "E" + episode);
+  console.log("[NetMirror] start " + mediaType + " " + rawId + " S" + season + "E" + episode);
   var customBase = settings().baseUrl;
   var bases = (customBase && /^https?:\/\//i.test(String(customBase)))
     ? [String(customBase).replace(/\/+$/, "")].concat(CANDIDATE_BASES)
@@ -369,30 +521,42 @@ function getStreams(tmdbId, mediaType, season, episode) {
     bases = [_nmState.goodBase].concat(bases.filter(function (b) { return b !== _nmState.goodBase; }));
   }
 
-  var run = tmdbMeta(tmdbId, mediaType).then(function (meta) {
-    var chain = Promise.resolve([]);
-    bases.forEach(function (base, idx) {
-      chain = chain.then(function (existing) {
-        if (existing && existing.length) return existing;
-        return (idx > 0 ? throttleSlot(BASE_GAP) : Promise.resolve())
-          .then(function () { return fetchFromBase(base, tmdbId, mediaType, season, episode, meta); });
-      });
-    });
-    return chain.then(function (streams) {
-      // v6: Tagalog dub lane via the variants API (fail-soft, throttled).
-      // Runs even when the main lane found nothing - a dub can exist while
-      // the default audio does not. Cached together with the main rows.
-      var dubBase = (_nmState.goodBase && CANDIDATE_BASES.indexOf(_nmState.goodBase) !== -1)
-        ? _nmState.goodBase
-        : CANDIDATE_BASES[0];
-      return tagalogDubVariants(dubBase, tmdbId, mediaType, season, episode, meta)
-        .then(function (dubs) {
-          var all = streams.concat(dubs);
-          console.log("[NetMirror] returning " + all.length + " stream(s)" +
-            (dubs.length ? " (incl. " + dubs.length + " Tagalog dub)" : ""));
-          if (all.length) _nmState.cache[key] = { ts: Date.now(), streams: all };
-          return all;
+  var run = parseTmdbId(rawId, mediaType, season, episode).then(function (p) {
+    // v7: unresolvable ids (garbage prefixes etc.) -> fail-soft, no doomed calls
+    if (!p) {
+      console.log("[NetMirror] id unresolvable: " + rawId);
+      return [];
+    }
+    var resolvedId = p.tmdbId;
+    // season/episode recovered from a decorated id tail apply only when the
+    // caller passed none (movies; or legacy 3-arg calls)
+    var se = (season != null && season !== "") ? season : (p.season || 1);
+    var ep = (episode != null && episode !== "") ? episode : (p.episode || 1);
+    return tmdbMeta(resolvedId, mediaType).then(function (meta) {
+      var chain = Promise.resolve([]);
+      bases.forEach(function (base, idx) {
+        chain = chain.then(function (existing) {
+          if (existing && existing.length) return existing;
+          return (idx > 0 ? throttleSlot(BASE_GAP) : Promise.resolve())
+            .then(function () { return fetchFromBase(base, resolvedId, mediaType, se, ep, meta); });
         });
+      });
+      return chain.then(function (streams) {
+        // v6: Tagalog dub lane via the variants API (fail-soft, throttled).
+        // Runs even when the main lane found nothing - a dub can exist while
+        // the default audio does not. Cached together with the main rows.
+        var dubBase = (_nmState.goodBase && CANDIDATE_BASES.indexOf(_nmState.goodBase) !== -1)
+          ? _nmState.goodBase
+          : CANDIDATE_BASES[0];
+        return tagalogDubVariants(dubBase, resolvedId, mediaType, se, ep, meta)
+          .then(function (dubs) {
+            var all = streams.concat(dubs);
+            console.log("[NetMirror] returning " + all.length + " stream(s)" +
+              (dubs.length ? " (incl. " + dubs.length + " Tagalog dub)" : ""));
+            if (all.length) _nmState.cache[key] = { ts: Date.now(), streams: all };
+            return all;
+          });
+      });
     });
   }).catch(function (error) {
     console.log("[NetMirror] failed: " + (error && error.message ? error.message : error));

@@ -213,3 +213,25 @@ Optional env/vars: `TMDB_API_KEY`, `PINOY_SITE`, `KISSASIAN_SITE`,
 - `node ../scripts/verify-asian-catalog-workerd.mjs` — boots the actual
   `worker-bundle.js` in miniflare/workerd with canned upstreams and asserts
   health (8 sources up), manifest (21 catalogs) and catalog endpoints.
+
+## v5.6.0 — cinejoy /g relay (repo 4.18.0)
+
+New route: **`POST /cjg`**. cinejoy's API (`api.shegu.st/g`) speaks raw
+octet-stream on both legs, which NuvioMobile's string-only plugin bridge
+cannot send or decode (bodies go through `toString()`/UTF-8, responses are
+UTF-8-decoded text). The route closes that gap:
+
+1. cinejoy.js v1.5.0 sends the encrypted request token as **base64url text**
+   (produced locally from the `enc-cinejoy` payload).
+2. The worker decodes it, performs the real binary `POST https://api.shegu.st/g`
+   (fixed upstream — no open proxy), and returns the response bytes as
+   base64url text inside `{ ok, status, b64 }`.
+3. The provider decodes the bytes and continues into `dec-cinejoy` exactly as
+   on runtimes with native binary fetch (Node / Cloudflare / NuvioTVSmart).
+
+Only `api.shegu.st/g` is ever called, bodies are capped at 16 KB, garbage
+bodies get 400. The addon catalog layout (28 catalogs) is unchanged from the
+user-validated 5.5.0 set. **User action**: redeploy `worker-bundle.js`
+(dashboard paste or `wrangler deploy`), then in the Nuvio plugins screen open
+Cinejoy → settings and paste your worker base URL
+(`https://<your-worker>.workers.dev`) as the "Cinejoy relay base URL".

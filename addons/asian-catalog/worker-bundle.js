@@ -1,4 +1,3 @@
-/* asian-catalog worker-bundle v5.5.0 (2026-09-11): catalog layout RESTORED to the 28-catalog set the user validated on 4.15.0 (reverts the 4.16.0 rebuild's 33-catalog regression: Pencuri Movies + Series sections are back, the 7 extra Pinoy boards the user had removed are gone again); paired pencuri.js v1.4.0 now attaches ENGLISH SUBTITLES (opensubtitles-v3) to every Pencuri stream row. /meta for asian:pen- and asian:pmh- ids unchanged */
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -30,7 +29,7 @@ var require_core = __commonJS({
   "core.js"(exports) {
     (function(global) {
       "use strict";
-      var VERSION = "5.5.0";
+      var VERSION = "5.6.0";
       var ADDON_ID = "community.asian.catalog";
       var ADDON_NAME = "Asian Catalog";
       var PINOY_SITE_DEFAULT = "https://pinoymovieshub.win";
@@ -2499,6 +2498,65 @@ var require_core = __commonJS({
         }).join("");
         return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + ADDON_NAME + '</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 16px;color:#eee;background:#14141b}a{color:#7ab8ff}table{border-collapse:collapse;width:100%}td,th{border:1px solid #333;padding:8px;text-align:left;font-size:14px}code{color:#9ef}h2{margin-top:28px}</style></head><body><h1>' + ADDON_NAME + " <small>v" + VERSION + `</small></h1><p>Stremio-protocol catalog addon for Nuvio \u2014 mirrors each site's real sections:</p><ul><li><b>Pinoy Movies Hub</b> \u2014 <a href="` + cfg.pinoySite + '">' + cfg.pinoySite.replace(/^https:\/\//, "") + '</a> (New Releases, Recently Added Movies, Series, Featured, Coming Soon, 17 genre sections)</li><li><b>KissAsian</b> \u2014 <a href="' + cfg.kissasianSite + '">' + cfg.kissasianSite.replace(/^https:\/\//, "") + '</a> (Hot Series Update, Latest Release, Recommendation genres)</li><li><b>ViewAsian</b> \u2014 <a href="' + cfg.viewasianSite + '">' + cfg.viewasianSite.replace(/^https:\/\//, "") + "</a> (Recently Drama, Movie and Kshow)</li><li><b>KissKH</b> \u2014 JSON API via " + cfg.kisskhHosts.join(" / ") + ' (Latest Update, Top K/C-Drama, Hollywood, Anime, Upcoming; auto-rescued from TMDB lists when every mirror is CF-blocked)</li><li><b>AnimeTVSlash</b> \u2014 <a href="' + cfg.animoSite + '">' + cfg.animoSite.replace(/^https:\/\//, "") + '</a> (Latest Release)</li><li><b>Pencuri</b> \u2014 <a href="' + cfg.pencuriSite + '">' + cfg.pencuriSite.replace(/^https:\/\//, "") + '</a> (Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb)</li><li><b>Anikoto API</b> \u2014 <a href="' + cfg.anikotoApi + '">' + cfg.anikotoApi.replace(/^https:\/\//, "") + "</a> (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed; rows carry <code>mal:</code>/<code>anilist:</code>/<code>anikoto:</code> ids for the paired miruro plugin)</li></ul><p>Add this manifest URL in Nuvio (Settings &rarr; Addons): <b>" + (cfg.__selfUrl || "https://your-deployment") + '/manifest.json</b></p><p>Health probe: <a href="/health"><code>/health</code></a> (per-source status, latency, hints)</p><h2>Catalogs</h2><table><tr><th>Name</th><th>Type</th><th>Source</th><th>Endpoint</th></tr>' + rows + "</table><h2>Search examples</h2><p><code>/catalog/movie/pinoy-movies/search=hello love again.json</code><br><code>/catalog/series/asian-series/search=queen of tears.json</code><br><code>/catalog/series/kisskh-latest/search=queen of tears.json</code><br><code>/catalog/movie/pencuri-movies/search=moana.json</code><br><code>/catalog/series/animo-latest/search=one piece.json</code></p><h2>Genre / section chips</h2><p><code>/catalog/series/asian-series-genre/genre=Romance.json</code></p><p>Pair with the <b>PinoyMoviesHub</b>, <b>AsianHub</b>, <b>AnimeTVSlash</b> and <b>Pencuri</b> Nuvio plugins (xrexzerox/nv-plugins) for playable streams.</p></body></html>";
       }
+      var CJ_G_TARGET = "https://api.shegu.st/g";
+      var CJ_MAX_TOKEN_BYTES = 16384;
+      function b64urlDecodeToU8(text) {
+        var std = String(text || "").replace(/-/g, "+").replace(/_/g, "/");
+        while (std.length % 4)
+          std += "=";
+        var bin = atob(std);
+        var u8 = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++)
+          u8[i] = bin.charCodeAt(i) & 255;
+        return u8;
+      }
+      function u8ToB64url(u8) {
+        var bin = "";
+        var CHUNK = 32768;
+        for (var i = 0; i < u8.length; i += CHUNK) {
+          bin += String.fromCharCode.apply(null, u8.subarray(i, Math.min(i + CHUNK, u8.length)));
+        }
+        return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+      }
+      function cinejoyRelay(request) {
+        if (request.method !== "POST") {
+          return Promise.resolve(json({ ok: false, error: "POST required" }, 405, 0));
+        }
+        return request.text().then(function(text) {
+          var bytes;
+          try {
+            bytes = b64urlDecodeToU8(text.trim());
+          } catch (e) {
+            return json({ ok: false, error: "body is not base64url" }, 400, 0);
+          }
+          if (!bytes.length || bytes.length > CJ_MAX_TOKEN_BYTES) {
+            return json({ ok: false, error: "token size out of range" }, 400, 0);
+          }
+          return fetch(CJ_G_TARGET, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/octet-stream",
+              "Origin": "https://cinejoy.to",
+              "Referer": "https://cinejoy.to/",
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "Accept": "*/*"
+            },
+            body: bytes
+          }).then(function(res) {
+            return res.arrayBuffer().then(function(ab) {
+              return json({
+                ok: res.ok,
+                status: res.status,
+                b64: u8ToB64url(new Uint8Array(ab))
+              }, 200, 0);
+            });
+          }).catch(function(err) {
+            return json({ ok: false, error: String(err && err.message || err) }, 502, 0);
+          });
+        }).catch(function(err) {
+          return json({ ok: false, error: String(err && err.message || err) }, 500, 0);
+        });
+      }
       function handle(urlString, env) {
         var cfg = makeConfig(env || {});
         cfg.__selfUrl = env && env.__selfUrl || "";
@@ -2570,6 +2628,7 @@ var require_core = __commonJS({
         makeConfig,
         manifest,
         handle,
+        cinejoyRelay,
         resetCaches,
         catalogDefinitions,
         // test hooks
@@ -2623,10 +2682,35 @@ var worker_default = {
         status: 204,
         headers: {
           "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, OPTIONS",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
           "Access-Control-Allow-Headers": "*",
           "Access-Control-Max-Age": "86400"
         }
+      });
+    }
+    if (request.method === "POST") {
+      let path = "";
+      try {
+        path = new URL(request.url).pathname.replace(/\/+$/, "") || "/";
+      } catch (e) {
+        path = "/";
+      }
+      if (path === "/cjg") {
+        try {
+          const relayResponse = await Core.cinejoyRelay(request);
+          const newHeaders = new Headers(relayResponse.headers);
+          newHeaders.set("Access-Control-Allow-Origin", "*");
+          return new Response(relayResponse.body, { status: relayResponse.status, headers: newHeaders });
+        } catch (err) {
+          return new Response(JSON.stringify({ ok: false, error: String(err && err.message || err) }), {
+            status: 500,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+          });
+        }
+      }
+      return new Response(JSON.stringify({ error: "method not allowed" }), {
+        status: 405,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
       });
     }
     if (request.method !== "GET" && request.method !== "HEAD") {

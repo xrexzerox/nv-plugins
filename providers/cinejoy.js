@@ -1,6 +1,26 @@
 /**
  * cinejoy - Built from src/cinejoy/ (run bun build.js to regenerate)
  *
+ * v1.5.0 (relay lane for NuvioMobile, 2026-09-12):
+ *  User report: "cinejoy never works at all, doesn't give stream". Root cause
+ *  is the TRANSPORT, not the chain (re-verified live: servers -> enc-cinejoy
+ *  -> binary POST api.shegu.st/g -> dec-cinejoy all healthy; plain query
+ *  returns only a {"status":"ok"} ACK, and /g 404s every text/base64 body).
+ *  NuvioMobile's plugin bridge is string-only: request bodies go through
+ *  toString()/UTF-8 ("[object Uint8Array]" or corrupted bytes >127) and the
+ *  response has no arrayBuffer, so BOTH binary legs die there. v1.5.0 adds a
+ *  text-safe relay lane and a lane memo:
+ *    1. direct binary /g  - Node / Cloudflare / NuvioTVSmart (shim base64) [unchanged]
+ *    2. direct latin-1 string /g - legacy string-only runtimes (unchanged)
+ *    3. NEW relay lane - POST {cjRelay}/cjg with the token as base64url TEXT;
+ *       the asian-catalog CF worker (v5.6.0+, /cjg route) decodes it, POSTs
+ *       the real octet-stream bytes to shegu, and returns the response bytes
+ *       as base64url text. Survives the string bridge on Mobile.
+ *  The first server request tries direct first and memoizes the winning lane
+ *  in __CINEJOY_G_LANE__, so Mobile never repeats its two doomed direct
+ *  attempts per server. Configure the worker base in the provider settings
+ *  ("Cinejoy relay base URL"); without it, Mobile stays empty by design.
+ *
  * v1.4.0 (device binary transport):
  *  The enc-cinejoy -> POST /g -> dec-cinejoy chain is BINARY on both legs
  *  (verified live: api.shegu.st/g accepts ONLY raw octet-stream bodies -
@@ -14,7 +34,7 @@
  *     bytes. This provider needs no TV-specific code for that path.
  *   - NuvioMobile: the bridge stringifies bodies (no binary support), the
  *     /g request cannot succeed, and the per-server try/catch fail-softs to
- *     zero results (unchanged from before - cinejoy never worked there).
+ *     zero results - v1.5.0's relay lane is the fix for that runtime.
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
@@ -617,17 +637,30 @@ function wyzieKeyField() {
 
 // src/_shared/sources/cinejoy.js
 var B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+// v1.5.0 FIX: the old decoder ran every 4-char group through B64.indexOf and
+// masked with & 63, so '=' padding (-1 -> 63) injected garbage tail bytes
+// into every token whose length % 3 != 0 (184-byte live token -> 186 bytes ->
+// shegu /g 404). That silently broke BOTH transports for most titles - the
+// real "cinejoy never gives stream" root cause on top of the Mobile gap.
+// Padding is now stripped and only full groups decode, with the remainder
+// handled bit-exact (2 chars -> 1 byte, 3 chars -> 2 bytes).
 function b64urlDecodeToBytes(s) {
-  let std = String(s || "").replace(/-/g, "+").replace(/_/g, "/");
-  while (std.length % 4 !== 0)
-    std += "=";
+  const std = String(s || "").replace(/-/g, "+").replace(/_/g, "/").replace(/=+$/, "");
   const out = [];
-  for (let i = 0; i < std.length; i += 4) {
-    const n = B64.indexOf(std[i]) << 18 | B64.indexOf(std[i + 1]) << 12 | (B64.indexOf(std[i + 2]) & 63) << 6 | B64.indexOf(std[i + 3]) & 63;
-    out.push(n >> 16 & 255, n >> 8 & 255, n & 255);
+  const n = std.length;
+  let i = 0;
+  for (; i + 4 <= n; i += 4) {
+    const v = B64.indexOf(std[i]) << 18 | B64.indexOf(std[i + 1]) << 12 | B64.indexOf(std[i + 2]) << 6 | B64.indexOf(std[i + 3]);
+    out.push(v >> 16 & 255, v >> 8 & 255, v & 255);
   }
-  while (out.length && out[out.length - 1] === 0 && std.slice(-2) !== "==")
-    break;
+  const rem = n - i;
+  if (rem === 2) {
+    const v = B64.indexOf(std[i]) << 18 | B64.indexOf(std[i + 1]) << 12;
+    out.push(v >> 16 & 255);
+  } else if (rem === 3) {
+    const v = B64.indexOf(std[i]) << 18 | B64.indexOf(std[i + 1]) << 12 | B64.indexOf(std[i + 2]) << 6;
+    out.push(v >> 16 & 255, v >> 8 & 255);
+  }
   return out;
 }
 function b64urlEncodeNoPad(bytes) {
@@ -641,6 +674,103 @@ function b64urlEncodeNoPad(bytes) {
   }
   return out.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
+// src/cinejoy/relay.js (v1.5.0)
+var __CJ_G = (typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this);
+var __cjLane = __CJ_G.__CINEJOY_G_LANE__ || (__CJ_G.__CINEJOY_G_LANE__ = { mode: "" }); // "" | "direct" | "relay"
+function relayBase() {
+  try {
+    var s = (typeof globalThis !== "undefined" && globalThis.SCRAPER_SETTINGS) || (typeof global !== "undefined" && global.SCRAPER_SETTINGS) || {};
+    var r = String(s.cjRelay || "").trim().replace(/\/+$/, "");
+    return /^https?:\/\//i.test(r) ? r : "";
+  } catch (e) {
+    return "";
+  }
+}
+function readGBytes(res) {
+  if (res.arrayBuffer) {
+    return res.arrayBuffer().then(function(ab) {
+      const u8 = new Uint8Array(ab);
+      const out = [];
+      for (let i = 0; i < u8.length; i++) out.push(u8[i] & 255);
+      return out;
+    });
+  }
+  return res.text().then(function(t) {
+    const out = [];
+    for (let i = 0; i < t.length; i++) out.push(t.charCodeAt(i) & 255);
+    return out;
+  });
+}
+function gLaneDirectBytes(bodyBytes, headers) {
+  return fetch(CINEJOY_API + "/g", {
+    method: "POST",
+    headers: Object.assign({}, headers, { "Content-Type": "application/octet-stream", Origin: CINEJOY_BASE }),
+    body: bodyBytes
+  }).then(function(res) {
+    if (!res || !res.ok) throw new Error("g HTTP " + (res ? res.status : "?"));
+    return readGBytes(res);
+  }).then(function(bytes) {
+    __cjLane.mode = "direct";
+    return bytes;
+  });
+}
+function gLaneDirectString(bodyBytes, headers) {
+  let binBody = "";
+  for (let i = 0; i < bodyBytes.length; i++) binBody += String.fromCharCode(bodyBytes[i] & 255);
+  return fetch(CINEJOY_API + "/g", {
+    method: "POST",
+    headers: Object.assign({}, headers, { "Content-Type": "application/octet-stream", Origin: CINEJOY_BASE }),
+    body: binBody
+  }).then(function(res) {
+    if (!res || !res.ok) throw new Error("g HTTP " + (res ? res.status : "?"));
+    return readGBytes(res);
+  }).then(function(bytes) {
+    __cjLane.mode = "direct";
+    return bytes;
+  });
+}
+function gLaneRelay(bodyBytes) {
+  const base = relayBase();
+  if (!base) return Promise.reject(new Error("no relay configured"));
+  return fetch(base + "/cjg", {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: b64urlEncodeNoPad(bodyBytes)
+  }).then(function(res) {
+    if (!res || !res.ok) throw new Error("relay HTTP " + (res ? res.status : "?"));
+    return res.json();
+  }).then(function(j) {
+    const packed = (j && (j.b64 || (j.result && j.result.b64))) || "";
+    if (!j || !j.ok || !packed) throw new Error("relay payload");
+    const bytes = b64urlDecodeToBytes(packed);
+    const out = [];
+    for (let i = 0; i < bytes.length; i++) out.push(bytes[i] & 255);
+    return out;
+  }).then(function(bytes) {
+    __cjLane.mode = "relay";
+    return bytes;
+  });
+}
+/**
+ * POST the encrypted request token to shegu /g, return raw response bytes
+ * (plain array) or null when every configured lane fails. Lane order honors
+ * the memo so Mobile skips its doomed direct attempts after the first server.
+ */
+function gRequest(bodyBytes, headers) {
+  const lanes = __cjLane.mode === "relay"
+    ? [gLaneRelay]
+    : [gLaneDirectBytes, gLaneDirectString, gLaneRelay];
+  let chain = Promise.reject(new Error("start"));
+  lanes.forEach(function(lane) {
+    chain = chain.catch(function() {
+      return lane(bodyBytes, headers);
+    });
+  });
+  return chain.catch(function() {
+    return null;
+  });
+}
+
 function enabled() {
   try {
     const s = globalThis.SCRAPER_SETTINGS || {};
@@ -648,6 +778,75 @@ function enabled() {
   } catch (e) {
     return true;
   }
+}
+function scrapeServer(srv, ctx, headers, type) {
+  return __async(this, null, function* () {
+    // v1.5.0: one server lane, isolated (any failure -> []). Extracted from
+    // scrape() so servers can run in PARALLEL waves - the sequential loop
+    // blew getStreams' 20s budget (enc/g/dec at 3-5s per server x 6) and
+    // returned zero rows on slow networks - the device's other "never
+    // streams" symptom.
+    const out = [];
+    try {
+      const isTv = ctx.isTv;
+      const name = srv && srv.name || srv;
+      let target = CINEJOY_API + "/?title=" + encodeURIComponent(ctx.title) + "&type=" + type + "&year=" + (ctx.year || "") + "&imdb=" + (ctx.imdbId || "") + "&tmdb=" + (ctx.tmdbId || "") + "&server=" + encodeURIComponent(name);
+      if (isTv)
+        target += "&season=" + ctx.season + "&episode=" + ctx.episode;
+      const encJson = JSON.parse(
+        yield fetchText(MULTI_DECRYPT_API + "/enc-cinejoy?url=" + encodeURIComponent(target), {}, 15e3)
+      );
+      const result = encJson && encJson.result || encJson;
+      if (!result || !result.data)
+        return out;
+      const bodyBytes = b64urlDecodeToBytes(result.data);
+      // v1.5.0: the request/response bodies are BINARY. gRequest runs the
+      // direct octet-stream lanes (Node/CF/TVSmart) and, when the runtime
+      // cannot send binary at all (NuvioMobile's string bridge), the
+      // base64url text relay on the user's asian-catalog worker (/cjg).
+      // Each lane is memoized in __CINEJOY_G_LANE__ after the first hit.
+      let gBody = bodyBytes;
+      if (!(typeof Uint8Array !== "undefined" && bodyBytes instanceof Uint8Array)) {
+        gBody = new Uint8Array(bodyBytes.length);
+        for (let i = 0; i < bodyBytes.length; i++) gBody[i] = bodyBytes[i] & 255;
+      }
+      const gBuf = yield gRequest(gBody, headers);
+      if (!gBuf)
+        return out;
+      const payload = b64urlEncodeNoPad(gBuf);
+      const decJson = yield postJson(
+        MULTI_DECRYPT_API + "/dec-cinejoy",
+        { text: payload, state: result.state },
+        {},
+        15e3
+      );
+      const streams = ((decJson && decJson.result || {}).data || {}).stream;
+      if (!streams)
+        return out;
+      const list = Array.isArray(streams) ? streams : [streams];
+      list.forEach(function(st) {
+        if (!st)
+          return;
+        if (st.playlist) {
+          const s = makeStream("Cinejoy", "Cinejoy - " + (st.id || name) + " [HLS]", st.playlist, "1080p", { Referer: CINEJOY_BASE + "/" }, []);
+          if (s)
+            out.push(s);
+        }
+        const quals = st.qualities || st.files || {};
+        Object.keys(quals).forEach(function(k) {
+          const u = quals[k];
+          if (!u || String(u).indexOf("https") !== 0)
+            return;
+          const s = makeStream("Cinejoy", "Cinejoy - " + (st.id || name) + " " + k, u, parseQuality(k), { Referer: CINEJOY_BASE + "/" }, []);
+          if (s)
+            out.push(s);
+        });
+      });
+    } catch (e) {
+      return out;
+    }
+    return out;
+  });
 }
 function scrape(ctx) {
   return __async(this, null, function* () {
@@ -668,98 +867,21 @@ function scrape(ctx) {
       const servers = serversJson && serversJson.servers || [];
       if (!servers.length)
         return [];
+      // v1.5.0: parallel waves of 3 servers. If the first wave yields rows,
+      // the second is skipped - typical path finishes in one wave's latency
+      // (fits the 20s getStreams budget with margin; the old sequential loop
+      // did not).
       const out = [];
-      for (const srv of servers.slice(0, 6)) {
-        try {
-          const name = srv && srv.name || srv;
-          let target = CINEJOY_API + "/?title=" + encodeURIComponent(ctx.title) + "&type=" + type + "&year=" + (ctx.year || "") + "&imdb=" + (ctx.imdbId || "") + "&tmdb=" + (ctx.tmdbId || "") + "&server=" + encodeURIComponent(name);
-          if (isTv)
-            target += "&season=" + ctx.season + "&episode=" + ctx.episode;
-          const encJson = JSON.parse(
-            yield fetchText(MULTI_DECRYPT_API + "/enc-cinejoy?url=" + encodeURIComponent(target), {}, 15e3)
-          );
-          const result = encJson && encJson.result || encJson;
-          if (!result || !result.data)
-            continue;
-          const bodyBytes = b64urlDecodeToBytes(result.data);
-          // The request/response bodies are BINARY. A JS string body gets
-          // UTF-8 encoded by fetch (corrupting bytes >127), which 404s. Send
-          // a typed array: spec-compliant runtimes (Node/CF) transmit it raw;
-          // NuvioTVSmart's shim base64-encodes it for the string bridge and
-          // the service decodes at the socket; Mobile cannot send binary at
-          // all (the bridge stringifies) and the failure fail-softs below.
-          let gBody = bodyBytes;
-          if (!(typeof Uint8Array !== "undefined" && bodyBytes instanceof Uint8Array)) {
-            gBody = new Uint8Array(bodyBytes.length);
-            for (let i = 0; i < bodyBytes.length; i++) gBody[i] = bodyBytes[i] & 255;
-          }
-          const gRes = yield fetch(CINEJOY_API + "/g", {
-            method: "POST",
-            headers: Object.assign({}, headers, { "Content-Type": "application/octet-stream", Origin: CINEJOY_BASE }),
-            body: gBody
-          }).catch(function (e) {
-            // runtimes without Uint8Array body support: fall back to binary string
-            let binBody = "";
-            for (let i = 0; i < bodyBytes.length; i++)
-              binBody += String.fromCharCode(bodyBytes[i] & 255);
-            return fetch(CINEJOY_API + "/g", {
-              method: "POST",
-              headers: Object.assign({}, headers, { "Content-Type": "application/octet-stream", Origin: CINEJOY_BASE }),
-              body: binBody
-            });
-          });
-          if (!gRes || !gRes.ok)
-            continue;
-          let gBuf;
-          if (gRes.arrayBuffer) {
-            // Preferred: exact bytes (Node/CF native; TVSmart shim decodes its
-            // base64 transport marker; both preserve bytes >127).
-            const ab = yield gRes.arrayBuffer();
-            gBuf = [];
-            const u8 = new Uint8Array(ab);
-            for (let i = 0; i < u8.length; i++) gBuf.push(u8[i] & 255);
-          } else {
-            // Last resort (string-only runtimes): latin-1 round-trip. Bytes
-            // >=128 are already lost to UTF-8 decode on those runtimes.
-            const gText = yield gRes.text();
-            gBuf = [];
-            for (let i = 0; i < gText.length; i++)
-              gBuf.push(gText.charCodeAt(i) & 255);
-          }
-          const payload = b64urlEncodeNoPad(gBuf);
-          const decJson = yield postJson(
-            MULTI_DECRYPT_API + "/dec-cinejoy",
-            { text: payload, state: result.state },
-            {},
-            15e3
-          );
-          const streams = ((decJson && decJson.result || {}).data || {}).stream;
-          if (!streams)
-            continue;
-          const list = Array.isArray(streams) ? streams : [streams];
-          list.forEach(function(st) {
-            if (!st)
-              return;
-            if (st.playlist) {
-              const s = makeStream("Cinejoy", "Cinejoy - " + (st.id || name) + " [HLS]", st.playlist, "1080p", { Referer: CINEJOY_BASE + "/" }, []);
-              if (s)
-                out.push(s);
-            }
-            const quals = st.qualities || st.files || {};
-            Object.keys(quals).forEach(function(k) {
-              const u = quals[k];
-              if (!u || String(u).indexOf("https") !== 0)
-                return;
-              const s = makeStream("Cinejoy", "Cinejoy - " + (st.id || name) + " " + k, u, parseQuality(k), { Referer: CINEJOY_BASE + "/" }, []);
-              if (s)
-                out.push(s);
-            });
-            (st.captions || []).forEach(function() {
-            });
-          });
-        } catch (e) {
-          continue;
-        }
+      const wave1 = servers.slice(0, 3);
+      const wave2 = servers.slice(3, 6);
+      const runWave = (list) => Promise.all(list.map(function(srv) {
+        return scrapeServer(srv, ctx, headers, type).catch(function() { return []; });
+      }));
+      const r1 = yield runWave(wave1);
+      r1.forEach(function(arr) { out.push.apply(out, arr); });
+      if (!out.length && wave2.length) {
+        const r2 = yield runWave(wave2);
+        r2.forEach(function(arr) { out.push.apply(out, arr); });
       }
       return out;
     } catch (e) {
@@ -784,7 +906,17 @@ function getStreams(tmdbId, mediaType, season, episode) {
 }
 function onSettings() {
   return __async(this, null, function* () {
-    return [wyzieKeyField()];
+    return [
+      {
+        key: "cjRelay",
+        title: "Cinejoy relay base URL (Cloudflare Worker)",
+        label: "Cinejoy relay base URL",
+        type: "text",
+        default: "",
+        description: "NuvioMobile cannot send the binary request cinejoy.to's API needs. Paste your asian-catalog worker base URL (https://<your-worker>.workers.dev) running the v5.6.0+ bundle with the /cjg relay route. Leave blank on NuvioTV/PC - the direct lane works there without a relay."
+      },
+      wyzieKeyField()
+    ];
   });
 }
 module.exports = { getStreams, onSettings };

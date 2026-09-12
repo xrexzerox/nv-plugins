@@ -208,7 +208,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '5.5.0';
+  var VERSION = '5.6.0';
   var ADDON_ID = 'community.asian.catalog';
   var ADDON_NAME = 'Asian Catalog';
 
@@ -2464,7 +2464,7 @@
       id: ADDON_ID,
       version: VERSION,
       name: ADDON_NAME,
-      description: 'Asian catalogs mirroring each site\'s real sections: pinoymovieshub.win (Movies / Series), kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). v5.0.0: anime rows carry ANIME ids — mal:/anilist:/anikoto: — straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.3.0: pmh/pen rows open real detail-page meta (episodes included) so no row ever 404s on details. v5.4.0: the Pencuri country and feature boards are back. Other rows carry full TMDB metadata or source-scoped asian: fallback ids. v5.5.0: catalog layout restored to the 28-catalog set validated on 4.15.0; the paired pencuri.js v1.4.0 adds English subtitles to every stream row.',
+      description: 'Asian catalogs mirroring each site\'s real sections: pinoymovieshub.win (Movies / Series), kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). v5.0.0: anime rows carry ANIME ids — mal:/anilist:/anikoto: — straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.3.0: pmh/pen rows open real detail-page meta (episodes included) so no row ever 404s on details. v5.4.0: the Pencuri country and feature boards are back. Other rows carry full TMDB metadata or source-scoped asian: fallback ids. v5.5.0: catalog layout restored to the 28-catalog set validated on 4.15.0; the paired pencuri.js v1.4.0 adds English subtitles to every stream row. v5.6.0: new POST /cjg route — a text-safe relay for cinejoy.js v1.5.0 (NuvioMobile cannot send the binary body cinejoy\'s API requires; the worker performs the binary hop and returns bytes as base64url text).',
       logo: cfg.pinoySite + PINOY_ICON,
       resources: ['catalog', 'meta'],
       types: ['movie', 'series'],
@@ -2690,6 +2690,72 @@
       '</body></html>';
   }
 
+  // ===== v5.6.0: cinejoy /g relay (POST /cjg) =====
+  // NuvioMobile's plugin bridge is string-only: it cannot POST the octet-
+  // stream body cinejoy's API (api.shegu.st/g) requires, and it UTF-8-mangles
+  // the binary reply. The provider (cinejoy.js v1.5.0+) sends the encrypted
+  // request token here as base64url TEXT; this route decodes it, performs the
+  // real binary POST server-side, and returns the response bytes as base64url
+  // text inside a JSON object - text on the wire, bytes on the target hop.
+  // Fixed upstream (no open-proxy): only api.shegu.st/g is ever called.
+  var CJ_G_TARGET = 'https://api.shegu.st/g';
+  var CJ_MAX_TOKEN_BYTES = 16384;
+
+  function b64urlDecodeToU8(text) {
+    var std = String(text || '').replace(/-/g, '+').replace(/_/g, '/');
+    while (std.length % 4) std += '=';
+    var bin = atob(std);
+    var u8 = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i) & 255;
+    return u8;
+  }
+  function u8ToB64url(u8) {
+    var bin = '';
+    var CHUNK = 0x8000;
+    for (var i = 0; i < u8.length; i += CHUNK) {
+      bin += String.fromCharCode.apply(null, u8.subarray(i, Math.min(i + CHUNK, u8.length)));
+    }
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  }
+
+  function cinejoyRelay(request) {
+    if (request.method !== 'POST') {
+      return Promise.resolve(json({ ok: false, error: 'POST required' }, 405, 0));
+    }
+    return request.text().then(function (text) {
+      var bytes;
+      try { bytes = b64urlDecodeToU8(text.trim()); } catch (e) {
+        return json({ ok: false, error: 'body is not base64url' }, 400, 0);
+      }
+      if (!bytes.length || bytes.length > CJ_MAX_TOKEN_BYTES) {
+        return json({ ok: false, error: 'token size out of range' }, 400, 0);
+      }
+      return fetch(CJ_G_TARGET, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Origin': 'https://cinejoy.to',
+          'Referer': 'https://cinejoy.to/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': '*/*'
+        },
+        body: bytes
+      }).then(function (res) {
+        return res.arrayBuffer().then(function (ab) {
+          return json({
+            ok: res.ok,
+            status: res.status,
+            b64: u8ToB64url(new Uint8Array(ab))
+          }, 200, 0);
+        });
+      }).catch(function (err) {
+        return json({ ok: false, error: String((err && err.message) || err) }, 502, 0);
+      });
+    }).catch(function (err) {
+      return json({ ok: false, error: String((err && err.message) || err) }, 500, 0);
+    });
+  }
+
   function handle(urlString, env) {
     var cfg = makeConfig(env || {});
     cfg.__selfUrl = (env && env.__selfUrl) || '';
@@ -2757,6 +2823,7 @@
     makeConfig: makeConfig,
     manifest: manifest,
     handle: handle,
+    cinejoyRelay: cinejoyRelay,
     resetCaches: resetCaches,
     catalogDefinitions: catalogDefinitions,
     // test hooks

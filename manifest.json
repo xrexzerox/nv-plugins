@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "4.17.0",
-  "description": "Canonical Nuvio provider collection. v4.17.0 RESTORES the addon's 28-catalog layout the user validated on 4.15.0 (asian-catalog 5.5.0: Pencuri Movies + Series + Malaysia/Indonesia/Japan/Thailand/Most Viewed/Most Rating/Top IMDb - the 4.16.0 rebuild had regressed to 33 catalogs and dropped the Pencuri Movies/Series sections) and adds pencuri.js v1.4.0 ENGLISH SUBTITLES: every stream row carries {url, language:'en', name} tracks from Stremio's keyless opensubtitles-v3 addon (episode-scoped for series, clean before HI, 30min cache, imdb resolved per lane in parallel - tt direct, TMDB external_ids, og:title->TMDB search for catalog ids; page-title gate deferred with NO timers so the device runtime can never hang). pinoyhub stays 5.8.0 as delivered on 4.15.0. Untouched: kisskh, asianhub, tagalogtorrents, miruro; All-in-One-Nuvio never merged.",
+  "version": "4.18.0",
+  "description": "Canonical Nuvio provider collection. v4.18.0 fixes the two never-streaming providers: netmirror 7.0.0 adds a tolerant catalog-id parser (asian-catalog fallback ids like asian:pen-<slug> resolve via TMDB title search, tt ids via TMDB find, decorated :s:e tails stripped) plus net77/net52 mirror fallbacks restored for residential devices, and cinejoy 1.5.0 gains a text-safe relay lane for NuvioMobile (whose string-only bridge cannot send the binary POST cinejoy's API requires) through the asian-catalog worker's new POST /cjg route (addon 5.6.0 — redeploy the CF worker and set the Cinejoy relay base URL in the provider settings). English/Tagalog lanes, the post-filter quality rules and all other providers are unchanged.",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -296,7 +296,7 @@
       "id": "cinejoy",
       "name": "Cinejoy",
       "description": "Cinejoy binary chain proven live: /g accepts only raw octet-stream and replies binary; devices need the TVSmart base64 transport (worker shim + network service); mobile fail-soft unchanged",
-      "version": "1.4.0",
+      "version": "1.5.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -797,7 +797,7 @@
       "id": "netmirror",
       "name": "NetMirror",
       "description": "NetMirror via net27.cc (sole live mirror): 429-hardened embed lane + Tagalog dub lane through /api/variants-tmdb (dub/dubdp sid switching); relative caption proxy URLs resolved to en+fil tracks.",
-      "version": "6.0.0",
+      "version": "7.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
