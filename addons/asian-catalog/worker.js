@@ -45,6 +45,22 @@ export default {
           });
         }
       }
+      // v5.7.0: POST /cjs - cinejoy FULL-chain lane (cinejoy.js v1.6.0+).
+      // The device sends the query as text; the worker runs enc -> /g -> dec
+      // server-side and returns final stream JSON.
+      if (path === '/cjs') {
+        try {
+          const fullResponse = await Core.cinejoyFull(request);
+          const newHeaders = new Headers(fullResponse.headers);
+          newHeaders.set('Access-Control-Allow-Origin', '*');
+          return new Response(fullResponse.body, { status: fullResponse.status, headers: newHeaders });
+        } catch (err) {
+          return new Response(JSON.stringify({ ok: false, error: String((err && err.message) || err) }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+          });
+        }
+      }
       return new Response(JSON.stringify({ error: 'method not allowed' }), {
         status: 405,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }

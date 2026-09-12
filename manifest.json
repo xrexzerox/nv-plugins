@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "4.18.0",
-  "description": "Canonical Nuvio provider collection. v4.18.0 fixes the two never-streaming providers: netmirror 7.0.0 adds a tolerant catalog-id parser (asian-catalog fallback ids like asian:pen-<slug> resolve via TMDB title search, tt ids via TMDB find, decorated :s:e tails stripped) plus net77/net52 mirror fallbacks restored for residential devices, and cinejoy 1.5.0 gains a text-safe relay lane for NuvioMobile (whose string-only bridge cannot send the binary POST cinejoy's API requires) through the asian-catalog worker's new POST /cjg route (addon 5.6.0 — redeploy the CF worker and set the Cinejoy relay base URL in the provider settings). English/Tagalog lanes, the post-filter quality rules and all other providers are unchanged.",
+  "version": "4.19.0",
+  "description": "Canonical Nuvio provider collection. v4.19.0 rebuilds the two never-streaming providers against their live sites: netmirror 8.0.0 follows the service's move to netmirror.center (the whole net27.cc embed API is gone) — it maps TMDB titles to netmirror's own id space via the search2 API, prefers the [English] variant, signs the watchbox player request with a pure-JS HMAC-SHA256 and hands Nuvio the site's direct mp4 quality variants (360p-1080p) plus SRT subtitle tracks, all plain GETs so NuvioMobile needs no relay; cinejoy 1.6.0 keeps the proven binary chain for TV/PC and adds a full-chain lane for NuvioMobile — one text POST to the asian-catalog worker's new /cjs route (addon 5.7.0 — redeploy the CF worker and set the Cinejoy relay base URL in the provider settings) runs enc -> /g -> dec server-side and returns final stream JSON. English/Tagalog lanes, the post-filter quality rules and all other providers are unchanged.",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -295,8 +295,8 @@
     {
       "id": "cinejoy",
       "name": "Cinejoy",
-      "description": "Cinejoy binary chain proven live: /g accepts only raw octet-stream and replies binary; devices need the TVSmart base64 transport (worker shim + network service); mobile fail-soft unchanged",
-      "version": "1.5.0",
+      "description": "Cinejoy chain re-verified live; NuvioMobile gains a full-chain lane: one text POST to the asian-catalog worker /cjs route (v5.7.0+) runs enc -> /g -> dec server-side and returns final stream JSON - nothing binary crosses the device bridge. TV/PC runtimes keep the direct chain with zero config.",
+      "version": "1.6.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -796,8 +796,8 @@
     {
       "id": "netmirror",
       "name": "NetMirror",
-      "description": "NetMirror via net27.cc (sole live mirror): 429-hardened embed lane + Tagalog dub lane through /api/variants-tmdb (dub/dubdp sid switching); relative caption proxy URLs resolved to en+fil tracks.",
-      "version": "7.0.0",
+      "description": "NetMirror via netmirror.center (the net27.cc embed API died with the site rebuild): TMDB title -> netmirror id mapping through api2.imdb4.shop search2 with [English]-variant preference (dubbed variants skipped), detail + dp token from api2.imdb3.shop, HMAC-SHA256-signed watchbox.php player page (pure-JS HMAC), direct mp4 quality variants and SRT subtitles. All lanes are plain GETs - no binary transport, no relay.",
+      "version": "8.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",

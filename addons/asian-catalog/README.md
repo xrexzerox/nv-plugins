@@ -214,6 +214,10 @@ Optional env/vars: `TMDB_API_KEY`, `PINOY_SITE`, `KISSASIAN_SITE`,
   `worker-bundle.js` in miniflare/workerd with canned upstreams and asserts
   health (8 sources up), manifest (21 catalogs) and catalog endpoints.
 
+## v5.7.0 — cinejoy full-chain lane (repo 4.19.0)
+
+New `POST /cjs` route next to `/cjg`. The provider (cinejoy.js v1.6.0+) sends ONE text request `{title,type,year,imdb,tmdb,server,season,episode}`; the worker runs the ENTIRE cinejoy chain server-side (target build -> enc-dec.app enc-cinejoy -> binary POST api.shegu.st/g -> dec-cinejoy) and returns final stream JSON `{ok, streams:[{id,playlist,qualities,captions}]}`. Nothing binary crosses the NuvioMobile bridge and the device no longer needs to reach enc-dec.app. Guards: POST-only, JSON body required, title required, fixed upstreams only (no open proxy), 502 fail-soft.
+
 ## v5.6.0 — cinejoy /g relay (repo 4.18.0)
 
 New route: **`POST /cjg`**. cinejoy's API (`api.shegu.st/g`) speaks raw

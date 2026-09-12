@@ -208,7 +208,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '5.6.0';
+  var VERSION = '5.7.0';
   var ADDON_ID = 'community.asian.catalog';
   var ADDON_NAME = 'Asian Catalog';
 
@@ -2464,7 +2464,7 @@
       id: ADDON_ID,
       version: VERSION,
       name: ADDON_NAME,
-      description: 'Asian catalogs mirroring each site\'s real sections: pinoymovieshub.win (Movies / Series), kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). v5.0.0: anime rows carry ANIME ids — mal:/anilist:/anikoto: — straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.3.0: pmh/pen rows open real detail-page meta (episodes included) so no row ever 404s on details. v5.4.0: the Pencuri country and feature boards are back. Other rows carry full TMDB metadata or source-scoped asian: fallback ids. v5.5.0: catalog layout restored to the 28-catalog set validated on 4.15.0; the paired pencuri.js v1.4.0 adds English subtitles to every stream row. v5.6.0: new POST /cjg route — a text-safe relay for cinejoy.js v1.5.0 (NuvioMobile cannot send the binary body cinejoy\'s API requires; the worker performs the binary hop and returns bytes as base64url text).',
+      description: 'Asian catalogs mirroring each site\'s real sections: pinoymovieshub.win (Movies / Series), kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). v5.0.0: anime rows carry ANIME ids — mal:/anilist:/anikoto: — straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.3.0: pmh/pen rows open real detail-page meta (episodes included) so no row ever 404s on details. v5.4.0: the Pencuri country and feature boards are back. Other rows carry full TMDB metadata or source-scoped asian: fallback ids. v5.5.0: catalog layout restored to the 28-catalog set validated on 4.15.0; the paired pencuri.js v1.4.0 adds English subtitles to every stream row. v5.6.0: new POST /cjg route — a text-safe relay for cinejoy.js v1.5.0 (NuvioMobile cannot send the binary body cinejoy\'s API requires; the worker performs the binary hop and returns bytes as base64url text). v5.7.0: new POST /cjs route — the ENTIRE cinejoy chain (enc -> /g -> dec) runs server-side and returns final stream JSON for cinejoy.js v1.6.0\'s one-request full lane.',
       logo: cfg.pinoySite + PINOY_ICON,
       resources: ['catalog', 'meta'],
       types: ['movie', 'series'],
@@ -2756,6 +2756,94 @@
     });
   }
 
+  // ===== v5.7.0: cinejoy full-chain (POST /cjs) =====
+  // Companion to /cjg: instead of relaying just the /g byte hop, this route
+  // runs the ENTIRE cinejoy chain server-side (target build -> enc-cinejoy ->
+  // binary POST api.shegu.st/g -> dec-cinejoy) and returns the final stream
+  // JSON. cinejoy.js v1.6.0+ sends ONE text request; the device never touches
+  // a binary body nor enc-dec.app. Fixed upstream only (shegu + enc-dec.app),
+  // no open proxy.
+  var CJ_CHAIN_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  var CJ_DEC_TARGET = 'https://enc-dec.app/api/dec-cinejoy';
+  var CJ_ENC_TARGET = 'https://enc-dec.app/api/enc-cinejoy';
+
+  function cinejoyFull(request) {
+    if (request.method !== 'POST') {
+      return Promise.resolve(json({ ok: false, error: 'POST required' }, 405, 0));
+    }
+    return request.text().then(function (text) {
+      var body;
+      try { body = JSON.parse(String(text || '{}')); } catch (e) {
+        return json({ ok: false, error: 'body is not JSON' }, 400, 0);
+      }
+      var title = String(body.title || '').slice(0, 300);
+      if (!title) return json({ ok: false, error: 'title required' }, 400, 0);
+      var type = String(body.type || 'movie') === 'series' || String(body.type || '') === 'tv' ? 'series' : 'movie';
+      var target = 'https://api.shegu.st/?title=' + encodeURIComponent(title) +
+        '&type=' + type +
+        '&year=' + encodeURIComponent(String(body.year || '')) +
+        '&imdb=' + encodeURIComponent(String(body.imdb || '')) +
+        '&tmdb=' + encodeURIComponent(String(body.tmdb || '')) +
+        '&server=' + encodeURIComponent(String(body.server || ''));
+      if (type === 'series') {
+        target += '&season=' + (parseInt(body.season, 10) || 1) + '&episode=' + (parseInt(body.episode, 10) || 1);
+      }
+      var encHeaders = { 'User-Agent': CJ_CHAIN_UA, 'Accept': '*/*' };
+      return fetch(CJ_ENC_TARGET + '?url=' + encodeURIComponent(target), { headers: encHeaders })
+        .then(function (res) { return res.json(); })
+        .then(function (enc) {
+          var result = enc && enc.result || enc;
+          if (!result || !result.data) throw new Error('enc-cinejoy returned no data');
+          var bytes = b64urlDecodeToU8(result.data);
+          return fetch(CJ_G_TARGET, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              'Origin': 'https://cinejoy.to',
+              'Referer': 'https://cinejoy.to/',
+              'User-Agent': CJ_CHAIN_UA,
+              'Accept': '*/*'
+            },
+            body: bytes
+          }).then(function (gres) {
+            if (!gres.ok) throw new Error('shegu /g HTTP ' + gres.status);
+            return gres.arrayBuffer();
+          }).then(function (ab) {
+            var packed = u8ToB64url(new Uint8Array(ab));
+            return fetch(CJ_DEC_TARGET, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'User-Agent': CJ_CHAIN_UA, 'Accept': '*/*' },
+              body: JSON.stringify({ text: packed, state: result.state })
+            }).then(function (dres) { return dres.json(); });
+          });
+        })
+        .then(function (dec) {
+          var data = (dec && dec.result || {}).data || {};
+          var streams = data.stream;
+          if (!streams) {
+            return json({ ok: false, error: String(dec && dec.result && dec.result.message || 'no stream in dec response') }, 200, 0);
+          }
+          var list = Array.isArray(streams) ? streams : [streams];
+          var out = [];
+          list.forEach(function (st) {
+            if (!st) return;
+            out.push({
+              id: String(st.id || ''),
+              playlist: String(st.playlist || ''),
+              qualities: st.qualities || st.files || {},
+              captions: st.captions || []
+            });
+          });
+          return json({ ok: out.length > 0, streams: out }, 200, 0);
+        })
+        .catch(function (err) {
+          return json({ ok: false, error: String((err && err.message) || err) }, 502, 0);
+        });
+    }).catch(function (err) {
+      return json({ ok: false, error: String((err && err.message) || err) }, 500, 0);
+    });
+  }
+
   function handle(urlString, env) {
     var cfg = makeConfig(env || {});
     cfg.__selfUrl = (env && env.__selfUrl) || '';
@@ -2824,6 +2912,7 @@
     manifest: manifest,
     handle: handle,
     cinejoyRelay: cinejoyRelay,
+    cinejoyFull: cinejoyFull,
     resetCaches: resetCaches,
     catalogDefinitions: catalogDefinitions,
     // test hooks

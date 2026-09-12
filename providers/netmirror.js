@@ -1,79 +1,48 @@
 /**
- * NetMirror - Nuvio provider (v7.0.0)
+ * NetMirror - Nuvio provider (v8.0.0)
  *
- * v7.0.0: catalog-id tolerance + mirror restore (2026-09-12).
- *  - User report: "netmirror never works at all, doesn't give stream". Live
- *    recon proved the net27.cc API itself healthy, so the break sits in the
- *    ID the app hands over: Nuvio only normalizes tmdb:/movie:/series:
- *    prefixes, so asian-catalog fallback rows (asian:pen-<slug>, pen:<slug>,
- *    asian:pmh-/kh-/ks-/va-/an-...) and raw tt ids reach this provider
- *    UNPARSED, and the embed API 400s on every one of them -> zero rows on
- *    exactly the catalogs the user browses.
- *  - parseTmdbId (v7): tolerant parser - percent-decode, strip tmdb:/movie:/
- *    series:/tmdb- prefixes and ":s:e" tails (s/e feed season+episode when
- *    the caller passed none), then three resolution lanes:
- *      1. digits -> used as-is (fast path, unchanged behavior)
- *      2. tt... -> TMDB /find (external_source=imdb_id) -> tmdb id
- *      3. slug (asian:pen-mutiny-2026, pen:mutiny-2026, bare slugs) -> strip
- *         source prefix + trailing year -> TMDB /search with year, retry
- *         without -> first hit. Same shape pencuri.js already proved live.
- *  - Mirror restore: net77.cc + net52.cc are back as fallbacks. They 403 /
- *    CF-challenge DATACENTER probes (why v6 pruned them) but the device is a
- *    PH RESIDENTIAL IP - v6's datacenter-based sweep was wrong for it. They
- *    are fail-soft: worst case two doomed requests after net27 dies.
+ * v8.0.0: the netmirror.center rebuild (2026-09-12).
+ *  - User report: "netmirror and cinejoy still no stream showing" (4.18.0).
+ *    Live recon: net27.cc is still up as a SITE but its app was REPLACED -
+ *    /api/embed-tmdb is gone from the bundle and the endpoint answers 502.
+ *    netmirror.center (canonical netmirror.global) hosts a NEW React app on a
+ *    completely different API stack. Every net27-era lane in v7 was dead code.
+ *  - New flow (reverse-engineered from the netmirror.center bundle, verified
+ *    live end-to-end for movies, series episodes and the Animation section):
+ *      1. search  GET https://api2.imdb4.shop/api/search2/{title}?page=0
+ *                 -> results[{id, title, media_type, release_date}]
+ *                 (netmirror ids are NOT tmdb ids - title+year match maps us)
+ *      2. detail  GET https://api2.imdb3.shop/api/{movie|tv}/{nmId}
+ *                 -> results[0]{id, subjectid, dp, title, release_date, season}
+ *      3. sign    sig = HMAC-SHA256("{nmId}:{ts}", "net###@@sss"), ts = unix sec
+ *      4. play    GET {wbHost}/play/watchbox.php?id={subjectid}&se&ep&dp={dp}
+ *                 &na={b64(utf8(title))}&year&ts&sig&nid={nmId}&exten=&tv=&token=
+ *                 (Referer: https://netmirror.center/) -> ArtPlayer page with a
+ *                 quality selector (360P..1080P mp4) + SRT subtitle tracks.
+ *      5. parse   quality selector entries -> stream rows; SRT entries ->
+ *                 subtitles[]; watchbox mirrors tried in order on failure.
+ *  - English-only rule intact: search candidates ranked [English] > bare >
+ *    nothing; dubbed variants ([Hindi], [Tamil], ...) are never streamed.
+ *  - All requests are plain GETs with text bodies - 100% NuvioMobile-safe
+ *    (no binary transport, no relay, no settings needed).
+ *  - HMAC-SHA256 is implemented in pure JS (no CryptoJS in the plugin
+ *    runtime); unit-tested against openssl vectors.
  *
- * v6.0.0: mirror prune + Tagalog dub lane rewrite (2026-09-11).
- *  - Mirror sweep: net77.cc (403) and net52.cc (CF challenge) are dead;
- *    only net27.cc still serves the embed API. Dead bases removed so the
- *    first call no longer wastes two doomed requests.
- *  - Tagalog dub lane now uses the /api/variants-tmdb/{type}/{id} API:
- *    variants list dub/detailPath pairs (e.g. Frozen carries "Tagalog dub"),
- *    and /api/embed-tmdb?...&dub={sid}&dubdp={dp} returns that dub's own
- *    sources. Replaces the old fallbackHls audio-group scan - the
- *    /api/loffe extractor behind fallbackHls is broken server-side
- *    (404 "extract failed: browserType.launch"), so the Auto row it fed
- *    is gone too.
- *  - Everything else (throttle, cache, 429 retry, caption sort) unchanged.
+ * v7.0.0: catalog-id tolerance + net77/net52 mirror restore (both moot now -
+ * the whole net27 API family died with the site rebuild, but the tolerant
+ * id parser stays: decorated asian-catalog ids still reach this provider).
  *
- * v5.1.0: rate-limit hardening (upstream started returning HTTP 429).
- *  - Result cache: identical getStreams calls within 10 min reuse the same
- *    rows without touching the API; concurrent calls share one in-flight
- *    request instead of stampeding the mirrors.
- *  - Global throttle: embed API calls are spaced >= 1200 ms apart; bases
- *    are tried with a 600 ms gap; the last base that returned sources is
- *    remembered and tried first next time ("sticky base").
- *  - 429 handling: one retry honoring Retry-After (min 1.5 s, max 8 s)
- *    before moving on to the next mirror.
- *
- * API (unchanged since v2):
- *   GET {base}/api/embed-tmdb/{tmdbId}?type={movie|tv}&se={s}&ep={e}
- *   Headers: Referer: {base}/
- *     -> { ok, noSource?, mode, mp4, resolution, streams:[{url,resolution,size}],
- *          captions:[{lang,name,url}], fallbackHls, title, year, ... }
- *   GET {base}/api/variants-tmdb/{type}/{tmdbId}?se={s}&ep={e}
- *     -> { ok, variants:[{dubSubjectId, language, detailPath}] }
- *
- * Streams are direct mp4s on NetMirror's CDN (signed, ~8 h TTL). The site's
- * own player plays them directly and only falls back to its CF-worker proxy
- * on 403/401/410, so direct URLs are the correct lane for device playback.
- * Pure ES5 promise chains - QuickJS + Nuvio TV worker safe.
+ * v6.0.0: mirror prune + Tagalog dub lane via /api/variants-tmdb (dead API).
+ * v5.x: net27 embed-tmdb lane with caption proxy handling (dead API).
  */
 
+// ============================================================ id parsing v7
+
 var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
-// v7: net27.cc first (verified serving); net77/net52 restored as fail-soft
-// fallbacks (403/CF-challenge is a DATACENTER verdict - residential devices
-// may still be served). Settings override still wins.
-var CANDIDATE_BASES = [
-  "https://net27.cc",
-  "https://net77.cc",
-  "https://net52.cc"
-];
 
 var COMMON_HEADERS = {
   "Accept": "application/json, text/plain, */*",
   "Accept-Language": "en-US,en;q=0.9",
-  "Cache-Control": "no-cache",
-  "Pragma": "no-cache",
   "User-Agent": "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0 Mobile Safari/537.36"
 };
 
@@ -123,315 +92,66 @@ function fetchJson(url, headers, timeoutMs) {
   });
 }
 
-// ---------------------------------------------------- rate-limit core v5.1
+// ------------------------------------------------------------------- state
 
-var RATE_MIN_GAP = 1200;      // min gap between embed API calls (ms)
-var BASE_GAP = 600;           // gap between mirror bases (ms)
-var CACHE_TTL = 10 * 60 * 1000;
+var CACHE_TTL = 8 * 60 * 1000;   // signed mp4 urls live ~1h; keep a safety margin
 var _G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
 var _nmState = _G.__NETMIRROR_STATE__ || (_G.__NETMIRROR_STATE__ = {
   cache: {},          // key -> { ts, streams }
   inflight: {},       // key -> Promise
-  lastCall: 0,        // ts of last embed API call
-  goodBase: null      // sticky base that returned sources
+  nmIdCache: {}       // tmdbKey -> { ts, cands }  (title->netmirror id mapping)
 });
 
-function sleep(ms) {
-  return new Promise(function (resolve) {
-    if (hasTimers()) setTimeout(resolve, ms);
-    else resolve();
-  });
-}
-
-/** Serialized slot: resolves when >= gap has passed since the last call. */
-function throttleSlot(gap) {
-  var now = Date.now();
-  var wait = Math.max(0, _nmState.lastCall + gap - now);
-  _nmState.lastCall = now + wait;
-  return sleep(wait);
-}
-
-/** fetchJson with one 429-aware retry. */
-function fetchJsonRetry(url, headers, timeoutMs) {
-  return fetchJson(url, headers, timeoutMs).then(function (data) {
-    return data;
-  }, function (err) {
-    var msg = String((err && err.message) || err);
-    if (msg.indexOf("429") === -1) throw err;
-    return sleep(1500).then(function () { return fetchJson(url, headers, timeoutMs); });
-  });
-}
-
-cacheKey = function (tmdbId, mediaType, season, episode) {
+function cacheKey(tmdbId, mediaType, season, episode) {
   return (mediaType === "tv" ? "tv" : "movie") + ":" + tmdbId + ":" + (season || 1) + ":" + (episode || 1);
-};
+}
+
+// ------------------------------------------------------------- TMDB helpers
 
 function tmdbMeta(tmdbId, mediaType) {
   var endpoint = mediaType === "tv" ? "tv" : "movie";
   var url = "https://api.themoviedb.org/3/" + endpoint + "/" + tmdbId + "?api_key=" + TMDB_API_KEY;
   return fetchJson(url, null, 10000).then(function (data) {
-    if (!data) return { title: "" };
+    if (!data) return { title: "", year: "" };
     return {
       title: (mediaType === "tv" ? (data.name || data.original_name) : (data.title || data.original_title)) || "",
+      originalTitle: data.original_title || data.original_name || "",
       year: data.first_air_date ? String(data.first_air_date).split("-")[0] : (data.release_date ? String(data.release_date).split("-")[0] : "")
     };
-  }).catch(function () { return { title: "" }; });
+  }).catch(function () { return { title: "", year: "" }; });
 }
 
-function qualityFromResolution(resolution) {
-  var n = parseInt(resolution, 10);
-  if (!n) return "Auto";
-  if (n >= 2160) return "4K";
-  if (n >= 1440) return "1440p";
-  return n + "p";
-}
-
-function labelFor(meta, resolution) {
-  var label = meta && meta.title ? meta.title : "NetMirror";
-  if (meta && meta.year) label += " (" + meta.year + ")";
-  return label;
-}
-
-// ------------------------------------------------------------- captions v5
-
-function captionPriority(c) {
-  var lang = String((c && (c.lang || c.language)) || "").toLowerCase();
-  if (lang === "en" || lang.indexOf("english") === 0) return 0;
-  if (lang === "fil" || lang === "tl" || lang.indexOf("filipino") === 0 || lang.indexOf("tagalog") === 0) return 1;
-  return 2;
-}
-
-function captionName(c) {
-  var lang = String((c && (c.lang || c.language)) || "").toLowerCase();
-  var name = String((c && c.name) || c.lang || "Subtitles");
-  if (lang === "fil" || lang === "tl" || /filipino|tagalog/i.test(name)) {
-    return "Tagalog / Filipino" + (name && !/tagalog|filipino/i.test(name) ? " (" + name + ")" : "");
-  }
-  return name;
-}
-
-function captionsFor(base, data) {
-  if (!Array.isArray(data.captions)) return [];
-  var mode = settings().captionLang || "en+fil";
-  var subs = [];
-  data.captions.forEach(function (c) {
-    if (!c || !c.url) return;
-    // v6: net27 now returns same-origin proxy paths
-    // ("/api/proxy/video?url=<enc CDN url>") instead of absolute URLs.
-    var u = String(c.url);
-    if (/^\/\//i.test(u)) u = "https:" + u;
-    else if (!/^https?:\/\//i.test(u)) u = base + (u.charAt(0) === "/" ? u : "/" + u);
-    if (!/^https?:\/\//i.test(u)) return;
-    var lang = String(c.lang || c.language || "en").toLowerCase();
-    if (mode === "en" && lang !== "en") return;
-    if (mode === "en+fil" && !(lang === "en" || lang === "fil" || lang === "tl")) return;
-    subs.push({ c: c, u: u, prio: captionPriority(c) });
-  });
-  subs.sort(function (a, b) { return a.prio - b.prio; });
-  return subs.slice(0, 8).map(function (x) {
-    return { url: x.u, language: String(x.c.lang || x.c.language || "en"), name: captionName(x.c) };
-  });
-}
-
-// --------------------------------------------------- Tagalog dub lane v6
-
-/**
- * v6: Tagalog dub lanes via the variants API (replaces the v5 fallbackHls
- * audio-group scan - that endpoint's server-side extractor is broken).
- *
- * 1. GET {base}/api/variants-tmdb/{type}/{tmdbId}?se&ep
- *      -> { ok, variants:[{dubSubjectId, language, detailPath}, ...] }
- *    Language strings observed live: "Tagalog dub", "Hindi dub", "French dub",
- *    "Arabic sub", ... (NetMirror is a PH-market app; Tagalog dubs exist for
- *    many titles - e.g. Frozen).
- * 2. For each Tagalog/Filipino variant:
- *    GET {base}/api/embed-tmdb/{tmdbId}?type&se&ep&dub={sid}&dubdp={dp}
- *      -> that dub's own sources (verified: subjectId switches to the dub's).
- *
- * Every call is throttled like the main lane; all failures are fail-soft ([]).
- */
-function isTagalogVariant(langText) {
-  return /tagalog|filipino|pilipino/i.test(String(langText || ""));
-}
-
-function tagalogDubVariants(base, tmdbId, mediaType, season, episode, meta) {
-  var type = mediaType === "tv" ? "tv" : "movie";
-  var vUrl = base + "/api/variants-tmdb/" + type + "/" + encodeURIComponent(tmdbId) +
-    "?se=" + (season || 1) + "&ep=" + (episode || 1);
-  return throttleSlot(RATE_MIN_GAP).then(function () {
-    return fetchJsonRetry(vUrl, { Referer: base + "/" }, 12000);
-  }).then(function (data) {
-    if (!data || !data.ok || !Array.isArray(data.variants)) return [];
-    var dubs = [];
-    data.variants.forEach(function (v) {
-      if (v && v.dubSubjectId && v.detailPath && isTagalogVariant(v.language) &&
-          dubs.length < 2) dubs.push(v);
-    });
-    if (!dubs.length) return [];
-    var out = [];
-    var title = labelFor(meta);
-    var referer = { Referer: base + "/" };
-    var seen = {};
-    var chain = Promise.resolve();
-    dubs.forEach(function (dub) {
-      chain = chain.then(function () {
-        var dUrl = base + "/api/embed-tmdb/" + encodeURIComponent(tmdbId) +
-          "?type=" + type + "&se=" + (season || 1) + "&ep=" + (episode || 1) +
-          "&dub=" + encodeURIComponent(dub.dubSubjectId) +
-          "&dubdp=" + encodeURIComponent(dub.detailPath);
-        return throttleSlot(RATE_MIN_GAP).then(function () {
-          return fetchJsonRetry(dUrl, { Referer: base + "/" }, 12000);
-        }).then(function (dd) {
-          if (!dd || !dd.ok || dd.noSource) return;
-          var all = [];
-          if (Array.isArray(dd.streams)) all = all.concat(dd.streams);
-          if (dd.mp4) all.push({ url: dd.mp4, resolution: dd.resolution });
-          all.forEach(function (s) {
-            if (!s || !s.url || typeof s.url !== "string") return;
-            if (!/^https?:\/\//i.test(s.url) || seen[s.url]) return;
-            seen[s.url] = 1;
-            var q = qualityFromResolution(s.resolution);
-            out.push({
-              name: "NetMirror | Tagalog Dub",
-              title: title + " | Tagalog Dub (" + q + ")",
-              url: s.url,
-              quality: q,
-              headers: referer
-            });
-          });
-        }).catch(function () {});
-      });
-    });
-    return chain.then(function () { return out; });
-  }).catch(function () { return []; });
-}
-
-// ------------------------------------------------------------------ core v4
-
-/**
- * Query one base. Resolves [] when the base is unreachable or reports
- * noSource (title not on NetMirror).
- */
-function fetchFromBase(base, tmdbId, mediaType, season, episode, meta) {
-  var type = mediaType === "tv" ? "tv" : "movie";
-  var url = base + "/api/embed-tmdb/" + encodeURIComponent(tmdbId) +
-    "?type=" + type + "&se=" + (season || 1) + "&ep=" + (episode || 1);
-
-  return throttleSlot(RATE_MIN_GAP).then(function () {
-    return fetchJsonRetry(url, { Referer: base + "/" }, 15000);
-  }).then(function (data) {
-    if (!data || !data.ok || data.noSource) return [];
-    var streams = [];
-    var title = labelFor(meta);
-    var referer = { Referer: base + "/" };
-
-    var seen = {};
-    var seenIdx = {};
-    // API quirk (observed live on Wednesday S1E1): the same URL is listed at
-    // 480p AND 720p. Keeping the first listing strands a sub-720p row in the
-    // post-filter's CAM gate while the 720p entry dies on the URL dedupe ->
-    // zero rows for that title. So: same URL twice = keep ONE row and upgrade
-    // it to the HIGHEST advertised resolution.
-    var Q_ORDER = { "CAM": 0, "Auto": 1, "720p": 2, "1080p": 3, "1440p": 3.5, "4K": 4 };
-    function pushStream(u, q) {
-      if (!u || typeof u !== "string") return;
-      if (!/^https?:\/\//i.test(u)) return;
-      if (seen[u]) {
-        var at = seenIdx[u];
-        if (at != null && streams[at] && ((Q_ORDER[q] || 0) > (Q_ORDER[streams[at].quality] || 0))) {
-          streams[at].quality = q;
-          streams[at].name = "NetMirror | " + q;
-          streams[at].title = title + " | " + q + " | NetMirror CDN";
-        }
-        return;
-      }
-      seen[u] = 1;
-      seenIdx[u] = streams.length;
-      streams.push({
-        name: "NetMirror | " + q,
-        title: title + " | " + q + " | NetMirror CDN",
-        url: u,
-        quality: q,
-        headers: referer
-      });
-    }
-
-    // Multi-resolution list first (highest last in API order; keep API order).
-    if (Array.isArray(data.streams)) {
-      data.streams.forEach(function (s) {
-        if (s && s.url) pushStream(s.url, qualityFromResolution(s.resolution));
-      });
-    }
-
-    // Single default mp4 (dedupes against streams[] automatically).
-    if (data.mp4) pushStream(data.mp4, qualityFromResolution(data.resolution));
-
-    // v6: the fallbackHls "Auto" row is gone - /api/loffe (its extractor)
-    // returns 404 "extract failed: browserType.launch" server-side.
-
-    // v5: captions sorted en/fil first (+ optional filter).
-    // v6: caption urls are relative proxy paths now - resolved against base.
-    var subs = captionsFor(base, data);
-    if (subs.length) {
-      streams.forEach(function (s) { s.subtitles = subs; });
-    }
-
-    return streams;
-  }).then(function (streams) {
-    if (streams && streams.length) _nmState.goodBase = base;
-    return streams;
-  }).catch(function () {
-    return []; // base unreachable / rate-limited -> try next
-  });
-}
-
-function cacheKey(tmdbId, mediaType, season, episode) {
-  return (isTvType(mediaType) ? "tv" : "movie") + ":" + tmdbId + ":" + (season || 1) + ":" + (episode || 1);
-}
-
-// -------------------------------------------------------------- v7 id parser
-
-function isTvType(mediaType) {
-  return /tv|series|show/i.test(String(mediaType || ""));
-}
-
-/** TMDB /find: imdb tt id -> tmdb id. Fail-soft null. */
 function tmdbFindImdb(imdbId, mediaType) {
-  var url = "https://api.themoviedb.org/3/find/" + encodeURIComponent(String(imdbId).toLowerCase()) +
+  var endpoint = mediaType === "tv" ? "tv" : "movie";
+  var url = "https://api.themoviedb.org/3/find/" + encodeURIComponent(imdbId) +
     "?api_key=" + TMDB_API_KEY + "&external_source=imdb_id";
-  return fetchJson(url, null, 10000).then(function (d) {
-    if (!d) return null;
-    var mv = (d.movie_results || [])[0];
-    var tv = (d.tv_results || [])[0];
-    var hit = isTvType(mediaType) ? (tv || mv) : (mv || tv);
-    return (hit && hit.id) ? String(hit.id) : null;
-  }).catch(function () { return null; });
+  return fetchJson(url, null, 10000).then(function (data) {
+    var bucket = data && (data[endpoint + "_results"] || data.movie_results || data.tv_results);
+    if (bucket && bucket.length && bucket[0].id) return String(bucket[0].id);
+    return "";
+  }).catch(function () { return ""; });
 }
 
-/** TMDB /search by title (+year first, retry without). Fail-soft null. */
 function tmdbSearchByTitle(title, year, mediaType) {
-  var endpoint = isTvType(mediaType) ? "search/tv" : "search/movie";
-  var yParam = isTvType(mediaType) ? "first_air_date_year" : "year";
-  function attempt(y) {
-    var url = "https://api.themoviedb.org/3/" + endpoint + "?api_key=" + TMDB_API_KEY +
-      "&query=" + encodeURIComponent(title) +
-      (y ? "&" + yParam + "=" + encodeURIComponent(y) : "") +
-      "&page=1&include_adult=false";
-    return fetchJson(url, null, 10000).then(function (d) {
-      if (d && Array.isArray(d.results) && d.results.length && d.results[0] && d.results[0].id) {
-        return String(d.results[0].id);
+  var endpoint = mediaType === "tv" ? "tv" : "movie";
+  var url = "https://api.themoviedb.org/3/search/" + endpoint + "?api_key=" + TMDB_API_KEY +
+    "&query=" + encodeURIComponent(title) + (year ? "&year=" + encodeURIComponent(year) : "");
+  if (mediaType === "tv") url = url.replace("&year=", "&first_air_date_year=");
+  return fetchJson(url, null, 10000).then(function (data) {
+    var rs = (data && data.results) || [];
+    if (!rs.length) return "";
+    if (year) {
+      for (var i = 0; i < rs.length; i++) {
+        var d = String(rs[i].release_date || rs[i].first_air_date || "");
+        if (d.indexOf(year) === 0) return String(rs[i].id);
       }
-      return null;
-    }).catch(function () { return null; });
-  }
-  if (!year) return attempt("");
-  return attempt(year).then(function (id) {
-    return id || attempt("");
-  });
+    }
+    return String(rs[0].id);
+  }).catch(function () { return ""; });
 }
 
 /**
- * v7: tolerant catalog-id parser -> { tmdbId, season, episode } or null.
+ * v7 (kept): tolerant catalog-id parser -> { tmdbId, season, episode } or null.
  * Accepts: bare digits, "109445:1:9" integer tails, tmdb:/movie:/series:/show:
  * prefixes (also "tmdb-"), asian-catalog fallback ids ("asian:pen-<slug>",
  * "pen:<slug>", "asian:pmh-/kh-/ks-/va-/ka-/an-...", bare slugs) resolved by
@@ -500,6 +220,414 @@ function parseTmdbId(rawId, mediaType, season, episode) {
   });
 }
 
+// ================================================== pure-JS SHA-256 / HMAC
+// The plugin runtime has no CryptoJS; key and message are both pure ASCII
+// ("net###@@sss", "<digits>:<digits>"), so byte arrays are charCodeAt-safe.
+
+var K256 = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+];
+
+function rotr(x, n) { return (x >>> n) | (x << (32 - n)); }
+
+function sha256Bytes(msg /* number[] */) {
+  var H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  var len = msg.length;
+  var bitLenHi = Math.floor(len / 536870912);            // len*8 / 2^32 high
+  var bitLenLo = (len << 3) >>> 0;                       // low 32 bits (len << 3 overflows only past 2^29 bytes - fine here)
+  var padded = msg.slice();
+  padded.push(0x80);
+  while (padded.length % 64 !== 56) padded.push(0);
+  padded.push((bitLenHi >>> 24) & 255, (bitLenHi >>> 16) & 255, (bitLenHi >>> 8) & 255, bitLenHi & 255);
+  padded.push((bitLenLo >>> 24) & 255, (bitLenLo >>> 16) & 255, (bitLenLo >>> 8) & 255, bitLenLo & 255);
+
+  var w = new Array(64);
+  for (var b = 0; b < padded.length; b += 64) {
+    var i, t;
+    for (i = 0; i < 16; i++) {
+      var o = b + i * 4;
+      w[i] = ((padded[o] << 24) | (padded[o + 1] << 16) | (padded[o + 2] << 8) | padded[o + 3]) >>> 0;
+    }
+    for (i = 16; i < 64; i++) {
+      var s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+      var s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    var a = H[0], bb = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+    for (i = 0; i < 64; i++) {
+      var S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      var ch = (e & f) ^ (~e & g);
+      t = (h + S1 + ch + K256[i] + w[i]) >>> 0;
+      var S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      var maj = (a & bb) ^ (a & c) ^ (bb & c);
+      h = g; g = f; f = e;
+      e = (d + t) >>> 0;
+      d = c; c = bb; bb = a;
+      a = (t + S0 + maj) >>> 0;
+    }
+    H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + bb) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;
+    H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
+  }
+  var out = new Array(32);
+  for (var j = 0; j < 8; j++) {
+    out[j * 4] = (H[j] >>> 24) & 255;
+    out[j * 4 + 1] = (H[j] >>> 16) & 255;
+    out[j * 4 + 2] = (H[j] >>> 8) & 255;
+    out[j * 4 + 3] = H[j] & 255;
+  }
+  return out;
+}
+
+/** HMAC-SHA256 over ASCII strings -> lowercase hex. */
+function hmacSha256Hex(keyStr, msgStr) {
+  var key = [], msg = [], i;
+  for (i = 0; i < keyStr.length; i++) key.push(keyStr.charCodeAt(i) & 255);
+  for (i = 0; i < msgStr.length; i++) msg.push(msgStr.charCodeAt(i) & 255);
+  if (key.length > 64) key = sha256Bytes(key);
+  var ipad = new Array(64), opad = new Array(64);
+  for (i = 0; i < 64; i++) {
+    var kb = i < key.length ? key[i] : 0;
+    ipad[i] = kb ^ 0x36;
+    opad[i] = kb ^ 0x5c;
+  }
+  var inner = sha256Bytes(ipad.concat(msg));
+  var outer = sha256Bytes(opad.concat(inner));
+  var hex = "";
+  for (i = 0; i < 32; i++) hex += (outer[i] < 16 ? "0" : "") + outer[i].toString(16);
+  return hex;
+}
+
+// pure-JS base64 (Hermes-worst-case safe; no btoa dependency)
+var B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+function b64Utf8(text) {
+  // UTF-8 encode first
+  var bytes = [], s = String(text == null ? "" : text);
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    if (c < 128) bytes.push(c);
+    else if (c < 2048) { bytes.push(192 | (c >> 6), 128 | (c & 63)); }
+    else { bytes.push(224 | (c >> 12), 128 | ((c >> 6) & 63), 128 | (c & 63)); }
+  }
+  var out = "";
+  for (var j = 0; j < bytes.length; j += 3) {
+    var b1 = bytes[j], b2 = j + 1 < bytes.length ? bytes[j + 1] : -1, b3 = j + 2 < bytes.length ? bytes[j + 2] : -1;
+    out += B64_CHARS.charAt(b1 >> 2);
+    out += B64_CHARS.charAt(((b1 & 3) << 4) | (b2 >= 0 ? b2 >> 4 : 0));
+    out += b2 >= 0 ? B64_CHARS.charAt(((b2 & 15) << 2) | (b3 >= 0 ? b3 >> 6 : 0)) : "=";
+    out += b3 >= 0 ? B64_CHARS.charAt(b3 & 63) : "=";
+  }
+  return out;
+}
+
+function formEncode(params) {
+  var parts = [];
+  for (var k in params) {
+    if (!Object.prototype.hasOwnProperty.call(params, k)) continue;
+    parts.push(encodeURIComponent(k) + "=" + encodeURIComponent(params[k]));
+  }
+  return parts.join("&");
+}
+
+// =============================================== netmirror.center core v8
+
+var NM_PAGE_BASE = "https://netmirror.center";        // referer origin
+var NM_DETAIL_API = "https://api2.imdb3.shop/api";    // detail: /{movie|tv}/{nmId}
+var NM_SEARCH_API = "https://api2.imdb4.shop/api/search2";
+var NM_SIGN_KEY = "net###@@sss";
+// watchbox mirror hosts (the site randomizes p==1..7; we fail over in order)
+var WB_HOSTS = [
+  "https://bet.watch21.shop",
+  "https://play.watch21.shop",
+  "https://bet.watch22.shop",
+  "https://limit.watch22.shop",
+  "https://spedostream2.shop",
+  "https://dv.watch22.shop"
+];
+
+// search-result title labels: [English] preferred; dubbed variants skipped
+// (standing rule: netmirror is English-only)
+var NM_EN_RE = /\b(english|eng)\b/i;
+var NM_DUB_RE = /\b(hindi|tamil|telugu|malayalam|punjabi|bengali|bangla|indonesian|bahasa|malay|chinese|mandarin|cantonese|korean|japanese|spanish|espanol|arabic|french|german|russian|portuguese|thai|vietnamese|urdu|turkish|filipino|tagalog|dubbed)\b/i;
+
+function nmTitleNorm(t) {
+  var s = String(t || "").toLowerCase();
+  s = s.replace(/\[[^\]]*\]/g, " ");                 // [English] / [Hindi] labels
+  s = s.replace(/\([^)]*\)/g, " ");
+  s = s.replace(/\bs\d+(?:\s*[-–]\s*s?\d+)?\b/g, " "); // "S1-S5" / "S1" suffixes
+  s = s.replace(/\bseason\s*\d+\b/g, " ");
+  s = s.replace(/[^a-z0-9]+/g, " ").trim();
+  return s;
+}
+
+function nmYearOf(text) {
+  var m = String(text || "").match(/(19|20)\d{2}/);
+  return m ? m[0] : "";
+}
+
+/** search2 path built with the site's own query conventions. */
+function nmSearchPath(title) {
+  var q = encodeURIComponent(String(title).trim()).replace(/%20/g, "+").replace(/%2F/g, "--slash--");
+  return NM_SEARCH_API + "/" + q + "?page=0";
+}
+
+/**
+ * Map a TMDB title to up to 3 netmirror ids, best first.
+ * Ranking: [English] label > bare title; year exact > +-1 > other.
+ * Dubbed variants are dropped entirely (English-only rule).
+ */
+function nmCandidates(meta, mediaType) {
+  var type = mediaType === "tv" ? "tv" : "movie";
+  var titles = [];
+  var t1 = String(meta.title || "").trim();
+  if (t1) titles.push(t1);
+  var t2 = String(meta.originalTitle || "").trim();
+  if (t2 && nmTitleNorm(t2) !== nmTitleNorm(t1)) titles.push(t2);
+  if (!titles.length) return Promise.resolve([]);
+
+  var ckey = type + ":" + nmTitleNorm(t1) + ":" + (meta.year || "");
+  var hit = _nmState.nmIdCache[ckey];
+  if (hit && Date.now() - hit.ts < 30 * 60 * 1000) return Promise.resolve(hit.cands);
+
+  function searchOne(title) {
+    return fetchJson(nmSearchPath(title), { Referer: NM_PAGE_BASE + "/" }, 12000).then(function (j) {
+      var rs = (j && j.results) || [];
+      var scored = [];
+      rs.forEach(function (r) {
+        if (!r || r.id == null) return;
+        var mt = String(r.media_type || "").toLowerCase();
+        if (mt !== type) return;                       // strict type match
+        var label = String(r.title || "").trim();
+        var bracket = (label.match(/\[([^\]]*)\]/) || [])[1] || "";
+        var rank;
+        if (NM_EN_RE.test(bracket)) rank = 0;
+        else if (NM_DUB_RE.test(bracket)) return;      // dubbed audio - skip
+        else rank = 1;                                 // bare / unknown label
+        var yr = nmYearOf(r.release_date);
+        var my = parseInt(meta.year || "0", 10) || 0;
+        var ny = parseInt(yr || "0", 10) || 0;
+        var yrank = (!my || !ny) ? 1 : (ny === my ? 0 : (Math.abs(ny - my) <= 1 ? 1 : 2));
+        scored.push({ id: String(r.id), rank: rank * 10 + yrank });
+      });
+      scored.sort(function (a, b) { return a.rank - b.rank; });
+      var cands = [];
+      scored.forEach(function (x) {
+        if (cands.indexOf(x.id) === -1 && cands.length < 3) cands.push(x.id);
+      });
+      return cands;
+    }).catch(function () { return []; });
+  }
+
+  return searchOne(titles[0]).then(function (cands) {
+    if (cands.length || titles.length < 2) return cands;
+    return searchOne(titles[1]);
+  }).then(function (cands) {
+    if (cands.length) _nmState.nmIdCache[ckey] = { ts: Date.now(), cands: cands };
+    return cands;
+  });
+}
+
+function nmDetail(nmId, type) {
+  var url = NM_DETAIL_API + "/" + type + "/" + encodeURIComponent(nmId);
+  return fetchJson(url, { Referer: NM_PAGE_BASE + "/", "Content-Type": "application/json" }, 12000)
+    .then(function (j) {
+      var r = j && j.results && j.results[0];
+      if (!r || !r.subjectid || !r.dp) return null;
+      return {
+        id: String(r.id || nmId),
+        subjectid: String(r.subjectid),
+        dp: String(r.dp),
+        title: String(r.title || "").trim(),
+        release: String(r.release_date || "")
+      };
+    }).catch(function () { return null; });
+}
+
+function nmSign(nmId) {
+  var ts = Math.floor(Date.now() / 1000);
+  return { ts: ts, sig: hmacSha256Hex(NM_SIGN_KEY, nmId + ":" + ts) };
+}
+
+function nmWatchboxUrl(host, d, se, ep) {
+  var s = nmSign(d.id);
+  var year = nmYearOf(d.release.split(",")[1] ? d.release : "");  // "Aug 21,2026" -> "2026"; "2013" -> ""
+  var commaYear = "";
+  if (d.release.indexOf(",") !== -1) commaYear = d.release.split(",")[1] || "";
+  year = commaYear || year;
+  return host + "/play/watchbox.php?" + formEncode({
+    id: d.subjectid,
+    se: se || 0,
+    ep: ep || 0,
+    dp: d.dp,
+    na: b64Utf8(d.title),
+    year: year,
+    ts: s.ts,
+    sig: s.sig,
+    nid: d.id,
+    exten: "",
+    tv: "",
+    token: ""
+  });
+}
+
+/** Fetch the watchbox player page across mirror hosts; "" when all fail. */
+function nmWatchboxPage(d, se, ep) {
+  var chain = Promise.reject(new Error("start"));
+  WB_HOSTS.forEach(function (host) {
+    chain = chain.catch(function () {
+      return fetchText(nmWatchboxUrl(host, d, se, ep), { Referer: NM_PAGE_BASE + "/" }, 12000)
+        .then(function (html) {
+          if (!html || (html.indexOf("artplayer") === -1 && html.indexOf("quality_new") === -1)) {
+            throw new Error("no player page");
+          }
+          return html;
+        });
+    });
+  });
+  return chain.catch(function () { return ""; });
+}
+
+function qRank(txt) {
+  var q = qualityLabel(txt);
+  if (q === "4K") return 5;
+  if (q === "1440p") return 4;
+  if (q === "1080p") return 3;
+  if (q === "720p") return 2;
+  if (q === "Auto") return 1;
+  return 0;
+}
+
+/**
+ * Pull the quality selector + SRT tracks out of an ArtPlayer watchbox page.
+ * v6 lesson re-applied: netmirror lists the SAME mp4 URL at several labels
+ * (e.g. Wednesday S1E1: 480P and 720P share one URL). Naive URL-dedupe keeps
+ * the first (lowest) label and strands the row in the post-filter's CAM gate
+ * -> zero rows. So: same URL twice = ONE row, upgraded to the HIGHEST label.
+ */
+function parseWatchbox(html) {
+  var quals = [], subs = [], byUrl = {};
+  var re = /\{[^{}]*?html\s*:\s*['"]([^'"]+)['"]\s*,\s*url\s*:\s*\(?['"]([^'"]+)['"]/g;
+  var m;
+  while ((m = re.exec(html)) !== null) {
+    var label = String(m[1] || "").trim();
+    var url = String(m[2] || "").trim();
+    if (!url) continue;
+    if (/\.srt(\?|$)/i.test(url)) { subs.push({ label: label, url: url }); continue; }
+    if (!/\.(mp4|m3u8)(\?|$)/i.test(url)) continue;
+    if (byUrl[url]) {
+      var at = byUrl[url];
+      if (qRank(label) > qRank(at.label)) at.label = label;
+      continue;
+    }
+    var entry = { label: label, url: url };
+    byUrl[url] = entry;
+    quals.push(entry);
+  }
+  // last-resort: the art.url default candidate (same URL as a selector entry
+  // in practice; only used when the selector parse came up empty)
+  if (!quals.length) {
+    var am = html.match(/art\.url\s*=\s*play_url\(\s*['"]([^'"]+)['"]/);
+    if (am && /\.(mp4|m3u8)(\?|$)/i.test(am[1])) quals.push({ label: "", url: am[1] });
+  }
+  return { quals: quals, subs: subs };
+}
+
+function qualityLabel(txt) {
+  var m = String(txt || "").toLowerCase().match(/(\d{3,4})\s*p/);
+  if (!m) return "Auto";
+  var n = parseInt(m[1], 10);
+  if (n >= 2100) return "4K";
+  if (n >= 1300) return "1440p";
+  if (n >= 1000) return "1080p";
+  if (n >= 640) return "720p";
+  return n + "p";
+}
+
+// subtitle track labels seen in watchbox pages -> Nuvio language fields
+// (labels arrive in native scripts - Arabic/Cyrillic/Devanagari/... - so the
+// map matches script ranges too; anything unmatched stays "unk" and never
+// masquerades as English)
+var SUB_LANG_MAP = [
+  [/english|eng/i, "en", "English"],
+  [/filipino|tagalog|pilipino/i, "fil", "Tagalog / Filipino"],
+  [/espanol|spanish/i, "es", "Spanish"],
+  [/fran/i, "fr", "French"],
+  [/kiswahili|swahili/i, "sw", "Swahili"],
+  [/[\u0400-\u04FF]/, "ru", "Russian"],
+  [/[\u0600-\u06FF]/, "ar", "Arabic"],
+  [/[\u0900-\u097F]/, "hi", "Hindi"],
+  [/[\u0980-\u09FF]/, "bn", "Bengali"],
+  [/[\u0A00-\u0A7F]/, "pa", "Punjabi"],
+  [/[\u4E00-\u9FFF]/, "zh", "Chinese"],
+  [/indon|bahasa/i, "id", "Indonesian"],
+  [/malay/i, "ms", "Malay"],
+  [/portug|brasileiro/i, "pt", "Portuguese"],
+  [/arab/i, "ar", "Arabic"],
+  [/bangla|bengali/i, "bn", "Bengali"],
+  [/punjabi/i, "pa", "Punjabi"],
+  [/urdu/i, "ur", "Urdu"],
+  [/chinese|mandarin|cantonese/i, "zh", "Chinese"]
+];
+
+function subsFor(subEntries) {
+  var mode = settings().captionLang || "en+fil";
+  var prio = [];
+  subEntries.forEach(function (s) {
+    if (!s || !s.url) return;
+    var lang = "en", name = s.label || "English";
+    for (var i = 0; i < SUB_LANG_MAP.length; i++) {
+      if (SUB_LANG_MAP[i][0].test(s.label || "")) {
+        lang = SUB_LANG_MAP[i][1];
+        name = SUB_LANG_MAP[i][2];
+        break;
+      }
+    }
+    if (mode === "en" && lang !== "en") return;
+    if (mode === "en+fil" && !(lang === "en" || lang === "fil")) return;
+    var p = lang === "en" ? 0 : (lang === "fil" ? 1 : 2);
+    prio.push({ url: s.url, language: lang, name: name, p: p });
+  });
+  prio.sort(function (a, b) { return a.p - b.p; });
+  return prio.slice(0, 8).map(function (x) {
+    return { url: x.url, language: x.language, name: x.name };
+  });
+}
+
+/** One netmirror candidate: detail -> signed watchbox -> stream rows. */
+function nmResolveCandidate(nmId, type, se, ep, meta) {
+  return nmDetail(nmId, type).then(function (d) {
+    if (!d) return [];
+    return nmWatchboxPage(d, se, ep).then(function (html) {
+      if (!html) return [];
+      var parsed = parseWatchbox(html);
+      if (!parsed.quals.length) return [];
+      var subs = subsFor(parsed.subs);
+      var label = (meta && meta.title ? meta.title : d.title) || "NetMirror";
+      if (meta && meta.year) label += " (" + meta.year + ")";
+      var referer = { Referer: NM_PAGE_BASE + "/" };
+      var rows = [];
+      parsed.quals.forEach(function (q) {
+        var quality = qualityLabel(q.label);
+        rows.push({
+          name: "NetMirror | " + quality,
+          title: label + " | " + quality + " | NetMirror CDN",
+          url: q.url,
+          quality: quality,
+          headers: referer
+        });
+        if (subs.length) rows[rows.length - 1].subtitles = subs;
+      });
+      return rows;
+    });
+  }).catch(function () { return []; });
+}
+
 function getStreams(tmdbId, mediaType, season, episode) {
   var rawId = "";
   try { rawId = String(tmdbId == null ? "" : tmdbId); } catch (e0) { rawId = ""; }
@@ -512,50 +640,47 @@ function getStreams(tmdbId, mediaType, season, episode) {
   }
   if (_nmState.inflight[key]) return _nmState.inflight[key];
 
-  console.log("[NetMirror] start " + mediaType + " " + rawId + " S" + season + "E" + episode);
-  var customBase = settings().baseUrl;
-  var bases = (customBase && /^https?:\/\//i.test(String(customBase)))
-    ? [String(customBase).replace(/\/+$/, "")].concat(CANDIDATE_BASES)
-    : CANDIDATE_BASES.slice();
-  if (_nmState.goodBase && bases.indexOf(_nmState.goodBase) !== -1) {
-    bases = [_nmState.goodBase].concat(bases.filter(function (b) { return b !== _nmState.goodBase; }));
-  }
+  console.log("[NetMirror] v8 start " + mediaType + " " + rawId + " S" + season + "E" + episode);
+  var type = mediaType === "tv" ? "tv" : "movie";
 
   var run = parseTmdbId(rawId, mediaType, season, episode).then(function (p) {
-    // v7: unresolvable ids (garbage prefixes etc.) -> fail-soft, no doomed calls
+    // v7 tolerant parser: unresolvable ids (garbage prefixes) -> fail-soft
     if (!p) {
       console.log("[NetMirror] id unresolvable: " + rawId);
       return [];
     }
-    var resolvedId = p.tmdbId;
-    // season/episode recovered from a decorated id tail apply only when the
-    // caller passed none (movies; or legacy 3-arg calls)
-    var se = (season != null && season !== "") ? season : (p.season || 1);
-    var ep = (episode != null && episode !== "") ? episode : (p.episode || 1);
-    return tmdbMeta(resolvedId, mediaType).then(function (meta) {
-      var chain = Promise.resolve([]);
-      bases.forEach(function (base, idx) {
-        chain = chain.then(function (existing) {
-          if (existing && existing.length) return existing;
-          return (idx > 0 ? throttleSlot(BASE_GAP) : Promise.resolve())
-            .then(function () { return fetchFromBase(base, resolvedId, mediaType, se, ep, meta); });
-        });
-      });
-      return chain.then(function (streams) {
-        // v6: Tagalog dub lane via the variants API (fail-soft, throttled).
-        // Runs even when the main lane found nothing - a dub can exist while
-        // the default audio does not. Cached together with the main rows.
-        var dubBase = (_nmState.goodBase && CANDIDATE_BASES.indexOf(_nmState.goodBase) !== -1)
-          ? _nmState.goodBase
-          : CANDIDATE_BASES[0];
-        return tagalogDubVariants(dubBase, resolvedId, mediaType, se, ep, meta)
-          .then(function (dubs) {
-            var all = streams.concat(dubs);
-            console.log("[NetMirror] returning " + all.length + " stream(s)" +
-              (dubs.length ? " (incl. " + dubs.length + " Tagalog dub)" : ""));
-            if (all.length) _nmState.cache[key] = { ts: Date.now(), streams: all };
-            return all;
+    var se, ep;
+    if (type === "tv") {
+      se = (season != null && season !== "") ? parseInt(season, 10) || 1 : (p.season || 1);
+      ep = (episode != null && episode !== "") ? parseInt(episode, 10) || 1 : (p.episode || 1);
+    } else {
+      // v8: movies MUST pass se=0&ep=0 - the watchbox endpoint treats a
+      // movie like an episode-less show and serves an empty player page for
+      // se=1&ep=1 (verified live: Mutiny 1080p at 0/0, empty at 1/1)
+      se = 0;
+      ep = 0;
+    }
+    return tmdbMeta(p.tmdbId, mediaType).then(function (meta) {
+      if (!meta.title) {
+        console.log("[NetMirror] no TMDB meta for " + p.tmdbId);
+        return [];
+      }
+      return nmCandidates(meta, mediaType).then(function (cands) {
+        if (!cands.length) {
+          console.log("[NetMirror] no netmirror id for " + JSON.stringify(meta));
+          return [];
+        }
+        var chain = Promise.resolve([]);
+        cands.forEach(function (nmId) {
+          chain = chain.then(function (acc) {
+            if (acc && acc.length) return acc;
+            return nmResolveCandidate(nmId, type, se, ep, meta);
           });
+        });
+        return chain.then(function (rows) {
+          console.log("[NetMirror] returning " + (rows ? rows.length : 0) + " stream(s)");
+          return rows || [];
+        });
       });
     });
   }).catch(function (error) {
@@ -563,7 +688,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
     return [];
   }).then(function (streams) {
     delete _nmState.inflight[key];
-    return streams;
+    if (streams && streams.length) _nmState.cache[key] = { ts: Date.now(), streams: streams };
+    return streams || [];
   });
   _nmState.inflight[key] = run;
   return run;
@@ -571,14 +697,6 @@ function getStreams(tmdbId, mediaType, season, episode) {
 
 function onSettings() {
   return Promise.resolve([
-    {
-      key: "baseUrl",
-      title: "NetMirror base URL (optional)",
-      label: "NetMirror base URL (optional)",
-      type: "text",
-      default: "",
-      description: "Leave blank to use automatic mirror fallback."
-    },
     {
       key: "captionLang",
       title: "Subtitle language",
@@ -599,7 +717,6 @@ module.exports = {
   getStreams: getStreams,
   onSettings: onSettings
 };
-
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
    Rules (per user request 2026-09):
    1. Language gate: only English / Tagalog (Filipino) audio lanes are kept.

@@ -1,6 +1,27 @@
 /**
  * cinejoy - Built from src/cinejoy/ (run bun build.js to regenerate)
  *
+ * v1.6.0 (full-chain worker lane, 2026-09-12):
+ *  User report: "netmirror and cinejoy still no stream showing" on 4.18.0.
+ *  Re-verified live: the whole chain (servers -> enc -> binary /g -> dec) is
+ *  healthy from Node and the returned HLS master plays (4K/1080p/720p), so
+ *  the remaining failure mode on Mobile is DEPLOYMENT: v1.5.0's /cjg relay
+ *  lane needs BOTH the worker redeploy AND the "Cinejoy relay base URL"
+ *  setting, and any missed step means zero rows. v1.6.0 adds a second,
+ *  stronger worker lane and a top-level lane memo:
+ *    chain lane (unchanged): enc-cinejoy GET -> /g bytes via direct|relay ->
+ *                            dec-cinejoy POST. Needs enc-dec.app reachable
+ *                            from the device.
+ *    NEW full lane:          ONE text POST {cjRelay}/cjs with the query
+ *                            {title,type,year,imdb,tmdb,server,season,episode};
+ *                            the asian-catalog worker v5.7.0+ runs the ENTIRE
+ *                            chain server-side (enc -> /g -> dec included) and
+ *                            returns final stream JSON. Nothing binary on the
+ *                            wire, no enc-dec.app dependency on the device.
+ *  scrapeServer now falls back chain -> full per server and memoizes the
+ *  winner in __CINEJOY_TOP_LANE__ so Mobile skips the doomed chain attempts
+ *  after the first server. TV/PC keep the direct chain with zero config.
+ *
  * v1.5.0 (relay lane for NuvioMobile, 2026-09-12):
  *  User report: "cinejoy never works at all, doesn't give stream". Root cause
  *  is the TRANSPORT, not the chain (re-verified live: servers -> enc-cinejoy
@@ -248,15 +269,24 @@ function withTimeout(promise, ms, label) {
   if (!hasTimers())
     return promise;
   const timeout = ms || 25e3;
+  let timer = null;
   return Promise.race([
     promise,
     new Promise(function(resolve) {
-      setTimeout(function() {
+      timer = setTimeout(function() {
         console.log("[Streamline] timeout: " + label);
         resolve([]);
       }, timeout);
     })
-  ]);
+  ]).then(function(v) {
+    // v1.6.0: clear the losing timer so resolved calls stop logging a
+    // bogus "timeout" seconds later (stray timers are device-hostile).
+    if (timer) clearTimeout(timer);
+    return v;
+  }, function(e) {
+    if (timer) clearTimeout(timer);
+    throw e;
+  });
 }
 function dedupe(streams) {
   const seen = {};
@@ -677,6 +707,9 @@ function b64urlEncodeNoPad(bytes) {
 // src/cinejoy/relay.js (v1.5.0)
 var __CJ_G = (typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this);
 var __cjLane = __CJ_G.__CINEJOY_G_LANE__ || (__CJ_G.__CINEJOY_G_LANE__ = { mode: "" }); // "" | "direct" | "relay"
+// v1.6.0: top-level lane memo ("" | "chain" | "full") - skips the doomed
+// chain attempts on Mobile after the full worker lane won once.
+var __cjTop = __CJ_G.__CINEJOY_TOP_LANE__ || (__CJ_G.__CINEJOY_TOP_LANE__ = { mode: "" });
 function relayBase() {
   try {
     var s = (typeof globalThis !== "undefined" && globalThis.SCRAPER_SETTINGS) || (typeof global !== "undefined" && global.SCRAPER_SETTINGS) || {};
@@ -779,7 +812,100 @@ function enabled() {
     return true;
   }
 }
+/** Shared row builder from a dec/full-lane stream list. */
+function rowsFromStreams(streams, name) {
+  const out = [];
+  const list = Array.isArray(streams) ? streams : [streams];
+  list.forEach(function(st) {
+    if (!st)
+      return;
+    if (st.playlist) {
+      const s = makeStream("Cinejoy", "Cinejoy - " + (st.id || name) + " [HLS]", st.playlist, "1080p", { Referer: CINEJOY_BASE + "/" }, []);
+      if (s)
+        out.push(s);
+    }
+    const quals = st.qualities || st.files || {};
+    Object.keys(quals).forEach(function(k) {
+      const u = quals[k];
+      if (!u || String(u).indexOf("https") !== 0)
+        return;
+      const s = makeStream("Cinejoy", "Cinejoy - " + (st.id || name) + " " + k, u, parseQuality(k), { Referer: CINEJOY_BASE + "/" }, []);
+      if (s)
+        out.push(s);
+    });
+  });
+  return out;
+}
+
+/**
+ * v1.6.0: full-chain worker lane. ONE text POST to the asian-catalog worker
+ * (/cjs, v5.7.0+) which runs the entire cinejoy chain server-side and returns
+ * final stream JSON. The device never touches a binary body nor enc-dec.app.
+ */
+function scrapeServerFull(srv, ctx, type) {
+  const base = relayBase();
+  if (!base)
+    return Promise.resolve([]);
+  const name = srv && srv.name || srv;
+  const body = JSON.stringify({
+    title: ctx.title || "",
+    type: type,
+    year: ctx.year || "",
+    imdb: ctx.imdbId || "",
+    tmdb: ctx.tmdbId || "",
+    server: String(name || ""),
+    season: ctx.isTv ? (ctx.season || 1) : 0,
+    episode: ctx.isTv ? (ctx.episode || 1) : 0
+  });
+  return fetch(base + "/cjs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: body
+  }).then(function(res) {
+    if (!res || !res.ok)
+      throw new Error("full HTTP " + (res ? res.status : "?"));
+    return res.json();
+  }).then(function(j) {
+    if (!j || !j.ok)
+      return [];
+    return rowsFromStreams(j.streams || [], name);
+  });
+}
+
 function scrapeServer(srv, ctx, headers, type) {
+  return __async(this, null, function* () {
+    // v1.6.0: per-server chain lane (below) + full-chain worker fallback,
+    // memoized in __CINEJOY_TOP_LANE__ ("chain" | "full") so Mobile skips the
+    // doomed direct attempts after the first server.
+    const name = srv && srv.name || srv;
+    if (__cjTop.mode === "full") {
+      return scrapeServerFull(srv, ctx, type).catch(function() { return []; });
+    }
+    let rows = [];
+    try {
+      rows = yield scrapeServerChain(srv, ctx, headers, type);
+    } catch (e) {
+      rows = [];
+    }
+    if (rows.length) {
+      __cjTop.mode = "chain";
+      return rows;
+    }
+    if (relayBase()) {
+      try {
+        const full = yield scrapeServerFull(srv, ctx, type);
+        if (full.length)
+          __cjTop.mode = "full";
+        return full;
+      } catch (e2) {
+        return [];
+      }
+    }
+    return rows;
+  });
+}
+
+function scrapeServerChain(srv, ctx, headers, type) {
   return __async(this, null, function* () {
     // v1.5.0: one server lane, isolated (any failure -> []). Extracted from
     // scrape() so servers can run in PARALLEL waves - the sequential loop
@@ -823,25 +949,7 @@ function scrapeServer(srv, ctx, headers, type) {
       const streams = ((decJson && decJson.result || {}).data || {}).stream;
       if (!streams)
         return out;
-      const list = Array.isArray(streams) ? streams : [streams];
-      list.forEach(function(st) {
-        if (!st)
-          return;
-        if (st.playlist) {
-          const s = makeStream("Cinejoy", "Cinejoy - " + (st.id || name) + " [HLS]", st.playlist, "1080p", { Referer: CINEJOY_BASE + "/" }, []);
-          if (s)
-            out.push(s);
-        }
-        const quals = st.qualities || st.files || {};
-        Object.keys(quals).forEach(function(k) {
-          const u = quals[k];
-          if (!u || String(u).indexOf("https") !== 0)
-            return;
-          const s = makeStream("Cinejoy", "Cinejoy - " + (st.id || name) + " " + k, u, parseQuality(k), { Referer: CINEJOY_BASE + "/" }, []);
-          if (s)
-            out.push(s);
-        });
-      });
+      rowsFromStreams(streams, name).forEach(function(s) { out.push(s); });
     } catch (e) {
       return out;
     }

@@ -5,7 +5,11 @@ var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __commonJS = (cb, mod) => function __require() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  try {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  } catch (e) {
+    throw mod = 0, e;
+  }
 };
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
@@ -24,12 +28,12 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// core.js
+// addons/asian-catalog/core.js
 var require_core = __commonJS({
-  "core.js"(exports) {
+  "addons/asian-catalog/core.js"(exports) {
     (function(global) {
       "use strict";
-      var VERSION = "5.6.0";
+      var VERSION = "5.7.0";
       var ADDON_ID = "community.asian.catalog";
       var ADDON_NAME = "Asian Catalog";
       var PINOY_SITE_DEFAULT = "https://pinoymovieshub.win";
@@ -78,13 +82,11 @@ var require_core = __commonJS({
       var tmdbInflight = /* @__PURE__ */ new Map();
       var CACHE_CAPS = { page: 250, resolved: 4e3, buffers: 120 };
       function cachePrune(map, cap) {
-        if (map.size <= cap)
-          return;
+        if (map.size <= cap) return;
         var it = map.keys();
         while (map.size > cap) {
           var k = it.next();
-          if (k.done)
-            break;
+          if (k.done) break;
           map.delete(k.value);
         }
       }
@@ -113,8 +115,7 @@ var require_core = __commonJS({
         }).filter(function(s) {
           return /^https?:\/\//.test(s);
         });
-        if (!khHosts.length)
-          khHosts = KISSKH_HOSTS_DEFAULT.slice();
+        if (!khHosts.length) khHosts = KISSKH_HOSTS_DEFAULT.slice();
         return {
           pinoySite: String(env.PINOY_SITE || PINOY_SITE_DEFAULT).replace(/\/+$/, ""),
           kissasianSite: String(env.KISSASIAN_SITE || KISSASIAN_SITE_DEFAULT).replace(/\/+$/, ""),
@@ -130,9 +131,9 @@ var require_core = __commonJS({
           keepUnmatched: env.ASIAN_KEEP_UNMATCHED !== "0",
           // fallback rows visible by default
           fetchFn: fetchRef || null,
-          nowFn: env.__nowFn || function() {
+          nowFn: env.__nowFn || (function() {
             return Date.now();
-          }
+          })
         };
       }
       var ENTITY_MAP = {
@@ -156,12 +157,10 @@ var require_core = __commonJS({
       };
       function decodeEntities(s) {
         return String(s || "").replace(/&(#?\w+);/g, function(m, ent) {
-          if (ENTITY_MAP[ent])
-            return ENTITY_MAP[ent];
+          if (ENTITY_MAP[ent]) return ENTITY_MAP[ent];
           if (ent.charAt(0) === "#") {
             var num = parseInt(ent.substring(1), 10);
-            if (isFinite(num) && num > 0 && num < 65536)
-              return String.fromCharCode(num);
+            if (isFinite(num) && num > 0 && num < 65536) return String.fromCharCode(num);
           }
           return m;
         });
@@ -184,14 +183,10 @@ var require_core = __commonJS({
       }
       function absoluteUrl(cfg, base, u) {
         u = String(u || "").trim();
-        if (!u)
-          return "";
-        if (u.indexOf("//") === 0)
-          return "https:" + u;
-        if (/^https?:\/\//i.test(u))
-          return u;
-        if (u.charAt(0) === "/")
-          return base + u;
+        if (!u) return "";
+        if (u.indexOf("//") === 0) return "https:" + u;
+        if (/^https?:\/\//i.test(u)) return u;
+        if (u.charAt(0) === "/") return base + u;
         return "";
       }
       function isPlaceholderPoster(u) {
@@ -199,8 +194,7 @@ var require_core = __commonJS({
       }
       function cleanPosterUrl(base, u) {
         u = absoluteUrl(null, base, u);
-        if (!u || isPlaceholderPoster(u))
-          return "";
+        if (!u || isPlaceholderPoster(u)) return "";
         return u.replace(/-\d+x\d+(\.\w{3,4})(?:\?.*)?$/, "$1");
       }
       function jsonHeaders(maxAge) {
@@ -242,32 +236,26 @@ var require_core = __commonJS({
         return void 0;
       }
       function fetchText(cfg, url, timeoutMs, headers) {
-        if (!cfg.fetchFn)
-          return Promise.reject(new Error("no fetch available"));
+        if (!cfg.fetchFn) return Promise.reject(new Error("no fetch available"));
         var opts = { method: "GET", redirect: "follow", headers: headers || BASE_HEADERS };
         var sig = timeoutSignal(timeoutMs || 12e3);
-        if (sig)
-          opts.signal = sig;
+        if (sig) opts.signal = sig;
         return Promise.resolve().then(function() {
           return cfg.fetchFn(url, opts);
         }).then(function(res) {
-          if (!res.ok)
-            throw new Error("HTTP " + res.status + " for " + url);
+          if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
           return res.text();
         });
       }
       function fetchJson(cfg, url, timeoutMs) {
-        if (!cfg.fetchFn)
-          return Promise.reject(new Error("no fetch available"));
+        if (!cfg.fetchFn) return Promise.reject(new Error("no fetch available"));
         var opts = { method: "GET", redirect: "follow", headers: JSON_HEADERS };
         var sig = timeoutSignal(timeoutMs || 12e3);
-        if (sig)
-          opts.signal = sig;
+        if (sig) opts.signal = sig;
         return Promise.resolve().then(function() {
           return cfg.fetchFn(url, opts);
         }).then(function(res) {
-          if (!res.ok)
-            throw new Error("HTTP " + res.status + " for " + url);
+          if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
           return res.json();
         });
       }
@@ -307,8 +295,7 @@ var require_core = __commonJS({
           cachePrune(pageCache, CACHE_CAPS.page);
           return items;
         }).catch(function(err) {
-          if (entry && now - entry.ts < PAGE_CACHE_STALE)
-            return entry.items;
+          if (entry && now - entry.ts < PAGE_CACHE_STALE) return entry.items;
           throw err;
         });
       }
@@ -317,8 +304,7 @@ var require_core = __commonJS({
         var i = 0;
         function worker() {
           return Promise.resolve().then(function loop() {
-            if (i >= arr.length)
-              return void 0;
+            if (i >= arr.length) return void 0;
             var idx = i++;
             return Promise.resolve().then(function() {
               return fn(arr[idx], idx);
@@ -329,8 +315,7 @@ var require_core = __commonJS({
           });
         }
         var workers = [];
-        for (var w = 0; w < Math.min(n, arr.length); w++)
-          workers.push(worker());
+        for (var w = 0; w < Math.min(n, arr.length); w++) workers.push(worker());
         return Promise.all(workers).then(function() {
           return out;
         });
@@ -340,11 +325,9 @@ var require_core = __commonJS({
       }
       function tmdbSearch(cfg, kind, query, year) {
         var url = "https://api.themoviedb.org/3/search/" + kind + "?api_key=" + encodeURIComponent(cfg.tmdbKey) + "&query=" + encodeURIComponent(query) + "&include_adult=false&page=1";
-        if (year)
-          url += kind === "movie" ? "&year=" + encodeURIComponent(year) : "&first_air_date_year=" + encodeURIComponent(year);
+        if (year) url += kind === "movie" ? "&year=" + encodeURIComponent(year) : "&first_air_date_year=" + encodeURIComponent(year);
         return fetchJson(cfg, url).then(function(data) {
-          if (!data || !Array.isArray(data.results))
-            return [];
+          if (!data || !Array.isArray(data.results)) return [];
           return data.results.map(function(r) {
             return {
               id: r.id,
@@ -362,38 +345,26 @@ var require_core = __commonJS({
         });
       }
       function titleScore(siteNorm, tmdbNorm) {
-        if (!siteNorm || !tmdbNorm)
-          return 0;
-        if (siteNorm === tmdbNorm)
-          return 3;
-        if (siteNorm.length >= 6 && tmdbNorm.indexOf(siteNorm) === 0)
-          return 2.5;
-        if (tmdbNorm.length >= 6 && siteNorm.indexOf(tmdbNorm) === 0)
-          return 2.5;
-        if (siteNorm.indexOf(tmdbNorm) !== -1 || tmdbNorm.indexOf(siteNorm) !== -1)
-          return 2;
+        if (!siteNorm || !tmdbNorm) return 0;
+        if (siteNorm === tmdbNorm) return 3;
+        if (siteNorm.length >= 6 && tmdbNorm.indexOf(siteNorm) === 0) return 2.5;
+        if (tmdbNorm.length >= 6 && siteNorm.indexOf(tmdbNorm) === 0) return 2.5;
+        if (siteNorm.indexOf(tmdbNorm) !== -1 || tmdbNorm.indexOf(siteNorm) !== -1) return 2;
         var a = siteNorm.split(" ");
         var b = tmdbNorm.split(" ");
         var setB = {};
-        for (var i = 0; i < b.length; i++)
-          setB[b[i]] = true;
+        for (var i = 0; i < b.length; i++) setB[b[i]] = true;
         var inter = 0;
-        for (var j = 0; j < a.length; j++)
-          if (setB[a[j]])
-            inter++;
+        for (var j = 0; j < a.length; j++) if (setB[a[j]]) inter++;
         var cov = inter / Math.max(a.length, b.length);
         return cov >= 0.6 ? 1.5 : 0;
       }
       function yearScore(siteYear, tmdbYear) {
-        if (!siteYear || !tmdbYear)
-          return 0;
+        if (!siteYear || !tmdbYear) return 0;
         var d = Math.abs(parseInt(siteYear, 10) - parseInt(tmdbYear, 10));
-        if (d === 0)
-          return 2;
-        if (d === 1)
-          return 1;
-        if (d === 2)
-          return 0.5;
+        if (d === 0) return 2;
+        if (d === 1) return 1;
+        if (d === 2) return 0.5;
         return -2;
       }
       function pickBestTmdb(candidates, cleanedTitle, siteYear) {
@@ -409,8 +380,7 @@ var require_core = __commonJS({
           var y = yearScore(siteYear, c.year);
           var score = t * 10 + y;
           var acceptable = t >= 2.5 || t >= 2 && y >= 1 || t === 3;
-          if (!acceptable)
-            continue;
+          if (!acceptable) continue;
           if (score > bestScore) {
             bestScore = score;
             best = c;
@@ -420,33 +390,28 @@ var require_core = __commonJS({
       }
       function resolveTmdb(cfg, type, rawTitle, siteYear) {
         var cleaned = cleanTitleForSearch(rawTitle);
-        if (!cleaned)
-          return Promise.resolve(null);
+        if (!cleaned) return Promise.resolve(null);
         var key = type + "|" + normalizeForCompare(cleaned) + "|" + (siteYear || "");
         var now = cfg.nowFn();
         var hit = resolvedCache.get(key);
         if (hit) {
           var ttl = hit.value ? RESOLVED_TTL : RESOLVED_NULL_TTL;
-          if (now - hit.ts < ttl)
-            return Promise.resolve(hit.value);
+          if (now - hit.ts < ttl) return Promise.resolve(hit.value);
           resolvedCache.delete(key);
         }
         var pending = tmdbInflight.get(key);
-        if (pending)
-          return pending;
+        if (pending) return pending;
         var kind = type === "movie" ? "movie" : "tv";
         var attempts = [{ q: cleaned, y: siteYear }, { q: cleaned, y: "" }];
-        pending = function run(idx) {
-          if (idx >= attempts.length)
-            return Promise.resolve(null);
+        pending = (function run(idx) {
+          if (idx >= attempts.length) return Promise.resolve(null);
           var at = attempts[idx];
           return tmdbSearch(cfg, kind, at.q, at.y).then(function(candidates) {
             var best = pickBestTmdb(candidates, cleaned, siteYear);
-            if (best)
-              return best;
+            if (best) return best;
             return run(idx + 1);
           });
-        }(0).then(function(value) {
+        })(0).then(function(value) {
           resolvedCache.set(key, { ts: now, value });
           cachePrune(resolvedCache, CACHE_CAPS.resolved);
           tmdbInflight.delete(key);
@@ -469,13 +434,11 @@ var require_core = __commonJS({
             tail = String(item.url).replace(/\/+$/, "").split("/").pop() || "";
             tail = tail.replace(/\.(html?|json)$/i, "");
           }
-          if (!tail)
-            tail = cleanDisplayName(item.title);
+          if (!tail) tail = cleanDisplayName(item.title);
           tail = String(tail).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
         }
         var sp = SOURCE_PREFIX[item.source];
-        if (sp && tail && tail.indexOf(sp + "-") !== 0)
-          tail = sp + "-" + tail;
+        if (sp && tail && tail.indexOf(sp + "-") !== 0) tail = sp + "-" + tail;
         return tail || "untitled";
       }
       function fallbackMeta(cfg, prefix, item) {
@@ -486,12 +449,9 @@ var require_core = __commonJS({
           posterShape: "poster"
         };
         var sitePoster = cleanPosterUrl(cfg.pinoySite, item.poster) || cleanPosterUrl(cfg.kissasianSite, item.poster) || cleanPosterUrl(cfg.viewasianSite, item.poster) || cleanPosterUrl(cfg.animoSite, item.poster) || (/^https?:\/\//i.test(String(item.poster || "")) && !isPlaceholderPoster(item.poster) ? item.poster : "");
-        if (sitePoster)
-          meta.poster = sitePoster;
-        if (item.description)
-          meta.description = item.description;
-        if (item.year)
-          meta.releaseInfo = String(item.year);
+        if (sitePoster) meta.poster = sitePoster;
+        if (item.description) meta.description = item.description;
+        if (item.year) meta.releaseInfo = String(item.year);
         var siteRating = parseFloat(item.rating);
         if (isFinite(siteRating) && siteRating > 0 && siteRating <= 10) {
           meta.imdbRating = Math.round(siteRating * 10) / 10;
@@ -501,8 +461,7 @@ var require_core = __commonJS({
       function toMeta(cfg, item, tmdb) {
         var type = item.type === "series" ? "series" : "movie";
         var name = cleanDisplayName(item.title);
-        if (!name)
-          return null;
+        if (!name) return null;
         var sitePoster = cleanPosterUrl(cfg.pinoySite, item.poster) || cleanPosterUrl(cfg.kissasianSite, item.poster) || cleanPosterUrl(cfg.viewasianSite, item.poster) || cleanPosterUrl(cfg.animoSite, item.poster) || (/^https?:\/\//i.test(String(item.poster || "")) && !isPlaceholderPoster(item.poster) ? item.poster : "");
         if (tmdb) {
           var meta = {
@@ -513,23 +472,17 @@ var require_core = __commonJS({
             posterShape: "poster"
           };
           var bg = tmdbImg("w780", tmdb.backdrop);
-          if (bg)
-            meta.background = bg;
-          if (tmdb.overview)
-            meta.description = tmdb.overview;
+          if (bg) meta.background = bg;
+          if (tmdb.overview) meta.description = tmdb.overview;
           var rel = item.year || tmdb.year;
-          if (rel)
-            meta.releaseInfo = String(rel);
+          if (rel) meta.releaseInfo = String(rel);
           var r = parseFloat(item.rating) || tmdb.rating || 0;
-          if (r > 0)
-            meta.imdbRating = Math.round(r * 10) / 10;
+          if (r > 0) meta.imdbRating = Math.round(r * 10) / 10;
           return meta;
         }
-        if (!cfg.keepUnmatched)
-          return null;
+        if (!cfg.keepUnmatched) return null;
         var fb = fallbackMeta(cfg, "asian", item);
-        if (!fb.description && item.description)
-          fb.description = item.description;
+        if (!fb.description && item.description) fb.description = item.description;
         return fb;
       }
       function resolveBatch(cfg, items) {
@@ -551,50 +504,38 @@ var require_core = __commonJS({
           var whole = m[0];
           var idMatch = whole.match(/id=["']post-([\w-]+?)["']/);
           var postId = idMatch ? idMatch[1] : "";
-          if (postId.indexOf("featured-") === 0)
-            continue;
+          if (postId.indexOf("featured-") === 0) continue;
           var img = body.match(/<img[^>]*>/i);
           var poster = img ? attr(img[0], "src") : "";
           var link = body.match(/href=["'](https?:\/\/[^"']+)["']/i);
-          if (!link)
-            continue;
+          if (!link) continue;
           var url = decodeEntities(link[1]).replace(/[?#].*$/, "");
-          if (!/\/(?:movies|series)\/[^/]+$/i.test(url))
-            continue;
+          if (!/\/(?:movies|series)\/[^/]+$/i.test(url)) continue;
           var kind = /\/movies\//i.test(url) ? "movie" : /\/series\//i.test(url) ? "series" : "";
-          if (!kind)
-            continue;
+          if (!kind) continue;
           var isSearchItem = /class=["']details["']/.test(body);
           var isArchiveItem = /^\d+$/.test(postId);
-          if (!isSearchItem && !isArchiveItem)
-            continue;
+          if (!isSearchItem && !isArchiveItem) continue;
           var title = "";
           var th = body.match(/<h3[^>]*class=["'][^"']*title[^"']*["'][^>]*>([\s\S]*?)<\/h3>/i);
-          if (th)
-            title = stripTags(th[1]);
+          if (th) title = stripTags(th[1]);
           if (!title) {
             var td = body.match(/<div[^>]*class=["']title["'][^>]*>\s*<a[^>]*>([\s\S]*?)<\/a>/i);
-            if (td)
-              title = stripTags(td[1]);
+            if (td) title = stripTags(td[1]);
           }
           if (!title && img) {
             var alt = attr(img[0], "alt");
-            if (alt)
-              title = stripTags(decodeEntities(alt));
+            if (alt) title = stripTags(decodeEntities(alt));
           }
-          if (!title)
-            continue;
+          if (!title) continue;
           var year = "";
           var ym = body.match(/<span[^>]*>\s*((?:19|20)\d{2})\s*</);
-          if (ym)
-            year = ym[1];
+          if (ym) year = ym[1];
           var desc = "";
           var dm = body.match(/<div[^>]*class=["']contenido["'][^>]*>\s*<p>([\s\S]*?)<\/p>/i);
-          if (dm)
-            desc = stripTags(dm[1]);
+          if (dm) desc = stripTags(dm[1]);
           var slug = url.replace(/\/+$/, "").split("/").pop() || "";
-          if (seen[url])
-            continue;
+          if (seen[url]) continue;
           seen[url] = true;
           items.push({
             postId,
@@ -612,11 +553,9 @@ var require_core = __commonJS({
       }
       function parseFeaturedCarousel(cfg, html) {
         var start = html.indexOf('id="featured-titles"');
-        if (start === -1)
-          return [];
+        if (start === -1) return [];
         var end = html.indexOf("<h2>", start);
-        if (end === -1)
-          end = html.length;
+        if (end === -1) end = html.length;
         var seg = html.substring(start, end);
         var items = [];
         var seen = {};
@@ -627,32 +566,24 @@ var require_core = __commonJS({
           var cls = m[2];
           var body = m[3];
           var link = body.match(/href=["'](https?:\/\/[^"']+)["']/i);
-          if (!link)
-            continue;
+          if (!link) continue;
           var url = decodeEntities(link[1]).replace(/[?#].*$/, "");
           var kind = /\/movies\//i.test(url) ? "movie" : /\/series\//i.test(url) ? "series" : "";
-          if (!kind)
-            continue;
+          if (!kind) continue;
           var img = body.match(/<img[^>]*>/i);
           var poster = img ? attr(img[0], "src") : "";
           var title = "";
           var th = body.match(/<h3[^>]*>\s*<a[^>]*>([\s\S]*?)<\/a>/i);
-          if (th)
-            title = stripTags(th[1]);
-          if (!title && img)
-            title = stripTags(decodeEntities(attr(img[0], "alt") || ""));
-          if (!title)
-            continue;
+          if (th) title = stripTags(th[1]);
+          if (!title && img) title = stripTags(decodeEntities(attr(img[0], "alt") || ""));
+          if (!title) continue;
           var year = "";
           var ym = body.match(/<span>\s*((?:19|20)\d{2})\s*<\/span>/i);
-          if (ym)
-            year = ym[1];
+          if (ym) year = ym[1];
           var rating = "";
           var rm = body.match(/class=["']rating["']\s*>\s*([\d.]+)\s*</i);
-          if (rm)
-            rating = rm[1];
-          if (seen[url])
-            continue;
+          if (rm) rating = rm[1];
+          if (seen[url]) continue;
           seen[url] = true;
           items.push({
             postId: "featured-" + postId,
@@ -681,8 +612,7 @@ var require_core = __commonJS({
         return fetchPageCached(cfg, url, pinoyParseUrl).then(function(items) {
           var out = [];
           for (var i = 0; i < items.length; i++) {
-            if (!type || items[i].type === type)
-              out.push(items[i]);
+            if (!type || items[i].type === type) out.push(items[i]);
           }
           return out;
         });
@@ -693,8 +623,7 @@ var require_core = __commonJS({
       };
       function pinoyGenreSlug(label) {
         var s = String(label || "").toLowerCase().trim();
-        if (PINOY_GENRE_SLUGS[s])
-          return PINOY_GENRE_SLUGS[s];
+        if (PINOY_GENRE_SLUGS[s]) return PINOY_GENRE_SLUGS[s];
         return slugifyGenre(s);
       }
       function pinoyPageMetas(cfg, def, page, extras) {
@@ -706,8 +635,7 @@ var require_core = __commonJS({
           var slug = pinoyGenreSlug(extras.genre);
           url = page === 1 ? cfg.pinoySite + "/genre/" + slug : cfg.pinoySite + "/genre/" + slug + "/page/" + page;
         } else if (def.mode === "newreleases") {
-          if (page > 1)
-            return Promise.resolve([]);
+          if (page > 1) return Promise.resolve([]);
           url = cfg.pinoySite + "/";
         } else if (def.mode === "featured") {
           url = page === 1 ? cfg.pinoySite + "/genre/featured" : cfg.pinoySite + "/genre/featured/page/" + page;
@@ -718,8 +646,7 @@ var require_core = __commonJS({
           url = page === 1 ? cfg.pinoySite + seg + "/" : cfg.pinoySite + seg + "/page/" + page;
         }
         return pinoyPageRaw(cfg, url, def.type).then(function(items) {
-          if (!items.length)
-            return [];
+          if (!items.length) return [];
           return resolveBatch(cfg, items);
         });
       }
@@ -735,11 +662,9 @@ var require_core = __commonJS({
           var body = m[1];
           var isSeriesRow = reSeries.test(body);
           var link = body.match(reHref);
-          if (!link)
-            continue;
+          if (!link) continue;
           var slug = link[1];
-          if (slug === "feed" || slug === "list-mode" || slug === "page")
-            continue;
+          if (slug === "feed" || slug === "list-mode" || slug === "page") continue;
           var img = body.match(/<img[^>]*>/i);
           var poster = "";
           if (img) {
@@ -747,22 +672,18 @@ var require_core = __commonJS({
           }
           var title = "";
           var tm = body.match(/title="([^"]+)"/i);
-          if (tm)
-            title = stripTags(decodeEntities(tm[1]));
+          if (tm) title = stripTags(decodeEntities(tm[1]));
           if (!title && img) {
             var alt = attr(img[0], "alt") || attr(img[0], "title");
-            if (alt)
-              title = stripTags(decodeEntities(alt));
+            if (alt) title = stripTags(decodeEntities(alt));
           }
-          if (!title)
-            continue;
+          if (!title) continue;
           var epm = slug.match(/^(.*)-episode-\d+$/);
           if (epm) {
             slug = epm[1];
             title = title.replace(/\s*[-\u2013\u2014]?\s*Episode\s*\d+.*$/i, "");
           }
-          if (seen[slug])
-            continue;
+          if (seen[slug]) continue;
           seen[slug] = true;
           items.push({
             slug,
@@ -779,15 +700,11 @@ var require_core = __commonJS({
       }
       function ksParseHotSection(cfg, html) {
         var start = html.indexOf("releases hothome");
-        if (start === -1)
-          start = html.indexOf("Hot Series Update");
-        if (start === -1)
-          return [];
+        if (start === -1) start = html.indexOf("Hot Series Update");
+        if (start === -1) return [];
         var end = html.indexOf('class="bixbox"', start + 10);
-        if (end === -1)
-          end = html.indexOf("Latest Release", start + 10);
-        if (end === -1)
-          end = html.length;
+        if (end === -1) end = html.indexOf("Latest Release", start + 10);
+        if (end === -1) end = html.length;
         var seg = html.substring(start, end);
         return ksParseListPage(cfg, seg);
       }
@@ -819,8 +736,7 @@ var require_core = __commonJS({
                 return ksParseHotSection(c, html);
               });
             }).then(function(items) {
-              if (!items.length)
-                return [];
+              if (!items.length) return [];
               return resolveBatch(cfg, items);
             });
           }
@@ -829,8 +745,7 @@ var require_core = __commonJS({
           url = page === 1 ? cfg.kissasianSite + "/series/?status=&type=&order=update" : cfg.kissasianSite + "/series/?status=&type=&order=update&page=" + page;
         }
         return ksPageRaw(cfg, url).then(function(items) {
-          if (!items.length)
-            return [];
+          if (!items.length) return [];
           return resolveBatch(cfg, items);
         });
       }
@@ -845,27 +760,22 @@ var require_core = __commonJS({
           var slug = m[1];
           var body = m[3];
           var img = body.match(/<img[^>]*>/i);
-          if (!img)
-            continue;
+          if (!img) continue;
           var poster = attr(img[0], "data-original") || attr(img[0], "src");
           var title = attr(img[0], "title") || attr(img[0], "alt");
           if (!title) {
             var at = m[0].match(/<a[^>]*title="([^"]+)"/i);
-            if (at)
-              title = at[1];
+            if (at) title = at[1];
           }
           if (!title) {
             var h2 = body.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
-            if (h2)
-              title = stripTags(h2[1]);
+            if (h2) title = stripTags(h2[1]);
           }
-          if (!title)
-            continue;
+          if (!title) continue;
           title = stripTags(decodeEntities(title));
           var year = "";
           var ym = title.match(/\((19|20)\d{2}\)/);
-          if (ym)
-            year = ym[0].slice(1, -1);
+          if (ym) year = ym[0].slice(1, -1);
           var epm = slug.match(/^(.*?)(?:-episode-\d+|-ep-\d+)(?:-[a-z0-9-]+)?$/);
           if (epm) {
             slug = epm[1];
@@ -876,8 +786,7 @@ var require_core = __commonJS({
           } else if (!isDramaRow) {
             continue;
           }
-          if (seen[slug])
-            continue;
+          if (seen[slug]) continue;
           seen[slug] = true;
           items.push({
             slug,
@@ -909,8 +818,7 @@ var require_core = __commonJS({
           url = page === 1 ? cfg.viewasianSite + "/" : cfg.viewasianSite + "/page/" + page + "/";
         }
         return vaPageRaw(cfg, url).then(function(items) {
-          if (!items.length)
-            return [];
+          if (!items.length) return [];
           return resolveBatch(cfg, items);
         });
       }
@@ -926,11 +834,9 @@ var require_core = __commonJS({
           var body = m[1];
           var isSeriesRow = reAnime.test(body);
           var link = body.match(reHref);
-          if (!link)
-            continue;
+          if (!link) continue;
           var slug = link[1];
-          if (slug === "feed" || slug === "list-mode" || slug === "page")
-            continue;
+          if (slug === "feed" || slug === "list-mode" || slug === "page") continue;
           var img = body.match(/<img[^>]*>/i);
           var poster = "";
           if (img) {
@@ -938,22 +844,18 @@ var require_core = __commonJS({
           }
           var title = "";
           var tm = body.match(/title="([^"]+)"/i);
-          if (tm)
-            title = stripTags(decodeEntities(tm[1]));
+          if (tm) title = stripTags(decodeEntities(tm[1]));
           if (!title && img) {
             var alt = attr(img[0], "alt") || attr(img[0], "title");
-            if (alt)
-              title = stripTags(decodeEntities(alt));
+            if (alt) title = stripTags(decodeEntities(alt));
           }
-          if (!title)
-            continue;
+          if (!title) continue;
           var epm = slug.match(/^(.*)-episode-\d+$/);
           if (epm) {
             slug = epm[1];
             title = title.replace(/\s*[-\u2013\u2014]?\s*Episode\s*\d+.*$/i, "");
           }
-          if (seen[slug])
-            continue;
+          if (seen[slug]) continue;
           seen[slug] = true;
           items.push({
             slug,
@@ -985,8 +887,7 @@ var require_core = __commonJS({
           url = page === 1 ? cfg.animoSite + "/anime/?status=&type=&order=update" : cfg.animoSite + "/anime/?status=&type=&order=update&page=" + page;
         }
         return animoPageRaw(cfg, url).then(function(items) {
-          if (!items.length)
-            return [];
+          if (!items.length) return [];
           return resolveBatch(cfg, items);
         });
       }
@@ -1026,15 +927,12 @@ var require_core = __commonJS({
         for (var i = 1; i < chunks.length; i++) {
           var body = chunks[i].length > 4e3 ? chunks[i].slice(0, 4e3) : chunks[i];
           var a = body.match(reAnchor);
-          if (!a)
-            continue;
+          if (!a) continue;
           var hrefPrefix = a[1] ? a[1].replace(/\/+$/, "").toLowerCase() : "";
           var slug = a[2];
-          if (PEN_SKIP_SLUGS[slug])
-            continue;
+          if (PEN_SKIP_SLUGS[slug]) continue;
           var title = stripTags(decodeEntities(a[3] || ""));
-          if (!title)
-            continue;
+          if (!title) continue;
           var year = "";
           var ym = title.match(/\s*\((\d{4})\)\s*$/);
           if (ym) {
@@ -1042,22 +940,18 @@ var require_core = __commonJS({
             title = title.replace(/\s*\((\d{4})\)\s*$/, "");
           } else {
             var sm = slug.match(/^(.*?)-(\d{4})$/);
-            if (sm)
-              year = sm[2];
+            if (sm) year = sm[2];
           }
           var em = body.match(reEps);
           var qm = body.match(reQuality);
           var isSeries = hrefPrefix === "series" || !!em;
           var url = cfg.pencuriSite + (isSeries ? "/series/" + slug + "/" : "/" + slug + "/");
-          if (seen[url])
-            continue;
+          if (seen[url]) continue;
           seen[url] = true;
           var img = body.match(/<img[^>]*>/i);
           var poster = "";
-          if (img)
-            poster = attr(img[0], "src") || attr(img[0], "data-original") || attr(img[0], "data-lazy-src") || "";
-          if (poster && !/^https?:\/\//i.test(poster))
-            poster = "";
+          if (img) poster = attr(img[0], "src") || attr(img[0], "data-original") || attr(img[0], "data-lazy-src") || "";
+          if (poster && !/^https?:\/\//i.test(poster)) poster = "";
           items.push({
             slug,
             url,
@@ -1094,11 +988,9 @@ var require_core = __commonJS({
         return penPageRaw(cfg, url).then(function(items) {
           var out = [];
           for (var i = 0; i < items.length; i++) {
-            if (!def.penTyped || (def.type === "series" ? items[i].type === "series" : items[i].type !== "series"))
-              out.push(items[i]);
+            if (!def.penTyped || (def.type === "series" ? items[i].type === "series" : items[i].type !== "series")) out.push(items[i]);
           }
-          if (!out.length)
-            return [];
+          if (!out.length) return [];
           return resolveBatch(cfg, out);
         });
       }
@@ -1136,22 +1028,15 @@ var require_core = __commonJS({
         return "https://api.themoviedb.org/3" + spec.path + "?" + q;
       }
       function tmdbRowToMetaDirect(cfg, r, forcedKind) {
-        if (!r || r.id === void 0 || r.id === null)
-          return null;
+        if (!r || r.id === void 0 || r.id === null) return null;
         var type;
-        if (forcedKind === "movie")
-          type = "movie";
-        else if (forcedKind === "tv")
-          type = "series";
-        else if (r.media_type === "movie")
-          type = "movie";
-        else if (r.media_type === "tv")
-          type = "series";
-        else
-          return null;
+        if (forcedKind === "movie") type = "movie";
+        else if (forcedKind === "tv") type = "series";
+        else if (r.media_type === "movie") type = "movie";
+        else if (r.media_type === "tv") type = "series";
+        else return null;
         var name = r.name || r.title || r.original_name || r.original_title || "";
-        if (!String(name).trim())
-          return null;
+        if (!String(name).trim()) return null;
         var meta = {
           id: "tmdb:" + r.id,
           type,
@@ -1160,13 +1045,10 @@ var require_core = __commonJS({
           posterShape: "poster"
         };
         var bg = tmdbImg("w780", r.backdrop_path || "");
-        if (bg)
-          meta.background = bg;
-        if (r.overview)
-          meta.description = r.overview;
+        if (bg) meta.background = bg;
+        if (r.overview) meta.description = r.overview;
         var yr = String(r.release_date || r.first_air_date || "").split("-")[0];
-        if (yr)
-          meta.releaseInfo = yr;
+        if (yr) meta.releaseInfo = yr;
         if (typeof r.vote_average === "number" && r.vote_average > 0) {
           meta.imdbRating = Math.round(r.vote_average * 10) / 10;
         }
@@ -1174,28 +1056,22 @@ var require_core = __commonJS({
       }
       function kisskhTmdbRescuePage(cfg, def, page, search) {
         var spec = search ? { kind: "", path: "/search/multi", q: "" } : KISSKH_TMDB_RESCUE[def.id] || null;
-        if (!spec)
-          return Promise.resolve([]);
+        if (!spec) return Promise.resolve([]);
         var url = kisskhRescueUrl(cfg, spec, search ? 1 : page);
-        if (search)
-          url += "&query=" + encodeURIComponent(search) + "&include_adult=false";
+        if (search) url += "&query=" + encodeURIComponent(search) + "&include_adult=false";
         return fetchJson(cfg, url, 12e3).then(function(data) {
           var rows = data && Array.isArray(data.results) ? data.results : [];
           var out = [];
           var seen = {};
           for (var i = 0; i < rows.length; i++) {
             var meta = tmdbRowToMetaDirect(cfg, rows[i], spec.kind || "");
-            if (!meta || seen[meta.id])
-              continue;
-            if (def.type === "movie" && meta.type !== "movie")
-              continue;
-            if (def.type === "series" && meta.type !== "series")
-              continue;
+            if (!meta || seen[meta.id]) continue;
+            if (def.type === "movie" && meta.type !== "movie") continue;
+            if (def.type === "series" && meta.type !== "series") continue;
             seen[meta.id] = true;
             out.push(meta);
           }
-          if (out.length)
-            kisskhMarkRescue(def.id);
+          if (out.length) kisskhMarkRescue(def.id);
           return out;
         });
       }
@@ -1212,8 +1088,7 @@ var require_core = __commonJS({
             kisskhActiveHost = hosts[i];
             return data;
           }).catch(function(err) {
-            if (i + 1 < hosts.length)
-              return attempt(i + 1);
+            if (i + 1 < hosts.length) return attempt(i + 1);
             throw err;
           });
         }
@@ -1228,15 +1103,12 @@ var require_core = __commonJS({
         "kisskh-upcoming": ["type=KC&sub=0&sort=latest&status=Upcoming", "type=KC&sub=0&sort=ongoing"]
       };
       function kisskhRowToItem(cfg, row) {
-        if (!row || row.id === void 0 || row.id === null)
-          return null;
+        if (!row || row.id === void 0 || row.id === null) return null;
         var title = String(row.title || "").trim();
-        if (!title)
-          return null;
+        if (!title) return null;
         var poster = String(row.poster_path || "").trim();
         if (poster) {
-          if (poster.indexOf("//") === 0)
-            poster = "https:" + poster;
+          if (poster.indexOf("//") === 0) poster = "https:" + poster;
           else if (poster.charAt(0) === "/") {
             poster = (kisskhActiveHost || cfg.kisskhHosts[0]) + poster;
           }
@@ -1255,17 +1127,14 @@ var require_core = __commonJS({
       function kisskhListRaw(cfg, def, page) {
         var queries = KISSKH_SECTIONS[def.id] || ["type=KC&sub=0&sort=latest"];
         function run(idx) {
-          if (idx >= queries.length)
-            return Promise.resolve([]);
+          if (idx >= queries.length) return Promise.resolve([]);
           var url = "/api/DramaList/List/" + page + "?" + queries[idx] + "&title=";
           return kisskhFetchJson(cfg, url).then(function(data) {
             var rows = data && Array.isArray(data.datas) ? data.datas : [];
-            if (!rows.length && idx + 1 < queries.length)
-              return run(idx + 1);
+            if (!rows.length && idx + 1 < queries.length) return run(idx + 1);
             return rows;
           }).catch(function(err) {
-            if (idx + 1 < queries.length)
-              return run(idx + 1);
+            if (idx + 1 < queries.length) return run(idx + 1);
             throw err;
           });
         }
@@ -1281,16 +1150,12 @@ var require_core = __commonJS({
         var items = [];
         for (var i = 0; i < rows.length; i++) {
           var it = kisskhRowToItem(cfg, rows[i]);
-          if (!it)
-            continue;
-          if (typeFilter === "movie" && it.type !== "movie")
-            continue;
-          if (typeFilter === "series" && it.type !== "series")
-            continue;
+          if (!it) continue;
+          if (typeFilter === "movie" && it.type !== "movie") continue;
+          if (typeFilter === "series" && it.type !== "series") continue;
           items.push(it);
         }
-        if (!items.length)
-          return Promise.resolve([]);
+        if (!items.length) return Promise.resolve([]);
         return resolveBatch(cfg, items);
       }
       function kisskhPageMetas(cfg, def, page, extras) {
@@ -1324,19 +1189,14 @@ var require_core = __commonJS({
       }
       function anikotoRowToMeta(cfg, row) {
         var name = cleanDisplayName(row.title || row.titles || row.alternative || row.native);
-        if (!name)
-          return null;
+        if (!name) return null;
         var animeId = null;
         var malId = parseInt(row.mal_id, 10);
         var aniId = parseInt(row.ani_id, 10);
-        if (isFinite(malId) && malId > 0)
-          animeId = "mal:" + malId;
-        else if (isFinite(aniId) && aniId > 0)
-          animeId = "anilist:" + aniId;
-        else if (row.id)
-          animeId = "anikoto:" + row.id;
-        if (!animeId)
-          return null;
+        if (isFinite(malId) && malId > 0) animeId = "mal:" + malId;
+        else if (isFinite(aniId) && aniId > 0) animeId = "anilist:" + aniId;
+        else if (row.id) animeId = "anikoto:" + row.id;
+        if (!animeId) return null;
         var meta = {
           id: animeId,
           type: "series",
@@ -1348,37 +1208,28 @@ var require_core = __commonJS({
           status: row.status || void 0
         };
         var bg = /^https?:\/\//i.test(String(row.background_image || "")) ? row.background_image : void 0;
-        if (bg)
-          meta.background = bg;
+        if (bg) meta.background = bg;
         var score = parseFloat(row.score);
-        if (isFinite(score) && score > 0 && score <= 10)
-          meta.imdbRating = Math.round(score * 10) / 10;
-        if (Array.isArray(row.terms_by_type && row.terms_by_type.genre))
-          meta.genres = row.terms_by_type.genre.slice(0, 6);
+        if (isFinite(score) && score > 0 && score <= 10) meta.imdbRating = Math.round(score * 10) / 10;
+        if (Array.isArray(row.terms_by_type && row.terms_by_type.genre)) meta.genres = row.terms_by_type.genre.slice(0, 6);
         return meta;
       }
       function anikotoPageMetas(cfg, def, page, extras) {
-        if (page > ANIKOTO_MAX_PAGES)
-          return Promise.resolve([]);
+        if (page > ANIKOTO_MAX_PAGES) return Promise.resolve([]);
         var mode = def.mode || "latest";
         return anikotoFeedPage(cfg, page).then(function(rows) {
           var currentYear = (/* @__PURE__ */ new Date()).getFullYear();
           var out = [];
-          if (mode === "newadded")
-            rows = rows.slice().sort(function(a, b) {
-              return (parseInt(b.id, 10) || 0) - (parseInt(a.id, 10) || 0);
-            });
+          if (mode === "newadded") rows = rows.slice().sort(function(a, b) {
+            return (parseInt(b.id, 10) || 0) - (parseInt(a.id, 10) || 0);
+          });
           for (var i = 0; i < rows.length; i++) {
             var r = rows[i];
-            if (mode === "newrelease" && !(parseInt(r.year, 10) === currentYear && r.status === "Currently Airing"))
-              continue;
-            if (mode === "upcoming" && r.status !== "Not yet aired")
-              continue;
-            if (mode === "completed" && r.status !== "Finished Airing")
-              continue;
+            if (mode === "newrelease" && !(parseInt(r.year, 10) === currentYear && r.status === "Currently Airing")) continue;
+            if (mode === "upcoming" && r.status !== "Not yet aired") continue;
+            if (mode === "completed" && r.status !== "Finished Airing") continue;
             var meta = anikotoRowToMeta(cfg, r);
-            if (meta)
-              out.push(meta);
+            if (meta) out.push(meta);
           }
           return out;
         });
@@ -1390,18 +1241,15 @@ var require_core = __commonJS({
           return Promise.resolve();
         }
         _jikanLastReq = Date.now() + wait;
-        if (typeof setTimeout !== "function")
-          return Promise.resolve();
+        if (typeof setTimeout !== "function") return Promise.resolve();
         return new Promise(function(resolve) {
           setTimeout(resolve, wait);
         });
       }
       function metaCacheGet(cfg, key) {
         var hit = metaCache.get(key);
-        if (hit && cfg.nowFn() - hit.ts < META_CACHE_TTL)
-          return hit.meta;
-        if (hit)
-          metaCache.delete(key);
+        if (hit && cfg.nowFn() - hit.ts < META_CACHE_TTL) return hit.meta;
+        if (hit) metaCache.delete(key);
         return null;
       }
       function metaCacheSet(cfg, key, meta) {
@@ -1409,10 +1257,8 @@ var require_core = __commonJS({
         cachePrune(metaCache, 300);
       }
       function jikanLooksDown(d) {
-        if (!d)
-          return true;
-        if (d.status === 500 || d.status === 502 || d.status === 503 || d.status === 504 || d.status === 429)
-          return true;
+        if (!d) return true;
+        if (d.status === 500 || d.status === 502 || d.status === 503 || d.status === 504 || d.status === 429) return true;
         var sig = String(d && (d.message || d.error || d.type) || "");
         return /UpstreamException|timed out|timeout|rate.?limit/i.test(sig);
       }
@@ -1428,8 +1274,7 @@ var require_core = __commonJS({
           return Promise.resolve(null);
         }
         return once().then(function(a) {
-          if (a)
-            return a;
+          if (a) return a;
           return jikanGap().then(function() {
             return once();
           }).then(function(a2) {
@@ -1447,8 +1292,7 @@ var require_core = __commonJS({
         return jikanGap().then(function() {
           return fetchJson(cfg, cfg.jikanApi + "/anime/" + encodeURIComponent(malId) + "/episodes?page=" + page, 12e3);
         }).then(function(d) {
-          if (!d || jikanLooksDown(d))
-            return [];
+          if (!d || jikanLooksDown(d)) return [];
           return d.data && Array.isArray(d.data) ? d.data : [];
         }).catch(function() {
           return [];
@@ -1461,10 +1305,8 @@ var require_core = __commonJS({
       var _anikotoByMalInflight = null;
       function anikotoByMalMap(cfg) {
         var now = cfg.nowFn();
-        if (_anikotoByMal && now - _anikotoByMalTs < ANIKOTO_MAP_TTL)
-          return Promise.resolve(_anikotoByMal);
-        if (_anikotoByMalInflight)
-          return _anikotoByMalInflight;
+        if (_anikotoByMal && now - _anikotoByMalTs < ANIKOTO_MAP_TTL) return Promise.resolve(_anikotoByMal);
+        if (_anikotoByMalInflight) return _anikotoByMalInflight;
         var pages = [];
         for (var p = 1; p <= ANIKOTO_META_PAGES; p++) {
           pages.push(anikotoFeedPage(cfg, p).catch(function() {
@@ -1476,8 +1318,7 @@ var require_core = __commonJS({
           all.forEach(function(rows) {
             (rows || []).forEach(function(r) {
               var m = parseInt(r && r.mal_id, 10);
-              if (isFinite(m) && m > 0 && r.id)
-                map[m] = String(r.id);
+              if (isFinite(m) && m > 0 && r.id) map[m] = String(r.id);
             });
           });
           _anikotoByMal = map;
@@ -1493,14 +1334,12 @@ var require_core = __commonJS({
       function metaForMal(cfg, malId, reqType) {
         var key = "mal:" + malId;
         var cached = metaCacheGet(cfg, key);
-        if (cached)
-          return Promise.resolve(cached);
+        if (cached) return Promise.resolve(cached);
         return Promise.all([
           jikanAnimeFull(cfg, malId),
           anikotoByMalMap(cfg).then(function(map) {
             var aid = map[parseInt(malId, 10)];
-            if (!aid)
-              return null;
+            if (!aid) return null;
             return anikotoFetchJson(cfg, "/series/" + encodeURIComponent(aid)).then(function(d) {
               return d && d.data ? d.data : null;
             }).catch(function() {
@@ -1515,8 +1354,7 @@ var require_core = __commonJS({
           var sa = sData && sData.anime ? sData.anime : null;
           var aName = a ? a.title_english || a.title : "";
           var saName = sa ? cleanDisplayName(sa.title || sa.titles || sa.alternative || sa.native) : "";
-          if (!aName && !saName || !a && !sa)
-            return null;
+          if (!aName && !saName || !a && !sa) return null;
           var isMovie = a ? String(a.type || "").toLowerCase() === "movie" : false;
           var meta = {
             id: key,
@@ -1532,21 +1370,17 @@ var require_core = __commonJS({
           var jikanYear = a ? a.year ? String(a.year) : a.aired && a.aired.from ? String(a.aired.from).split("-")[0] : void 0 : void 0;
           meta.releaseInfo = jikanYear || (sa && sa.year ? String(sa.year) : void 0);
           meta.status = a && a.status || sa && sa.status || void 0;
-          if (a && a.duration)
-            meta.runtime = String(a.duration).replace(/^per ep\s*/i, "");
+          if (a && a.duration) meta.runtime = String(a.duration).replace(/^per ep\s*/i, "");
           var jikanScore = a ? parseFloat(a.score) : NaN;
           var aniScore = sa ? parseFloat(sa.score) : NaN;
           var score = isFinite(jikanScore) && jikanScore > 0 ? jikanScore : isFinite(aniScore) && aniScore > 0 && aniScore <= 10 ? Math.round(aniScore * 10) / 10 : void 0;
-          if (score)
-            meta.imdbRating = score;
+          if (score) meta.imdbRating = score;
           var genres = a && Array.isArray(a.genres) && a.genres.length ? a.genres.map(function(g) {
             return g.name;
           }) : sa && sa.terms_by_type && Array.isArray(sa.terms_by_type.genre) ? sa.terms_by_type.genre : [];
-          if (genres.length)
-            meta.genres = genres.slice(0, 6);
+          if (genres.length) meta.genres = genres.slice(0, 6);
           var bg = a && a.trailer && a.trailer.images && a.trailer.images.maximum_image_url || (sa && /^https?:\/\//i.test(String(sa.background_image || "")) ? sa.background_image : void 0);
-          if (bg)
-            meta.background = bg;
+          if (bg) meta.background = bg;
           if (!isMovie) {
             var aniEps = sData && Array.isArray(sData.episodes) ? sData.episodes : [];
             if (aniEps.length) {
@@ -1554,8 +1388,7 @@ var require_core = __commonJS({
               for (var ae = 0; ae < aniEps.length; ae++) {
                 var aep = aniEps[ae] || {};
                 var anum = parseInt(aep.number, 10);
-                if (!isFinite(anum) || anum <= 0)
-                  continue;
+                if (!isFinite(anum) || anum <= 0) continue;
                 aniVideos.push({
                   id: key + ":1:" + anum,
                   title: aep.title || "Episode " + anum,
@@ -1590,8 +1423,7 @@ var require_core = __commonJS({
                   });
                 }
               }
-              if (videos.length)
-                meta.videos = videos;
+              if (videos.length) meta.videos = videos;
               else {
                 var countHint = a && a.episodes ? parseInt(a.episodes, 10) : sa && sa.episodes ? parseInt(sa.episodes, 10) : 0;
                 if (countHint > 0) {
@@ -1613,13 +1445,11 @@ var require_core = __commonJS({
       function metaForAnikoto(cfg, anikotoId) {
         var key = "anikoto:" + anikotoId;
         var cached = metaCacheGet(cfg, key);
-        if (cached)
-          return Promise.resolve(cached);
+        if (cached) return Promise.resolve(cached);
         return anikotoFetchJson(cfg, "/series/" + encodeURIComponent(anikotoId)).then(function(d) {
           var data = d && d.data ? d.data : null;
           var a = data && data.anime ? data.anime : null;
-          if (!a || !a.title)
-            return null;
+          if (!a || !a.title) return null;
           var meta = {
             id: key,
             type: "series",
@@ -1631,20 +1461,16 @@ var require_core = __commonJS({
             status: a.status || void 0
           };
           var bg = /^https?:\/\//i.test(String(a.background_image || "")) ? a.background_image : void 0;
-          if (bg)
-            meta.background = bg;
+          if (bg) meta.background = bg;
           var score = parseFloat(a.score);
-          if (isFinite(score) && score > 0 && score <= 10)
-            meta.imdbRating = Math.round(score * 10) / 10;
-          if (Array.isArray(a.terms_by_type && a.terms_by_type.genre))
-            meta.genres = a.terms_by_type.genre.slice(0, 6);
+          if (isFinite(score) && score > 0 && score <= 10) meta.imdbRating = Math.round(score * 10) / 10;
+          if (Array.isArray(a.terms_by_type && a.terms_by_type.genre)) meta.genres = a.terms_by_type.genre.slice(0, 6);
           var eps = Array.isArray(data.episodes) ? data.episodes : [];
           var videos = [];
           for (var i = 0; i < eps.length; i++) {
             var ep = eps[i] || {};
             var num = parseInt(ep.number, 10);
-            if (!isFinite(num) || num <= 0)
-              continue;
+            if (!isFinite(num) || num <= 0) continue;
             videos.push({
               id: key + ":1:" + num,
               title: ep.title || "Episode " + num,
@@ -1653,8 +1479,7 @@ var require_core = __commonJS({
               released: ep.updated_at ? ep.updated_at : null
             });
           }
-          if (videos.length)
-            meta.videos = videos;
+          if (videos.length) meta.videos = videos;
           metaCacheSet(cfg, key, meta);
           return meta;
         });
@@ -1664,20 +1489,17 @@ var require_core = __commonJS({
         if (s.indexOf("%") >= 0) {
           try {
             var d = decodeURIComponent(s);
-            if (d)
-              s = d;
+            if (d) s = d;
           } catch (e) {
           }
           s = String(s).trim();
         }
         s = s.replace(/\.json$/i, "").replace(/(:\d+)+$/, "").trim();
         var m = s.match(/^asian[:\/]([a-z0-9][a-z0-9-]*)$/i);
-        if (!m)
-          return null;
+        if (!m) return null;
         var tail = m[1].toLowerCase();
         var pm = tail.match(/^(pmh|pen)-([a-z0-9][a-z0-9-]*)$/);
-        if (pm)
-          return { source: pm[1], slug: pm[2] };
+        if (pm) return { source: pm[1], slug: pm[2] };
         return null;
       }
       function pmhDetailHtml(cfg, kind, slug) {
@@ -1688,8 +1510,7 @@ var require_core = __commonJS({
           return fetchTextWithRetry(cfg, cfg.pinoySite + (kind === "series" ? "/movies/" : "/series/") + slug, 12e3);
         }
         return prim().then(function(html) {
-          if (html && /<h1[ >]/i.test(html))
-            return { html, kind };
+          if (html && /<h1[ >]/i.test(html)) return { html, kind };
           return alt().then(function(html2) {
             return html2 && /<h1[ >]/i.test(html2) ? { html: html2, kind: kind === "series" ? "movie" : "series" } : null;
           });
@@ -1704,8 +1525,7 @@ var require_core = __commonJS({
       function pmhParseDetail(cfg, html, kind, slug) {
         var hm = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
         var name = hm ? collapseWs(stripTags(decodeEntities(hm[1]))) : "";
-        if (!name)
-          return null;
+        if (!name) return null;
         var meta = {
           id: "asian:pmh-" + slug,
           type: kind,
@@ -1715,22 +1535,18 @@ var require_core = __commonJS({
         var pp = html.match(/<div class="poster">\s*<img[^>]*>/i);
         if (pp) {
           var poster = attr(pp[0], "src") || attr(pp[0], "data-src") || "";
-          if (poster && /^https?:\/\//i.test(poster) && !isPlaceholderPoster(poster))
-            meta.poster = poster;
+          if (poster && /^https?:\/\//i.test(poster) && !isPlaceholderPoster(poster)) meta.poster = poster;
         }
         var dm = html.match(/<div class="wp-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
         if (dm) {
           var desc = collapseWs(stripTags(decodeEntities(dm[1])));
-          if (desc)
-            meta.description = desc.slice(0, 700);
+          if (desc) meta.description = desc.slice(0, 700);
         }
         var ym = html.match(/itemprop=['"]?dateCreated['"]?[^>]*>\s*[A-Za-z]{3}\.[^,]*,\s*((?:19|20)\d\d)/i);
-        if (ym)
-          meta.releaseInfo = ym[1];
+        if (ym) meta.releaseInfo = ym[1];
         var rm = html.match(/itemprop=['"]?ratingValue['"]?[^>]*>\s*([\d.]+)/i);
         var r = rm ? parseFloat(rm[1]) : NaN;
-        if (isFinite(r) && r > 0 && r <= 10)
-          meta.imdbRating = Math.round(r * 10) / 10;
+        if (isFinite(r) && r > 0 && r <= 10) meta.imdbRating = Math.round(r * 10) / 10;
         if (kind === "series") {
           var blockM = html.match(/id=['"]seasons['"][\s\S]{0,120000}/i);
           var block = blockM ? blockM[0] : html;
@@ -1738,11 +1554,9 @@ var require_core = __commonJS({
           var videos = [];
           for (var i = 1; i < chunks.length; i++) {
             var nm = chunks[i].match(/class=['"]numerando['"][^>]*>\s*(\d+)\s*-\s*(\d+)/i);
-            if (!nm)
-              continue;
+            if (!nm) continue;
             var s = parseInt(nm[1], 10), e = parseInt(nm[2], 10);
-            if (!isFinite(s) || !isFinite(e) || s <= 0 || e <= 0)
-              continue;
+            if (!isFinite(s) || !isFinite(e) || s <= 0 || e <= 0) continue;
             var am2 = chunks[i].match(/href=['"]([^'"]+)['"][^>]*>([\s\S]*?)<\/a>/i);
             var epTitle = am2 ? collapseWs(stripTags(decodeEntities(am2[2]))) : "";
             var dte = chunks[i].match(/class=['"]date['"][^>]*>([^<]*)</i);
@@ -1754,8 +1568,7 @@ var require_core = __commonJS({
               released: dte ? collapseWs(stripTags(decodeEntities(dte[1]))) : null
             });
           }
-          if (videos.length)
-            meta.videos = videos;
+          if (videos.length) meta.videos = videos;
         }
         return meta;
       }
@@ -1763,14 +1576,11 @@ var require_core = __commonJS({
         var kind = wantSeries ? "series" : "movie";
         var key = "asian:pmh-" + slug;
         var cached = metaCacheGet(cfg, key);
-        if (cached)
-          return Promise.resolve(cached);
+        if (cached) return Promise.resolve(cached);
         return pmhDetailHtml(cfg, kind, slug).then(function(hit) {
-          if (!hit)
-            return null;
+          if (!hit) return null;
           var meta = pmhParseDetail(cfg, hit.html, hit.kind, slug);
-          if (meta)
-            metaCacheSet(cfg, key, meta);
+          if (meta) metaCacheSet(cfg, key, meta);
           return meta;
         }).catch(function() {
           return null;
@@ -1784,8 +1594,7 @@ var require_core = __commonJS({
           return fetchTextWithRetry(cfg, cfg.pencuriSite + (kind === "series" ? "/" : "/series/") + slug + "/", 12e3);
         }
         return prim().then(function(html) {
-          if (html && /og:title/i.test(html))
-            return { html, kind };
+          if (html && /og:title/i.test(html)) return { html, kind };
           return alt().then(function(html2) {
             return html2 && /og:title/i.test(html2) ? { html: html2, kind: kind === "series" ? "movie" : "series" } : null;
           });
@@ -1801,8 +1610,7 @@ var require_core = __commonJS({
         var tm = html.match(/property=["']og:title["'] content=["']([^"']+)["']/i) || html.match(/<title>([^<]*)<\/title>/i);
         var raw = tm ? collapseWs(stripTags(decodeEntities(tm[1]))) : "";
         raw = raw.replace(/\s*-\s*Pencuri Movie.*$/i, "").trim();
-        if (!raw)
-          return null;
+        if (!raw) return null;
         var name = raw, year = "";
         var ym = raw.match(/\s*\((\d{4})\)\s*$/);
         if (ym) {
@@ -1815,30 +1623,24 @@ var require_core = __commonJS({
           name,
           posterShape: "poster"
         };
-        if (year)
-          meta.releaseInfo = year;
+        if (year) meta.releaseInfo = year;
         var im = html.match(/property=["']og:image["'] content=["']([^"']+)["']/i);
-        if (im && /^https?:\/\//i.test(im[1]) && !isPlaceholderPoster(im[1]))
-          meta.poster = im[1];
+        if (im && /^https?:\/\//i.test(im[1]) && !isPlaceholderPoster(im[1])) meta.poster = im[1];
         var dm = html.match(/property=["']og:description["'] content=["']([^"']*)["']/i);
-        if (dm && dm[1])
-          meta.description = collapseWs(decodeEntities(dm[1])).slice(0, 700);
+        if (dm && dm[1]) meta.description = collapseWs(decodeEntities(dm[1])).slice(0, 700);
         if (kind === "series") {
           var seen = {}, videos = [];
           var re = /\/episode\/([a-z0-9-]+?)\/?["']/gi, m;
           while ((m = re.exec(html)) !== null) {
             var epSlug = m[1];
-            if (seen[epSlug])
-              continue;
+            if (seen[epSlug]) continue;
             seen[epSlug] = 1;
             var sm = epSlug.match(/^(.*)-season-(\d+)-episode-(\d+)$/i) || epSlug.match(/^(.*)-episode-(\d+)$/i);
-            if (!sm)
-              continue;
+            if (!sm) continue;
             var isFull = sm.length === 4;
             var s = isFull ? parseInt(sm[2], 10) : 1;
             var e = parseInt(isFull ? sm[3] : sm[2], 10);
-            if (!isFinite(s) || !isFinite(e) || s <= 0 || e <= 0)
-              continue;
+            if (!isFinite(s) || !isFinite(e) || s <= 0 || e <= 0) continue;
             videos.push({
               id: "asian:pen-" + slug + ":" + s + ":" + e,
               title: "Episode " + e,
@@ -1850,8 +1652,7 @@ var require_core = __commonJS({
           videos.sort(function(x, y) {
             return x.season - y.season || x.episode - y.episode;
           });
-          if (videos.length)
-            meta.videos = videos;
+          if (videos.length) meta.videos = videos;
         }
         return meta;
       }
@@ -1859,14 +1660,11 @@ var require_core = __commonJS({
         var kind = wantSeries ? "series" : "movie";
         var key = "asian:pen-" + slug;
         var cached = metaCacheGet(cfg, key);
-        if (cached)
-          return Promise.resolve(cached);
+        if (cached) return Promise.resolve(cached);
         return penDetailHtml(cfg, kind, slug).then(function(hit) {
-          if (!hit)
-            return null;
+          if (!hit) return null;
           var meta = penParseDetail(cfg, hit.html, hit.kind, slug);
-          if (meta)
-            metaCacheSet(cfg, key, meta);
+          if (meta) metaCacheSet(cfg, key, meta);
           return meta;
         }).catch(function() {
           return null;
@@ -1878,15 +1676,13 @@ var require_core = __commonJS({
         if (mm) {
           var prefix = mm[1].toLowerCase();
           var num = mm[2];
-          if (prefix === "mal")
-            return metaForMal(cfg, num, type);
+          if (prefix === "mal") return metaForMal(cfg, num, type);
           return metaForAnikoto(cfg, num);
         }
         var am = parseAsianMetaId(id);
         if (am) {
           var wantSeries = String(type || "").toLowerCase() === "series" || String(type || "").toLowerCase() === "tv";
-          if (am.source === "pmh")
-            return metaForPmh(cfg, am.slug, wantSeries);
+          if (am.source === "pmh") return metaForPmh(cfg, am.slug, wantSeries);
           return metaForPen(cfg, am.slug, wantSeries);
         }
         return Promise.resolve(null);
@@ -1911,8 +1707,7 @@ var require_core = __commonJS({
       }
       function runBuffered(cfg, stateKey, pageMetasFn, skip, limit) {
         var existing = bufferInflight.get(stateKey);
-        if (existing)
-          return existing;
+        if (existing) return existing;
         var job = Promise.resolve().then(function() {
           var buf = getBuffer(cfg, stateKey);
           function pump(guard) {
@@ -2268,7 +2063,7 @@ var require_core = __commonJS({
           id: ADDON_ID,
           version: VERSION,
           name: ADDON_NAME,
-          description: "Asian catalogs mirroring each site's real sections: pinoymovieshub.win (Movies / Series), kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). v5.0.0: anime rows carry ANIME ids \u2014 mal:/anilist:/anikoto: \u2014 straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.3.0: pmh/pen rows open real detail-page meta (episodes included) so no row ever 404s on details. v5.4.0: the Pencuri country and feature boards are back. Other rows carry full TMDB metadata or source-scoped asian: fallback ids. v5.5.0: catalog layout restored to the 28-catalog set validated on 4.15.0; the paired pencuri.js v1.4.0 adds English subtitles to every stream row.",
+          description: "Asian catalogs mirroring each site's real sections: pinoymovieshub.win (Movies / Series), kissasian.cam, viewasian.lol, kisskh API (auto-rescued from TMDB when CF-blocked), animotvslash.org, the Anikoto API (Latest Episode / New Release / New Added / Upcoming Anime / Just Completed) and pencurimovie.baby (Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb). v5.0.0: anime rows carry ANIME ids \u2014 mal:/anilist:/anikoto: \u2014 straight from the Anikoto feed (MegaPlay-backed playback via the paired miruro plugin), plus a /meta resource (Jikan/Anikoto) so anime ids open full details with episode lists. v5.3.0: pmh/pen rows open real detail-page meta (episodes included) so no row ever 404s on details. v5.4.0: the Pencuri country and feature boards are back. Other rows carry full TMDB metadata or source-scoped asian: fallback ids. v5.5.0: catalog layout restored to the 28-catalog set validated on 4.15.0; the paired pencuri.js v1.4.0 adds English subtitles to every stream row. v5.6.0: new POST /cjg route \u2014 a text-safe relay for cinejoy.js v1.5.0 (NuvioMobile cannot send the binary body cinejoy's API requires; the worker performs the binary hop and returns bytes as base64url text). v5.7.0: new POST /cjs route \u2014 the ENTIRE cinejoy chain (enc -> /g -> dec) runs server-side and returns final stream JSON for cinejoy.js v1.6.0's one-request full lane.",
           logo: cfg.pinoySite + PINOY_ICON,
           resources: ["catalog", "meta"],
           types: ["movie", "series"],
@@ -2358,10 +2153,8 @@ var require_core = __commonJS({
             var name = entries[i][0];
             var r = entries[i][1];
             sources[name] = r;
-            if (r.ok)
-              okCount++;
-            else
-              errors.push(r.error || "failed");
+            if (r.ok) okCount++;
+            else errors.push(r.error || "failed");
           }
           var sourceCount = probes.length;
           var runtimeBug = okCount === 0 && errors.length && errors.every(function(e) {
@@ -2373,28 +2166,20 @@ var require_core = __commonJS({
           } else if (runtimeBug) {
             hints.push("All probes fail with the same error (" + errors[0] + ") \u2014 likely a worker-code bug, not IP blocking. Redeploy the current worker-bundle.js (" + ADDON_NAME + " v" + VERSION + ").");
           } else {
-            if (!sources.pinoymovieshub.ok)
-              hints.push("pinoymovieshub unreachable from this runtime. Mirror check (2026-09-10): pinoymovieshub.win is the canonical host (pinoymovieshub.tv redirects to it; .org CF-blocks datacenter IPs; the rest are dead). Pinoy catalogs fall back to serve-stale cache.");
-            if (!sources.kissasian.ok)
-              hints.push("kissasian.cam unreachable from this runtime (site up but likely blocking this worker's egress \u2014 verified live from residential/other datacenter IPs). KissAsian catalogs fall back to serve-stale cache; device-side playback is unaffected (the plugin runs on the client).");
-            if (!sources.viewasian.ok)
-              hints.push("viewasian.lol unreachable from this runtime (site down or IP blocked). ViewAsian catalog may be empty; set VIEWASIAN_SITE to an alternate mirror.");
-            if (!sources.animotvslash.ok)
-              hints.push("animotvslash.org unreachable from this runtime (site down or IP blocked). AnimeTVSlash catalog may be empty; set ANIMO_SITE to an alternate mirror.");
-            if (!sources.anikoto.ok)
-              hints.push("anikotoapi.site unreachable from this runtime (API down or rate-limited 60 req/120s). Anikoto catalogs may be empty; device playback via miruro is unaffected (it runs on the client).");
+            if (!sources.pinoymovieshub.ok) hints.push("pinoymovieshub unreachable from this runtime. Mirror check (2026-09-10): pinoymovieshub.win is the canonical host (pinoymovieshub.tv redirects to it; .org CF-blocks datacenter IPs; the rest are dead). Pinoy catalogs fall back to serve-stale cache.");
+            if (!sources.kissasian.ok) hints.push("kissasian.cam unreachable from this runtime (site up but likely blocking this worker's egress \u2014 verified live from residential/other datacenter IPs). KissAsian catalogs fall back to serve-stale cache; device-side playback is unaffected (the plugin runs on the client).");
+            if (!sources.viewasian.ok) hints.push("viewasian.lol unreachable from this runtime (site down or IP blocked). ViewAsian catalog may be empty; set VIEWASIAN_SITE to an alternate mirror.");
+            if (!sources.animotvslash.ok) hints.push("animotvslash.org unreachable from this runtime (site down or IP blocked). AnimeTVSlash catalog may be empty; set ANIMO_SITE to an alternate mirror.");
+            if (!sources.anikoto.ok) hints.push("anikotoapi.site unreachable from this runtime (API down or rate-limited 60 req/120s). Anikoto catalogs may be empty; device playback via miruro is unaffected (it runs on the client).");
             if (!sources.kisskh.ok) {
               hints.push("kisskh API unreachable AND the TMDB rescue returned 0 rows \u2014 KissKH catalogs are EMPTY. Check TMDB_API_KEY (rescue lists) and KISSKH_HOSTS (comma-separated API mirrors); device playback is unaffected either way.");
             } else if (sources.kisskh.mode === "tmdb-rescue") {
               hints.push("kisskh API is Cloudflare-challenged from this runtime (nl/ovh/co all 403 \u2014 verified from the deployed worker; free CORS proxies get the same page). KissKH catalogs are AUTO-SERVED from TMDB rescue lists with full metadata; the paired plugins resolve streams on-device. Set KISSKH_HOSTS to a working mirror to switch back to live kisskh lists.");
             }
-            if (!sources.tmdb.ok)
-              hints.push("TMDB failed \u2014 check TMDB_API_KEY and outbound access; metadata enrichment is degraded.");
-            if (okCount > 0 && okCount < sourceCount)
-              hints.push("Partial outage: only " + okCount + "/" + sourceCount + " sources healthy \u2014 affected catalogs fall back to serve-stale cache.");
+            if (!sources.tmdb.ok) hints.push("TMDB failed \u2014 check TMDB_API_KEY and outbound access; metadata enrichment is degraded.");
+            if (okCount > 0 && okCount < sourceCount) hints.push("Partial outage: only " + okCount + "/" + sourceCount + " sources healthy \u2014 affected catalogs fall back to serve-stale cache.");
           }
-          if (okCount === sourceCount)
-            hints.push("All " + sourceCount + " sources healthy.");
+          if (okCount === sourceCount) hints.push("All " + sourceCount + " sources healthy.");
           return {
             status: okCount === sourceCount ? "up" : okCount > 0 ? "degraded" : "down",
             addon: ADDON_ID,
@@ -2411,20 +2196,17 @@ var require_core = __commonJS({
           var pairs = seg.split("&");
           for (var i = 0; i < pairs.length; i++) {
             var p = pairs[i];
-            if (!p)
-              continue;
+            if (!p) continue;
             var eq = p.indexOf("=");
             var k = eq === -1 ? p : p.substring(0, eq);
             var v = eq === -1 ? "" : p.substring(eq + 1);
-            if (k)
-              extras[k.toLowerCase()] = v;
+            if (k) extras[k.toLowerCase()] = v;
           }
         }
         if (searchParams) {
           searchParams.forEach(function(v2, k2) {
             var key = String(k2).toLowerCase();
-            if (!(key in extras))
-              extras[key] = v2;
+            if (!(key in extras)) extras[key] = v2;
           });
         }
         return extras;
@@ -2432,48 +2214,39 @@ var require_core = __commonJS({
       function findCatalog(catalogId, type) {
         var defs = catalogDefinitions();
         for (var i = 0; i < defs.length; i++) {
-          if (defs[i].id === catalogId && defs[i].type === type)
-            return defs[i];
+          if (defs[i].id === catalogId && defs[i].type === type) return defs[i];
         }
         return null;
       }
       function pageMetasFor(cfg, def, extras) {
-        if (def.source === "pinoy")
-          return function(page) {
-            return pinoyPageMetas(cfg, def, page, extras);
-          };
-        if (def.source === "kissasian")
-          return function(page) {
-            return ksPageMetas(cfg, def, page, extras);
-          };
-        if (def.source === "viewasian")
-          return function(page) {
-            return vaPageMetas(cfg, def, page, extras);
-          };
-        if (def.source === "animo")
-          return function(page) {
-            return animoPageMetas(cfg, def, page, extras);
-          };
-        if (def.source === "pencuri")
-          return function(page) {
-            return penPageMetas(cfg, def, page, extras);
-          };
-        if (def.source === "kisskh")
-          return function(page) {
-            return kisskhPageMetas(cfg, def, page, extras);
-          };
-        if (def.source === "anikoto")
-          return function(page) {
-            return anikotoPageMetas(cfg, def, page, extras);
-          };
+        if (def.source === "pinoy") return function(page) {
+          return pinoyPageMetas(cfg, def, page, extras);
+        };
+        if (def.source === "kissasian") return function(page) {
+          return ksPageMetas(cfg, def, page, extras);
+        };
+        if (def.source === "viewasian") return function(page) {
+          return vaPageMetas(cfg, def, page, extras);
+        };
+        if (def.source === "animo") return function(page) {
+          return animoPageMetas(cfg, def, page, extras);
+        };
+        if (def.source === "pencuri") return function(page) {
+          return penPageMetas(cfg, def, page, extras);
+        };
+        if (def.source === "kisskh") return function(page) {
+          return kisskhPageMetas(cfg, def, page, extras);
+        };
+        if (def.source === "anikoto") return function(page) {
+          return anikotoPageMetas(cfg, def, page, extras);
+        };
         return function() {
           return Promise.resolve([]);
         };
       }
       function getCatalogMetas(cfg, def, extras) {
         var skip = parseInt(extras.skip, 10);
-        if (!isFinite(skip) || skip < 0)
-          skip = 0;
+        if (!isFinite(skip) || skip < 0) skip = 0;
         var limit = cfg.pageLimit;
         var search = String(extras.search || "").trim();
         var genreSlug = slugifyGenre(extras.genre || "");
@@ -2502,12 +2275,10 @@ var require_core = __commonJS({
       var CJ_MAX_TOKEN_BYTES = 16384;
       function b64urlDecodeToU8(text) {
         var std = String(text || "").replace(/-/g, "+").replace(/_/g, "/");
-        while (std.length % 4)
-          std += "=";
+        while (std.length % 4) std += "=";
         var bin = atob(std);
         var u8 = new Uint8Array(bin.length);
-        for (var i = 0; i < bin.length; i++)
-          u8[i] = bin.charCodeAt(i) & 255;
+        for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i) & 255;
         return u8;
       }
       function u8ToB64url(u8) {
@@ -2557,12 +2328,87 @@ var require_core = __commonJS({
           return json({ ok: false, error: String(err && err.message || err) }, 500, 0);
         });
       }
+      var CJ_CHAIN_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+      var CJ_DEC_TARGET = "https://enc-dec.app/api/dec-cinejoy";
+      var CJ_ENC_TARGET = "https://enc-dec.app/api/enc-cinejoy";
+      function cinejoyFull(request) {
+        if (request.method !== "POST") {
+          return Promise.resolve(json({ ok: false, error: "POST required" }, 405, 0));
+        }
+        return request.text().then(function(text) {
+          var body;
+          try {
+            body = JSON.parse(String(text || "{}"));
+          } catch (e) {
+            return json({ ok: false, error: "body is not JSON" }, 400, 0);
+          }
+          var title = String(body.title || "").slice(0, 300);
+          if (!title) return json({ ok: false, error: "title required" }, 400, 0);
+          var type = String(body.type || "movie") === "series" || String(body.type || "") === "tv" ? "series" : "movie";
+          var target = "https://api.shegu.st/?title=" + encodeURIComponent(title) + "&type=" + type + "&year=" + encodeURIComponent(String(body.year || "")) + "&imdb=" + encodeURIComponent(String(body.imdb || "")) + "&tmdb=" + encodeURIComponent(String(body.tmdb || "")) + "&server=" + encodeURIComponent(String(body.server || ""));
+          if (type === "series") {
+            target += "&season=" + (parseInt(body.season, 10) || 1) + "&episode=" + (parseInt(body.episode, 10) || 1);
+          }
+          var encHeaders = { "User-Agent": CJ_CHAIN_UA, "Accept": "*/*" };
+          return fetch(CJ_ENC_TARGET + "?url=" + encodeURIComponent(target), { headers: encHeaders }).then(function(res) {
+            return res.json();
+          }).then(function(enc) {
+            var result = enc && enc.result || enc;
+            if (!result || !result.data) throw new Error("enc-cinejoy returned no data");
+            var bytes = b64urlDecodeToU8(result.data);
+            return fetch(CJ_G_TARGET, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/octet-stream",
+                "Origin": "https://cinejoy.to",
+                "Referer": "https://cinejoy.to/",
+                "User-Agent": CJ_CHAIN_UA,
+                "Accept": "*/*"
+              },
+              body: bytes
+            }).then(function(gres) {
+              if (!gres.ok) throw new Error("shegu /g HTTP " + gres.status);
+              return gres.arrayBuffer();
+            }).then(function(ab) {
+              var packed = u8ToB64url(new Uint8Array(ab));
+              return fetch(CJ_DEC_TARGET, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "User-Agent": CJ_CHAIN_UA, "Accept": "*/*" },
+                body: JSON.stringify({ text: packed, state: result.state })
+              }).then(function(dres) {
+                return dres.json();
+              });
+            });
+          }).then(function(dec) {
+            var data = (dec && dec.result || {}).data || {};
+            var streams = data.stream;
+            if (!streams) {
+              return json({ ok: false, error: String(dec && dec.result && dec.result.message || "no stream in dec response") }, 200, 0);
+            }
+            var list = Array.isArray(streams) ? streams : [streams];
+            var out = [];
+            list.forEach(function(st) {
+              if (!st) return;
+              out.push({
+                id: String(st.id || ""),
+                playlist: String(st.playlist || ""),
+                qualities: st.qualities || st.files || {},
+                captions: st.captions || []
+              });
+            });
+            return json({ ok: out.length > 0, streams: out }, 200, 0);
+          }).catch(function(err) {
+            return json({ ok: false, error: String(err && err.message || err) }, 502, 0);
+          });
+        }).catch(function(err) {
+          return json({ ok: false, error: String(err && err.message || err) }, 500, 0);
+        });
+      }
       function handle(urlString, env) {
         var cfg = makeConfig(env || {});
         cfg.__selfUrl = env && env.__selfUrl || "";
         var raw = String(urlString || "/");
-        if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(raw))
-          raw = "https://asian-catalog.local" + (raw.charAt(0) === "/" ? raw : "/" + raw);
+        if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) raw = "https://asian-catalog.local" + (raw.charAt(0) === "/" ? raw : "/" + raw);
         var u;
         try {
           u = new URL(raw);
@@ -2595,8 +2441,7 @@ var require_core = __commonJS({
               mId = mm[2];
             }
             return addonMeta(cfg, mType, mId).then(function(meta) {
-              if (!meta)
-                return json({ error: "meta not found for id", id: mId }, 404, 60);
+              if (!meta) return json({ error: "meta not found for id", id: mId }, 404, 60);
               return json({ meta }, 200, 300);
             }).catch(function(err2) {
               return json({ error: String(err2 && err2.message || err2) }, 502, 0);
@@ -2629,6 +2474,7 @@ var require_core = __commonJS({
         manifest,
         handle,
         cinejoyRelay,
+        cinejoyFull,
         resetCaches,
         catalogDefinitions,
         // test hooks
@@ -2672,7 +2518,7 @@ var require_core = __commonJS({
   }
 });
 
-// worker.js
+// addons/asian-catalog/worker.js
 var import_core = __toESM(require_core());
 var Core = globalThis.AsianCatalogCore;
 var worker_default = {
@@ -2701,6 +2547,19 @@ var worker_default = {
           const newHeaders = new Headers(relayResponse.headers);
           newHeaders.set("Access-Control-Allow-Origin", "*");
           return new Response(relayResponse.body, { status: relayResponse.status, headers: newHeaders });
+        } catch (err) {
+          return new Response(JSON.stringify({ ok: false, error: String(err && err.message || err) }), {
+            status: 500,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+          });
+        }
+      }
+      if (path === "/cjs") {
+        try {
+          const fullResponse = await Core.cinejoyFull(request);
+          const newHeaders = new Headers(fullResponse.headers);
+          newHeaders.set("Access-Control-Allow-Origin", "*");
+          return new Response(fullResponse.body, { status: fullResponse.status, headers: newHeaders });
         } catch (err) {
           return new Response(JSON.stringify({ ok: false, error: String(err && err.message || err) }), {
             status: 500,
