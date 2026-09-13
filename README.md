@@ -4,18 +4,6 @@ Clean Nuvio provider collection migrated from the canonical NVV provider set.
 
 The import workflow keeps only the canonical provider implementations registered in `manifest.json`.
 
-## v4.23.0 — Full AIO decode + best settings on every provider
-
-User report on 4.22.0: "still slow, netmirror not providing stream, some providers not decoded". Fixes, all live-probed:
-
-- **"Some providers not decoded" — fixed literally**: the 11 providers adopted from All-in-One-Nuvio in 4.22.0 were byte-identical OBFUSCATED copies. All of them are now re-built from fully decoded sources (string tables resolved, obfuscator machinery stripped, readable code): castle, cineby, movieblast, movieshunt, movix, playimdb, vegamovies, dahmermovies, animezey (+ topcartoons rewritten clean).
-- **Best settings applied to every provider**: each decoded port carries the exact AIO endpoints/keys/headers, a hard 8s per-network-call deadline, a 12s overall provider deadline (netmirror: 17s, see below), and the nvio post-filter (en/tl audio gate, >=720p quality gate, cross-provider dedupe) that the raw AIO files lacked.
-- **netmirror v12**: the AIO build's real device lane ("NewTV": /checknewtv.php domain resolution -> newtv search/post/episodes/player API with the Ott app header) is ported 1:1 — it is IP-gated (datacenter 403s it, retail/mobile IPs work). The v11 net27 embed lane is REMOVED: every row it produced pointed at bcdn*.hakunaymatata.com, the exact CDN the device 429-blocks. The Alpha relay lane's serve cap is raised 10s -> 16s so its rows are never cut off on mobile. Lanes: Alpha + NewTV + VidSpark, parallel, alpha-first.
-- **topcartoons revived**: decoded and repaired against the live site (episode links that are "#" anchors are skipped; og:video:url direct-mp4 extraction) — verified returning playable rows.
-- **Speed fixes**: uhdmovies REMOVED (its new download gateway is JS+cookie protected — zero rows headless, AIO fails there too) and dvdplay REMOVED (dead domain, 43s hangs). hexa/movish/vidfast/vidrock stall fixes (8s call deadlines; vidrock's API got a hard 6s cap — it could stall 28s). 4khdhub's 50s series hangs are capped at 12s by the new overall deadline.
-- Sheet worst case is now ~12s (netmirror ~17s when the Alpha lane needs its full window); typical answer time is 1–6s per provider.
-- 29 providers, zero obfuscated files. kisskh / asianhub / pinoyhub / tagalogtorrents / miruro / pencuri / cinemacity untouched per standing instructions. All-in-One-Nuvio used as read-only source.
-
 ## v4.22.0 — All-in-One-Nuvio merge + dead-provider cleanup
 
 Every enabled scraper was live-probed (2 movies x 2 series targets, plus anime titles) against the live upstreams. Results drove this release:

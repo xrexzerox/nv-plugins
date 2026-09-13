@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "4.23.0",
-  "description": "Canonical Nuvio provider collection. v4.23.0 = FULL DECODE of the All-in-One-Nuvio pack applied to nv-plugins: all 9 adopted AIO providers re-built from their decoded sources (no obfuscated code left in the pack), each with the best settings surfaced by the decode (exact endpoints/keys/headers, 8s per-call + 12s overall deadlines, nvio post-filter attached). topcartoons rewritten clean and revived (direct mp4). netmirror v12: the AIO NewTV device lane ported 1:1, the device-dead net27 lane removed (its rows hit the 429-blocked hakunaymatata CDN), Alpha relay cap raised to 16s. uhdmovies removed (its new download gateway is JS+cookie protected - zero rows headless) and dvdplay removed (dead domain, 43s hangs). hexa/movish/vidfast/vidrock stall fixes. 29 fast, readable, fail-soft providers.",
+  "version": "4.22.0",
+  "description": "Canonical Nuvio provider collection. v4.22.0 = All-in-One-Nuvio merge + dead-provider cleanup: 25 dead scrapers removed (their upstream APIs/dns are gone), 11 working providers adopted from All-in-One-Nuvio (castle, cineby, movieshunt, movix, playimdb, topcartoons, vegamovies, movieblast, dahmermovies, uhdmovies, animezey - no Hindi-only providers taken), the StreamFlix orphan file registered, and netmirror rebuilt as a triple-lane resolver (Alpha relay + net27 embed + VidSpark) that serves in ~2-3s instead of 15s+. Sheet loads faster because every remaining scraper answers.",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -52,8 +52,8 @@
     {
       "id": "hexa",
       "name": "Hexa",
-      "description": "Hexa v10.1: default network timeout 20s -> 8s so a stalled hexa.su/enc-dec call can never hang the sheet. All lanes unchanged (cap.hexa.su + enc-dec.app decode, sub.wyzie.io/opensubtitles subtitles, nvio post-filter).",
-      "version": "1.4.0",
+      "description": "Hexa rebuilt against the live 2026-09 protocol: enc-hexa cap-token mint with 45 min cache, native cap.js PoW fallback (pure-JS sha256), robust multi-shape dec-hexa parsing, result cache + in-flight share. Verified E2E: token -> images -> decrypt -> alpha/bravo m3u8 rows.",
+      "version": "1.3.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -94,8 +94,8 @@
     {
       "id": "vidrock",
       "name": "Vidrock",
-      "description": "Vidrock v7.1: the .ru API fetch now carries a hard 6s deadline (it could stall 20s+ and hang the whole sheet). AES-GCM URL decryption + Nova/Atlas lanes + nvio post-filter unchanged.",
-      "version": "1.3.0",
+      "description": "Vidrock direct streams, TMDB-keyed (Streamline port of CineStream).",
+      "version": "1.2.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -116,8 +116,8 @@
     {
       "id": "vidfast",
       "name": "VidFast",
-      "description": "VidFast v6.1: default network timeout 20s -> 8s (vidfast.vc enc-dec.app decode lane could stall 20s). Lanes unchanged, nvio post-filter kept.",
-      "version": "1.3.0",
+      "description": "VidFast multi-server streaming with subtitles (Streamline port of CineStream).",
+      "version": "1.2.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -269,10 +269,30 @@
       ]
     },
     {
+      "id": "dvdplay",
+      "name": "DVDPlay",
+      "description": "DVDPlay streaming provider",
+      "version": "4.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/dvdplay.js",
+      "enabled": true,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
       "id": "netmirror",
       "name": "NetMirror",
-      "description": "NetMirror v12: full All-in-One-Nuvio decode applied. NEW NewTV lane (the AIO build's real device path: checknewtv.php domain resolution -> newtv search/post/episodes/player API with the Ott app header - the lane AIO users stream with on retail IPs) + the user-proven Alpha relay lane (cap raised to 16s so its rows are never cut off on mobile) + the VidSpark proxied-CDN lane. The net27 embed lane is REMOVED: its rows point at bcdn*.hakunaymatata.com, the exact CDN your device 429-blocks. English-only, tolerant ids, caches kept.",
-      "version": "12.0.0",
+      "description": "NetMirror v11: triple-lane resolver. NEW net27.cc embed lane (reverse-engineered from the All-in-One-Nuvio build, verified live) runs in parallel with the user-proven Alpha relay lane and the VidSpark (net77 stack) lane; the Alpha lane serves after 10s with whatever arrived and its full result is late-cached for instant recall. English-only rule, tolerant id parser, subtitle language filter and the nvio post-filter all kept.",
+      "version": "11.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -337,8 +357,8 @@
     {
       "id": "movish",
       "name": "Movish",
-      "description": "Movish v6.1: network timeouts 15s/14s -> 8s (the dlproxy/movish.to chain could stall the sheet 10s+). Lanes unchanged: movish.to search, api.dlproxy.com play resolution, nvio post-filter.",
-      "version": "1.1.0",
+      "description": "Movish (movish.to) - Vidstack app with TMDB-id-keyed player-sources API: /player-sources/{server}/{type}/{tmdbId} returns direct dlproxy mp4/HLS rows, quality-labeled; no site search needed",
+      "version": "1.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -408,8 +428,8 @@
     {
       "id": "castle",
       "name": "Castle",
-      "description": "Castle: FULLY DECODED port of the AIO provider (string tables resolved, no obfuscated code): api.hlowb.com lanes with the okhttp app user-agent, 8s per-call + 12s overall deadlines, nvio post-filter attached (en/tl audio gate, >=720p, dedupe).",
-      "version": "2.1.0",
+      "description": "Multi-server movie & TV streams (Original + language-labeled HLS lanes) via the Castle app API. Merged from All-in-One-Nuvio after the old Castle API host died; verified 1080p/720p/480p live.",
+      "version": "2.0.0",
       "author": "Nuvio Team (AIO merge)",
       "supportedTypes": [
         "movie",
@@ -430,8 +450,8 @@
     {
       "id": "cineby",
       "name": "Cineby",
-      "description": "Cineby: FULLY DECODED AIO port - seed handshake + sources-with-title flow on the live api host, encrypted payload decryption intact, subtitles mapped, 8s/12s deadlines, nvio post-filter attached.",
-      "version": "2.3.0",
+      "description": "Multi-server movie & TV streams up to 4K from the Videasy network. Merged from All-in-One-Nuvio; verified 2160p/1080p/720p/480p live.",
+      "version": "1.9.2",
       "author": "Nuvio Team (AIO merge)",
       "supportedTypes": [
         "movie",
@@ -451,8 +471,8 @@
     {
       "id": "movieshunt",
       "name": "MoviesHunt",
-      "description": "MoviesHunt: FULLY DECODED AIO port - movieshunt.run search + abhilinks resolver + vcloud/gdflix hops, real UA set, 8s per-call + 12s overall deadlines, nvio post-filter attached.",
-      "version": "2.3.0",
+      "description": "Hollywood movies in 1080p/720p direct links from R2-backed storage (dual-audio encoded; English track standard). Merged from All-in-One-Nuvio.",
+      "version": "1.0.0",
       "author": "piratezoro9 (AIO merge)",
       "supportedTypes": [
         "movie"
@@ -470,8 +490,8 @@
     {
       "id": "movix",
       "name": "Movix",
-      "description": "Movix: FULLY DECODED AIO port - live domains.json source list (wooodyhood repo) with fallback, purstream/cpasmal API lanes, referer fidelity, 8s/12s deadlines, nvio post-filter attached.",
-      "version": "2.3.0",
+      "description": "Movies & series HLS in English/French with quality labels. Merged from All-in-One-Nuvio; shares the fastest verified lane in that family.",
+      "version": "1.0.0",
       "author": "wooodyhood (AIO merge)",
       "supportedTypes": [
         "movie",
@@ -493,8 +513,8 @@
     {
       "id": "playimdb",
       "name": "PlayIMDb",
-      "description": "PlayIMDb: FULLY DECODED AIO port - vaplayer streamdata api + nextgencloudfabric player extraction, Original-Audio lanes, 8s/12s deadlines, nvio post-filter attached.",
-      "version": "2.1.0",
+      "description": "High-speed direct streaming keyed by IMDb/TMDB id (Original-Audio rows). Merged from All-in-One-Nuvio; verified 1080p live.",
+      "version": "2.0.0",
       "author": "PirateZoro9 (AIO merge)",
       "supportedTypes": [
         "movie",
@@ -516,8 +536,8 @@
     {
       "id": "topcartoons",
       "name": "TopCartoons",
-      "description": "TopCartoons: clean rewrite decoded from AIO and repaired against the live site (episode links skip # anchors, og:video:url direct mp4 extraction), 8s/12s deadlines, nvio post-filter attached.",
-      "version": "2.3.0",
+      "description": "Classic cartoons and animated series from topcartoons.tv. Merged from All-in-One-Nuvio.",
+      "version": "1.0.0",
       "author": "Phisher (AIO merge)",
       "supportedTypes": [
         "movie",
@@ -538,8 +558,8 @@
     {
       "id": "vegamovies",
       "name": "VegaMovies",
-      "description": "VegaMovies: FULLY DECODED AIO port - live domains source (SaurabhKaperwan utils) + hubcloud/vcloud link hops, 4K/1080p release parsing, 8s/12s deadlines, nvio post-filter attached.",
-      "version": "2.2.0",
+      "description": "High-quality direct links (English-labeled rows; dual-audio encoded site). Rebuilt from the All-in-One-Nuvio extractor after the old VegaMovies scrape path died; verified 1080p/720p live.",
+      "version": "2.1.0",
       "author": "piratezoro9 (AIO merge)",
       "supportedTypes": [
         "movie",
@@ -561,8 +581,8 @@
     {
       "id": "movieblast",
       "name": "MovieBlast",
-      "description": "MovieBlast: FULLY DECODED AIO port - app.cloud-mb.xyz search/source API with its token+secret signing, okhttp user-agent, 8s/12s deadlines, nvio post-filter attached.",
-      "version": "2.3.0",
+      "description": "Multi-quality English-labeled movies & series. Rebuilt from the All-in-One-Nuvio extractor (faster lane than the previous implementation).",
+      "version": "1.1.0",
       "author": "Nuvio Team (AIO merge)",
       "supportedTypes": [
         "movie",
@@ -584,8 +604,8 @@
     {
       "id": "dahmermovies",
       "name": "DahmerMovies",
-      "description": "DahmerMovies: FULLY DECODED AIO port - a.111477.xyz API + p.111477.xyz bulk proxy lanes with Range probing, 8s per-call + 12s overall deadlines, nvio post-filter attached.",
-      "version": "2.3.0",
+      "description": "4K/1080p movies & series with per-file size labels and Original-audio lanes. Merged from All-in-One-Nuvio; the file was present in this repo but no longer registered.",
+      "version": "1.0.0",
       "author": "Nuvio Team (AIO merge)",
       "supportedTypes": [
         "movie",
@@ -605,10 +625,32 @@
       "logo": "https://i.postimg.cc/hGt3dV6Z/dhamermovies.png"
     },
     {
+      "id": "uhdmovies",
+      "name": "UHDMovies",
+      "description": "Multi-resolution UHD/1080p direct links via worker-proxied storage. Rebuilt from the All-in-One-Nuvio extractor after uhdmovies.pink went offline; verified live.",
+      "version": "1.1.0",
+      "author": "Nuvio Team (AIO merge)",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/uhdmovies.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true,
+      "logo": "https://i.postimg.cc/KzDBBdbK/uhdmovies.png"
+    },
+    {
       "id": "animezey",
       "name": "AnimeZeY",
-      "description": "AnimeZeY: FULLY DECODED AIO port - worker-domain search (1:search POST) with rotation, episode-code matching (S##E##/absolute-episode), file-card stream building, 8s/12s deadlines, nvio post-filter attached.",
-      "version": "2.3.0",
+      "description": "Anime movies & series indexed by TMDB (dual-audio downloads). Merged from All-in-One-Nuvio.",
+      "version": "1.0.0",
       "author": "Nuvio Team (AIO merge)",
       "supportedTypes": [
         "movie",
