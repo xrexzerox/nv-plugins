@@ -493,13 +493,11 @@ function buildMagnet(infoHash, fileIdx, trackers) {
     magnet += "&index=" + fileIdx;
   return magnet;
 }
-function stremioTorrents(sourceName, api, ctx, timeoutMs) {
+function stremioTorrents(sourceName, api, ctx) {
   return __async(this, null, function* () {
     const imdbId = ctx.imdbId, season = ctx.season, episode = ctx.episode, isTv = ctx.isTv;
     const path = !isTv ? "/stream/movie/" + imdbId + ".json" : "/stream/series/" + imdbId + ":" + season + ":" + episode + ".json";
-    // nv best-settings 4.26.0: per-lane timeout - torrentsdb gets a short 3s cap so a
-    // blocked/stalled lane can never hold the whole provider (AIO parity: torrentio primary)
-    const json = JSON.parse(yield fetchText(api + path, {}, timeoutMs || 6e3));
+    const json = JSON.parse(yield fetchText(api + path, {}, 2e4));
     const streams = json && json.streams || [];
     const line1 = ctx.title || ctx.originalTitle ? headline(
       ctx.originalTitle || ctx.title,
@@ -555,7 +553,7 @@ function torrentSources(imdbId, season, episode, isTv, ctx) {
         function() {
           return __async(this, null, function* () {
             try {
-              return yield stremioTorrents("Torrentio", TORRENTIO_API, full, 6e3);
+              return yield stremioTorrents("Torrentio", TORRENTIO_API, full);
             } catch (e) {
               console.log("[Streamline][torrentio] " + e.message);
               return [];
@@ -569,7 +567,7 @@ function torrentSources(imdbId, season, episode, isTv, ctx) {
         function() {
           return __async(this, null, function* () {
             try {
-              return yield stremioTorrents("TorrentsDB", TORRENTSDB_API, full, 3e3);
+              return yield stremioTorrents("TorrentsDB", TORRENTSDB_API, full);
             } catch (e) {
               console.log("[Streamline][torrentsdb] " + e.message);
               return [];
@@ -594,7 +592,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
       const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
       const out = yield withTimeout(
         torrentSources(ctx.imdbId, ctx.season, ctx.episode, ctx.isTv, ctx),
-        8e3,
+        2e4,
         "torrents"
       );
       return presentStreams(dedupe(out), ctx);
@@ -700,7 +698,7 @@ module.exports = { getStreams, onSettings };
     }).catch(function () { qualCache[url] = { t: now, q: "" }; return ""; });
     if (hasTimers()) {
       p = Promise.race([p, new Promise(function (res) {
-        var timer = setTimeout(function () { res(""); }, 2000);
+        var timer = setTimeout(function () { res(""); }, 6000);
         if (typeof timer === "object" && typeof timer.unref === "function") timer.unref();
       })]);
     }
@@ -756,6 +754,7 @@ module.exports = { getStreams, onSettings };
   }
   function postProcess(list) {
     var now = Date.now();
+    var kept = [];
     var probes = [];
     var rows = [];
     (list || []).forEach(function (s, i) {
@@ -777,17 +776,11 @@ module.exports = { getStreams, onSettings };
     return Promise.all(probes).then(function (qs) {
       var ranked = [];
       rows.forEach(function (row, k) {
-        var s = row.s;
-        var tq = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText((s.name || "") + " " + (s.title || ""));
-        // nv best-settings 4.26.0: FAIL-OPEN quality gate (AIO parity)
-        // - a successful HLS probe result wins
-        // - otherwise the title-derived quality is kept, else "Auto"
-        // - unknown-resolution rows are NO LONGER dropped; only rows whose
-        //   title explicitly tags CAM/telesync/sub-720p are removed
-        var q = qs[k] || tq || "Auto";
-        if (q === "CAM") return; // explicit cam / sd / sub-720 tag -> removed
-        s.quality = q;
-        ranked.push({ s: s, i: row.i, q: q });
+        var q = qs[k];
+        if (!q) return; // unknown resolution -> removed
+        if (q === "CAM") return; // cam / sd / sub-720 -> removed
+        row.s.quality = q;
+        ranked.push({ s: row.s, i: row.i, q: q });
       });
       // best first so dedupe keeps the strongest duplicate (stable)
       ranked.sort(function (a, b) {
@@ -822,9 +815,9 @@ module.exports = { getStreams, onSettings };
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
           if (typeof setTimeout === "function") {
-            // nv best-settings 4.23.0: hard 8s cap on the whole provider run
+            // nv best-settings 4.23.0: hard 12s cap on the whole provider run
             r = Promise.race([r, new Promise(function (res) {
-              var dl = setTimeout(function () { res([]); }, 8000);
+              var dl = setTimeout(function () { res([]); }, 12000);
               if (dl && typeof dl.unref === "function") dl.unref();
             })]);
           }
