@@ -40,6 +40,83 @@ var document = (typeof document !== "undefined" && document) ? document : { crea
 var navigator = (typeof navigator !== "undefined" && navigator) ? navigator : { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" };
 var _0x1301=function(){return "";};'use strict';const _0x5df61e=_0x1301;/*decoder removed*//*rotation removed*/;var __defProp=Object['defineProperty'],__defProps=Object['defineProperties'],__getOwnPropDescs=Object['getOwnPropertyDescriptors'],__getOwnPropSymbols=Object['getOwnPropertySymbols'],__hasOwnProp=Object['prototype']['hasOwnProperty'],__propIsEnum=Object["prototype"]["propertyIsEnumerable"],__defNormalProp=(_0x40bf53,_0x6486c7,_0x5874a7)=>_0x6486c7 in _0x40bf53?__defProp(_0x40bf53,_0x6486c7,{'enumerable':!![],'configurable':!![],'writable':!![],'value':_0x5874a7}):_0x40bf53[_0x6486c7]=_0x5874a7,__spreadValues=(_0x4168ea,_0x2a9b98)=>{const _0x51bb8f=_0x5df61e;for(var _0x5882ca in _0x2a9b98||(_0x2a9b98={}))if(__hasOwnProp['call'](_0x2a9b98,_0x5882ca))__defNormalProp(_0x4168ea,_0x5882ca,_0x2a9b98[_0x5882ca]);if(__getOwnPropSymbols)for(var _0x5882ca of __getOwnPropSymbols(_0x2a9b98)){if(__propIsEnum["call"](_0x2a9b98,_0x5882ca))__defNormalProp(_0x4168ea,_0x5882ca,_0x2a9b98[_0x5882ca]);}return _0x4168ea;},__spreadProps=(_0x451df1,_0x2b5730)=>__defProps(_0x451df1,__getOwnPropDescs(_0x2b5730)),__async=(_0x14d30f,_0x6a36a5,_0x4cc304)=>{const _0x2d60b2={_0x1f2408:0xf2};return new Promise((_0x565c41,_0x2dfc0b)=>{const _0x2c160d={_0x5c1f27:0xe7},_0x293180=_0x1301;var _0x2aeac6=_0x300863=>{const _0x49c7d1=_0x1301;try{_0x34f38a(_0x4cc304["next"](_0x300863));}catch(_0x9546d7){_0x2dfc0b(_0x9546d7);}},_0x301a54=_0x5a164e=>{const _0x51b13f=_0x1301;try{_0x34f38a(_0x4cc304["throw"](_0x5a164e));}catch(_0x199ef4){_0x2dfc0b(_0x199ef4);}},_0x34f38a=_0x4ba69b=>_0x4ba69b['done']?_0x565c41(_0x4ba69b["value"]):Promise['resolve'](_0x4ba69b["value"])['then'](_0x2aeac6,_0x301a54);_0x34f38a((_0x4cc304=_0x4cc304["apply"](_0x14d30f,_0x6a36a5))["next"]());});};function onSettings(){const _0xd81328={_0x50e1b2:0xfe,_0xb098b:0xe5,_0x8a736d:0xe1};return __async(this,null,function*(){const _0x2e9c9c=_0x1301;return[{'type':"header",'label':"Audio Preferences"},{'type':"toggle",'key':'langEnglish','label':"Enable English 🇺🇸",'defaultValue':!![]},{'type':'toggle','key':"langHindi",'label':'Enable\x20Hindi\x20🇮🇳','defaultValue':!![]}];});}var PROVIDER_NAME="MovieBox",CINESCRAPE_BASE='https://pengu.uk/%7B%22source_moviebox%22%3A%22on%22%2C%22res_1080%22%3A%22on%22%2C%22disable_direct%22%3A%22on%22%2C%22auth_token%22%3A%22XwZg2rLkLlbjXBeDVCyxgfHXjxN1ijLMkUuToW8KaKc%22%7D',TMDB_API_KEY="439c478a771f35c05022f9feabcca01c";function getStreams(_0x5a32a7,_0x2fe227,_0x328cc2,_0x2733e2){const _0x11a400={_0x5d2410:0xe4,_0x277c11:0xfb,_0x19fe37:0xd6,_0x4a3bd8:0xde,_0x4dbb50:0xee,_0x56fb4e:0xff,_0x4eae8d:0xd1,_0x21c047:0xcf,_0x53d823:0xd4};return __async(this,null,function*(){const _0x39b341={_0x3e3e69:0xd8},_0xb642cf=_0x1301;var _0xd04b39;const _0x700f53=_0x2fe227==='tv'||_0x2fe227==="series",_0x59c3c7="https://api.themoviedb.org/3/"+(_0x700f53?'tv':'movie')+'/'+_0x5a32a7+"?api_key="+TMDB_API_KEY+"&append_to_response=external_ids";try{const _0x3699f4=globalThis['SCRAPER_SETTINGS']||{},_0x51ddfd=_0x3699f4['langEnglish']!==![],_0x2601af=_0x3699f4['langHindi']!==![],_0x11cd2f=yield __nvFetch(_0x59c3c7)['then'](_0x8d9829=>_0x8d9829['json']()),_0x30b102=((_0xd04b39=_0x11cd2f==null?void 0x0:_0x11cd2f['external_ids'])==null?void 0x0:_0xd04b39['imdb_id'])||(_0x11cd2f==null?void 0x0:_0x11cd2f['imdb_id']);if(!_0x30b102)return[];const _0x3a0392=_0x11cd2f["title"]||_0x11cd2f["name"]||'Movie/Show',_0x1469d4=_0x11cd2f['release_date']?_0x11cd2f["release_date"]['split']('-')[0x0]:_0x11cd2f['first_air_date']?_0x11cd2f["first_air_date"]["split"]('-')[0x0]:"2026",_0x492ce4=_0x700f53?CINESCRAPE_BASE+'/stream/series/'+_0x30b102+':'+(_0x328cc2||0x1)+':'+(_0x2733e2||0x1)+'.json':CINESCRAPE_BASE+'/stream/movie/'+_0x30b102+".json",_0xcdbdaf=yield __nvFetch(_0x492ce4)["then"](_0x547ac8=>_0x547ac8['json']());if(!(_0xcdbdaf==null?void 0x0:_0xcdbdaf['streams'])||_0xcdbdaf["streams"]["length"]===0x0)return[];const _0x146ec8=[];_0xcdbdaf["streams"]["forEach"](_0x2e3ff7=>{const _0x3175c2=_0xb642cf;if(_0x2e3ff7["url"]&&_0x2e3ff7["url"]['includes']('bcdnxw.hakunaymatata.com'))return;const _0x121347=(_0x2e3ff7['title']||_0x2e3ff7['description']||'')['toLowerCase']();let _0x549c7c="English 🇺🇲",_0x2e7cfb=![];if(/hindi|hin|dual/["test"](_0x121347))_0x549c7c='Hindi\x20🇮🇳',_0x2e7cfb=!![];else/multi|🌐/['test'](_0x121347)&&(_0x549c7c='Multi\x20🌐');if(_0x2e7cfb&&!_0x2601af)return;if(!_0x2e7cfb&&!_0x51ddfd)return;_0x146ec8['push'](__spreadProps(__spreadValues({},_0x2e3ff7),{'lang':_0x549c7c}));});const _0x1ab62a=[],_0x56398f={};return _0x146ec8['forEach'](_0x7a7a8b=>{const _0xdd8916=_0xb642cf,_0x553cb6=(_0x7a7a8b['title']||'')['toLowerCase'](),_0x1341b5=/2160|4k/["test"](_0x553cb6)?'2160p':/1080/["test"](_0x553cb6)?'1080p':/720/["test"](_0x553cb6)?'720p':/480/["test"](_0x553cb6)?'480p':'1080p',_0x16e4d5=_0x1341b5+'-'+_0x7a7a8b['lang'];if(!_0x56398f[_0x16e4d5])_0x56398f[_0x16e4d5]=[];_0x56398f[_0x16e4d5]['push'](_0x7a7a8b);}),Object["entries"](_0x56398f)["forEach"](([_0x2fa5ea,_0x1b7ef0])=>{const _0x13db6d={_0x193491:0xe2,_0xbabefb:0xde,_0x4b3c1b:0xdc,_0x36878c:0xf7,_0x5166ea:0xd2,_0x2b66e9:0xe0},[_0x394e6f,_0xcee24c]=_0x2fa5ea['split']('-');_0x1b7ef0['forEach'](_0x5016c1=>{const _0x1a42be=_0x1301,_0x475b1c=(_0x5016c1['title']||_0x5016c1["description"]||'')["toLowerCase"](),_0x2bd5e6=_0x5016c1["title"]?_0x5016c1['title']["match"](/(\d+(?:\.\d+)?\s*(?:GB|MB))/i):null,_0x158b6d=_0x2bd5e6?_0x2bd5e6[0x1]:'1.99\x20GB',_0xc55352=/\b(mp4|avi|m4v)\b/["test"](_0x475b1c)?'MP4':"MKV",_0x5bd01c=_0xcee24c["replace"](/[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD00-\uDFFF]/g,'')['trim'](),_0x50ae5a='🎬\x20'+_0x3a0392+'\x20-\x20('+_0x1469d4+')\x0a💎\x20'+_0x394e6f+" | 🔊 "+_0x5bd01c+'\x20|\x20💾\x20'+_0x158b6d+"\n🎞️ "+_0xc55352+" | ⛓️‍💥 MovieBox";_0x1ab62a["push"]({'name':PROVIDER_NAME+" | "+_0x394e6f+" | "+_0xcee24c,'title':_0x50ae5a,'size':_0x50ae5a,'description':_0x50ae5a,'url':_0x5016c1['url'],'behaviorHints':{'proxyHeaders':{'request':{'Referer':'https://stremio-moviebox-1.onrender.com/'}}}});});}),_0x1ab62a;}catch(_0x373340){return console['error']('Global\x20processing\x20failure\x20context:',_0x373340),[];}});}typeof module!=='undefined'&&module['exports']?module['exports']={'getStreams':getStreams,'onSettings':onSettings}:(global['getStreams']=getStreams,global["onSettings"]=onSettings);/*string-table removed*/
 
+
+/* ===== nv-plugins 4.32.0 fallback lane: api.vidlove.cc multi-server API =====
+   The provider's own upstream died; the live vidlove player's JSON API still
+   serves the same family of backends. Server subset per provider keeps rows
+   distinct across the pack (no cross-provider duplicate claims). */
+var _VLAPI_BASE = 'https://api.vidlove.cc';
+var _VLAPI_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+var _VLAPI_SOURCES = ['moviebox2'];
+var _VLAPI_LABEL = 'MovieBox';
+
+function _vlTimeout(p, ms) {
+  if (typeof setTimeout !== 'function') return p;
+  return Promise.race([p, new Promise(function (res) {
+    var t = setTimeout(function () { res(null); }, ms);
+    if (t && typeof t.unref === 'function') t.unref();
+  })]);
+}
+function _vlFetchServer(src, id, isTv, season, episode) {
+  try {
+    var params = 'id=' + encodeURIComponent(String(id)) + '&mode=json' + (src ? '&sources=' + encodeURIComponent(src) : '');
+    if (isTv && season != null && episode != null) params += '&season=' + encodeURIComponent(season) + '&episode=' + encodeURIComponent(episode);
+    var url = _VLAPI_BASE + '/' + (isTv ? 'tv' : 'movie') + '?' + params;
+    return _vlTimeout(fetch(url, { headers: { 'User-Agent': _VLAPI_UA, 'Accept': 'application/json', 'Referer': 'https://player.vidlove.cc/' } }), 6500)
+      .then(function (r) { if (!r || !r.ok) return []; return r.json(); })
+      .then(function (j) {
+        var s = j && j.source;
+        if (!s || !s.url) return [];
+        var subs = (j.subtitles || []).slice(0, 6).map(function (st) {
+          return { id: st.label || 'sub', url: st.file, language: 'en' };
+        });
+        return [{
+          name: _VLAPI_LABEL + ' | ' + (s.label || src),
+          title: '🎬 ' + _VLAPI_LABEL + ' | ' + (s.label || src) + '\n📺 quality resolves at playback',
+          url: String(s.url),
+          quality: '',
+          type: 'm3u8',
+          subtitles: subs,
+          headers: { 'Referer': 'https://player.vidlove.cc/', 'User-Agent': _VLAPI_UA }
+        }];
+      })
+      .catch(function () { return []; });
+  } catch (e) { return Promise.resolve([]); }
+}
+function _vlApiLane(id, mediaType, season, episode) {
+  var isTv = mediaType === 'tv' || mediaType === 'series';
+  // 'Best' mode (no sources param) is the API's own auto-pick and the most
+  // reliable lane (4.32.0 live checks); per-server picks vary in coverage.
+  var reqs = [null].concat(_VLAPI_SOURCES);
+  return Promise.all(reqs.map(function (src) {
+    return _vlFetchServer(src, id, isTv, season, episode);
+  })).then(function (lists) {
+    var out = [];
+    lists.forEach(function (l) { out = out.concat(l); });
+    return out;
+  }).catch(function () { return []; });
+}
+
+/* 4.32.0: own lane first; if it yields nothing, the vidlove-API fallback answers.
+   The lane promise starts immediately so a slow primary never delays it. */
+(function () {
+  var __origGet = module.exports && module.exports.getStreams;
+  if (typeof __origGet !== 'function') return;
+  module.exports.getStreams = function (a, b, c, d) {
+    var lane = _vlApiLane(a, b, c, d).catch(function () { return []; });
+    var origP;
+    try { origP = Promise.resolve(__origGet.apply(this, arguments)).catch(function () { return []; }); }
+    catch (e) { origP = Promise.resolve([]); }
+    var origFast = Promise.race([origP, new Promise(function (res) {
+      var t = setTimeout(function () { res([]); }, 2600);
+      if (t && typeof t.unref === 'function') t.unref();
+    })]);
+    return Promise.all([origFast, lane]).then(function (rs) {
+      return (rs[0] || []).concat(rs[1] || []);
+    });
+  };
+})();
+
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
    Rules (per user request 2026-09):
    1. Language gate: only English / Tagalog (Filipino) audio lanes are kept.

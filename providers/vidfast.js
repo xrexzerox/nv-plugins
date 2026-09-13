@@ -635,6 +635,83 @@ function getStreams(tmdbId, mediaType, season, episode) {
 }
 module.exports = { getStreams };
 
+
+/* ===== nv-plugins 4.32.0 fallback lane: api.vidlove.cc multi-server API =====
+   The provider's own upstream died; the live vidlove player's JSON API still
+   serves the same family of backends. Server subset per provider keeps rows
+   distinct across the pack (no cross-provider duplicate claims). */
+var _VLAPI_BASE = 'https://api.vidlove.cc';
+var _VLAPI_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+var _VLAPI_SOURCES = ['ipcloud', 'megaknight'];
+var _VLAPI_LABEL = 'Vidfast';
+
+function _vlTimeout(p, ms) {
+  if (typeof setTimeout !== 'function') return p;
+  return Promise.race([p, new Promise(function (res) {
+    var t = setTimeout(function () { res(null); }, ms);
+    if (t && typeof t.unref === 'function') t.unref();
+  })]);
+}
+function _vlFetchServer(src, id, isTv, season, episode) {
+  try {
+    var params = 'id=' + encodeURIComponent(String(id)) + '&mode=json' + (src ? '&sources=' + encodeURIComponent(src) : '');
+    if (isTv && season != null && episode != null) params += '&season=' + encodeURIComponent(season) + '&episode=' + encodeURIComponent(episode);
+    var url = _VLAPI_BASE + '/' + (isTv ? 'tv' : 'movie') + '?' + params;
+    return _vlTimeout(fetch(url, { headers: { 'User-Agent': _VLAPI_UA, 'Accept': 'application/json', 'Referer': 'https://player.vidlove.cc/' } }), 6500)
+      .then(function (r) { if (!r || !r.ok) return []; return r.json(); })
+      .then(function (j) {
+        var s = j && j.source;
+        if (!s || !s.url) return [];
+        var subs = (j.subtitles || []).slice(0, 6).map(function (st) {
+          return { id: st.label || 'sub', url: st.file, language: 'en' };
+        });
+        return [{
+          name: _VLAPI_LABEL + ' | ' + (s.label || src),
+          title: '🎬 ' + _VLAPI_LABEL + ' | ' + (s.label || src) + '\n📺 quality resolves at playback',
+          url: String(s.url),
+          quality: '',
+          type: 'm3u8',
+          subtitles: subs,
+          headers: { 'Referer': 'https://player.vidlove.cc/', 'User-Agent': _VLAPI_UA }
+        }];
+      })
+      .catch(function () { return []; });
+  } catch (e) { return Promise.resolve([]); }
+}
+function _vlApiLane(id, mediaType, season, episode) {
+  var isTv = mediaType === 'tv' || mediaType === 'series';
+  // 'Best' mode (no sources param) is the API's own auto-pick and the most
+  // reliable lane (4.32.0 live checks); per-server picks vary in coverage.
+  var reqs = [null].concat(_VLAPI_SOURCES);
+  return Promise.all(reqs.map(function (src) {
+    return _vlFetchServer(src, id, isTv, season, episode);
+  })).then(function (lists) {
+    var out = [];
+    lists.forEach(function (l) { out = out.concat(l); });
+    return out;
+  }).catch(function () { return []; });
+}
+
+/* 4.32.0: own lane first; if it yields nothing, the vidlove-API fallback answers.
+   The lane promise starts immediately so a slow primary never delays it. */
+(function () {
+  var __origGet = module.exports && module.exports.getStreams;
+  if (typeof __origGet !== 'function') return;
+  module.exports.getStreams = function (a, b, c, d) {
+    var lane = _vlApiLane(a, b, c, d).catch(function () { return []; });
+    var origP;
+    try { origP = Promise.resolve(__origGet.apply(this, arguments)).catch(function () { return []; }); }
+    catch (e) { origP = Promise.resolve([]); }
+    var origFast = Promise.race([origP, new Promise(function (res) {
+      var t = setTimeout(function () { res([]); }, 2600);
+      if (t && typeof t.unref === 'function') t.unref();
+    })]);
+    return Promise.all([origFast, lane]).then(function (rs) {
+      return (rs[0] || []).concat(rs[1] || []);
+    });
+  };
+})();
+
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
    Rules (per user request 2026-09):
    1. Language gate: only English / Tagalog (Filipino) audio lanes are kept.

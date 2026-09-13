@@ -155,3 +155,49 @@ miruro v2.8.0 decrypts MegaPlay's enc and covers the anikoto catalog ids too (`a
 - 32 provider files, manifest 1:1 (32 scrapers; peachify/cinefreak remain disabled spares; torrentio stays registered from 4.29.0)
 - validate-manifest.js: 0 errors; every provider syntax-checked; all fixes live-verified from the datacenter (device IPs may answer even better — most MegaPlay lanes are retail/mobile-friendly)
 - asian-catalog addon unchanged — no CF Worker redeploy needed this cycle
+
+---
+
+## v4.32.0 — torrent merge + stream-source repair round
+
+### torrents.js v2.0.0 — THE one torrent provider (torrentio.js removed)
+User request: "combine torrentio and torrents, seems it redundant already, filter 5 minimum seeder, 720/1080p only, make torrents same pattern with torrentio".
+- torrents.js now covers BOTH Stremio backends the two providers split before: torrentio.strem.fun AND torrentsdb.com (fan-out in parallel, rows merged and seeders-sorted, cap 15)
+- parser = the device-proven torrentio v1.2.0 real-field pattern (Torrentio ships description=null; seeders/size/tracker live in the title blob, quality in name line 2)
+- seeders < 5 dropped, unparseable-seeder rows dropped, rows without a parseable quality dropped — and the NEW whitelist keeps 720p/1080p ONLY (4K/1440p/480p/360p dropped)
+- debrid gear-icon settings kept (debrid provider+key inject into the Torrentio path prefix; magnets otherwise resolved by Nuvio)
+- torrentio.js deleted from the pack; manifest 31 scrapers = 31 files 1:1. Leftover torrentio.js files on GitHub from older uploads are harmless (unregistered = never loaded)
+
+### anikototv.js v1.2.0 — playback fix for "rows show but stream won't play"
+The row URL (tokened MegaPlay master on fetch.nexabloom.top) is proven correct (downloads the playlist with just a Referer, token reusable) — but some device networks cannot reach that one host, and anikototv emitted a single-host row while miruro (which plays) gets multi-host rows from its lanes. v1.2.0 emits the primary row PLUS an ALT row with the identical tokenized path on ncdn.imgnex.top — the token was live-verified host-agnostic (200 + M3U8 on both hosts). If one host is unreachable on the device network, the ALT row plays.
+
+### videasy.js v2.1.0 — the "found streams but zero rows" bug
+The provider queried its 10 speedracelight servers with no per-call deadline; the sweep finished ~11.6s, past the 8s provider cap, and every found stream was raced away to [] (verified in harness: "Found 4 stream(s) from Hydrogen" then rows:0). v2.1.0 collects results progressively with a 6.8s deadline — rows now return (The Boys 5 rows, Dune 5, Wicked 4).
+
+### vidlove.js v2.0.0 — re-pointed to the live player API
+player.vidlove.cc IS the 111movies.com app (same page bytes) and its bundle points at api.vidlove.cc with a 7-server ring: moviebox2 / warden / cinefreak / vidapi / ipcloud / tcloud / megaknight. Routes recovered: {api}/movie?id={tmdb}&mode=json&sources={server} (+season/episode for tv); source.url = the final HLS master (served directly). vidlove now queries vidapi/cinefreak/warden/tcloud/megaknight with a progressive 6.2s deadline. Live: The Boys S1E1 = VidAPI 1080p row; Dune = VidAPI row.
+
+### xpass.js v2.0.0 — the site's own v3 data lane, ported
+The old lane read `var backups=[...]` from the embed page — that array is now EMPTY; the page instead ships a signed dataUrl `/data/{kind}/{id}?...&token=...`. The /data response is an AES-GCM blob: key = SHA256("spv3-data-response|spv3-build-1787821613-50e5fc97c9dce367|{pathname}|{token}"), iv = first 12 bytes. Algorithm recovered from the site's own obfuscated player script and verified: decrypts to a backups[] list of playlist endpoints → playlist.json → sources[].file rows labeled per server (TIK/VIP/FIL...). Device crypto uses crypto.subtle AES-GCM (the Nuvio polyfill implements it); the decrypt was unit-verified against the live blob. Note: play.xpass.top TLS-fingerprints node/curl from datacenter IPs (curl passes, node 403s) — on a residential device the fetch normally passes; if CF blocks it, the provider returns [] in <100 ms (fail-soft, never stalls the sheet).
+
+### moviebox / vidfast / peachify — api.vidlove.cc fallback lanes
+- moviebox: the pengu.uk gateway was repurposed upstream (it now serves a vidlove-titled page). The onrender CINESCRAPE lane stays primary; the api.vidlove.cc moviebox2 lane (literally the MovieBox backend in the vidlove ring) answers when pengu is empty
+- vidfast: vidfast.pro/vc pages are click-gated ("Click to reveal") so server-side scrape yields nothing; ipcloud+megaknight lane added
+- peachify: old mirrors (eat-peach.sbs) are NXDOMAIN; peachify is RE-ENABLED with the warden+tcloud lane
+- lane design: fallback runs in parallel with the provider's own lane, rows merged, each capped (2.6s own-lane wait, 6.5s API deadline) so the 8s provider cap is never hit
+
+### moviesdrive.js v5.1.0 — why EVERYTHING was "no match"
+new1.moviesdrive.christmas 302s to the current generation host (new4) and the redirect DROPS the query string — every search.php call returned the site's latest uploads instead of the searched title, so the matcher saw only unrelated candidates. v5.1.0 resolves the effective origin once per call and re-points the search; archive + hubcloud resolution parallelized to fit the 8s budget. Note: hubcloud link pages block datacenter IPs — final rows are device-dependent.
+
+### Verified healthy, left as-is
+- vidlink: healthy (The Boys 2 rows, Arcane 2 rows, Wicked 1 row). Titles where the upstream only has sub-720 renditions (e.g. Dune Part Two) correctly return 0 rows — the pack's quality gate
+- cineby: healthy (3 rows on movie + tv lanes)
+- cinefreak: cinefreak.nl removed its wp-json search route (rest_no_route) and the front-end is ad-walled — search impossible upstream; the same backend remains reachable through vidlove's cinefreak server
+- cinemacity: Cloudflare-gated from datacenter IPs (device-validated historically); no code change this cycle
+- movieshunt: upstream search returns ~1 unrelated hit for popular titles (content gap, not a matcher bug)
+- standing rules respected: kisskh/asianhub/pinoyhub/tagalogtorrents untouched; netmirror English-only; cinemacity Tagalog; asian-catalog addon unchanged — no CF Worker redeploy needed
+
+### Pack facts
+- 31 provider files, manifest 1:1 (31 scrapers; peachify re-enabled)
+- validate-manifest.js: 0 errors; every provider syntax-checked; in-zip md5 + export-shape + netmirror.js 74,735-byte sentinel verified
+- Upload instructions: upload the zip contents to GitHub (manifest.json + providers/ + addons/ + scripts/ + README.md), then in Nuvio REMOVE + RE-ADD the plugins to evict cached JS. Verify providers/ shows 31 .js files and netmirror.js = 74,735 bytes.

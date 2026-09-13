@@ -38,7 +38,292 @@ var window = (typeof window !== "undefined" && window) ? window
 var self = (typeof self !== "undefined" && self) ? self : window;
 var document = (typeof document !== "undefined" && document) ? document : { createElement: function () { return { style: {}, setAttribute: function () { }, getElementsByTagName: function () { return []; } }; }, getElementsByTagName: function () { return []; }, addEventListener: function () { } };
 var navigator = (typeof navigator !== "undefined" && navigator) ? navigator : { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" };
-var _0xff43=function(){return "";};const _0x1f1144=_0xff43;/*rotation removed*/;/*decoder removed*/var __async=(_0x3a0565,_0x22fa3f,_0x1ffd4e)=>{return new Promise((_0x4bc82d,_0x4be4a1)=>{const _0x1794e4=_0xff43;var _0x47085d=_0x131a02=>{const _0x1b37b3=_0xff43;try{_0x2013fe(_0x1ffd4e["next"](_0x131a02));}catch(_0x51287a){_0x4be4a1(_0x51287a);}},_0x53d322=_0x3a8c51=>{try{_0x2013fe(_0x1ffd4e['throw'](_0x3a8c51));}catch(_0x34921d){_0x4be4a1(_0x34921d);}},_0x2013fe=_0x551158=>_0x551158["done"]?_0x4bc82d(_0x551158["value"]):Promise["resolve"](_0x551158["value"])["then"](_0x47085d,_0x53d322);_0x2013fe((_0x1ffd4e=_0x1ffd4e["apply"](_0x3a0565,_0x22fa3f))["next"]());});},XPASS_API='https://play.xpass.top',BASE_HEADERS={'User-Agent':"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",'Referer':XPASS_API+'/'};/*string-table removed*/function generateM3u8(_0xf23bda,_0x2e383f){return __async(this,arguments,function*(_0x31fabd,_0x2fe368,_0x5f3140={}){const _0x23d0ed=_0xff43;try{console["log"]("[Xpass] Parsing master m3u8: "+_0x2fe368);const _0xc4234c=yield __nvFetch(_0x2fe368,{'headers':_0x5f3140}),_0x10e096=yield _0xc4234c["text"](),_0x9608c3=_0x2fe368["substring"](0x0,_0x2fe368["lastIndexOf"]('/'))+'/',_0x47dbc4=[],_0x216f40=/#EXT-X-STREAM-INF:.*?RESOLUTION=(\d+x\d+).*?\n([^\n]+)/g;let _0x1d3ef4;while((_0x1d3ef4=_0x216f40["exec"](_0x10e096))!==null){const _0x13781a=_0x1d3ef4[0x1]["split"]('x')[0x1]+'p';let _0x142801=_0x1d3ef4[0x2]["trim"]();if(!_0x142801["startsWith"]("http")){if(_0x142801['startsWith']('/')){const _0xd9a343=new URL(_0x2fe368)["origin"];_0x142801=_0xd9a343+_0x142801;}else _0x142801=_0x9608c3+_0x142801;}_0x47dbc4["push"]({'quality':_0x13781a,'url':_0x142801});}if(_0x47dbc4["length"]===0x0)return[{'quality':"Auto",'url':_0x2fe368}];return _0x47dbc4;}catch(_0x52b45f){return console["warn"]('[Xpass]\x20Error\x20parsing\x20M3U8,\x20returning\x20master\x20URL.',_0x52b45f),[{'quality':"Auto",'url':_0x2fe368}];}});}function getStreams(_0x384d54,_0x63fd0b,_0x54ef69,_0x1fa79d){return __async(this,null,function*(){const _0x2dec02=_0xff43;console["log"]("[Xpass] Fetching streams for "+_0x63fd0b+'\x20'+_0x384d54);const _0x52ad55=[];try{const _0x1f8775=_0x63fd0b==='tv'?XPASS_API+"/e/tv/"+_0x384d54+'/'+_0x54ef69+'/'+_0x1fa79d:XPASS_API+"/e/movie/"+_0x384d54;console["log"]("[Xpass] Navigating to Embed: "+_0x1f8775);const _0x3100ac=yield __nvFetch(_0x1f8775,{'headers':BASE_HEADERS}),_0x1a31ff=yield _0x3100ac["text"](),_0x526cb2=_0x1a31ff["match"](new RegExp("var backups\\s*=\\s*(\\[.*?\\])\\s*(?:;|<\\/script>)",'s'));if(!_0x526cb2)return console['log']("[Xpass] No backups variable found in page source."),[];let _0x3a003a=[];try{_0x3a003a=JSON["parse"](_0x526cb2[0x1]);}catch(_0x39c978){return console["error"]("[Xpass] Failed parsing backups JSON:",_0x39c978),[];}console["log"]("[Xpass] Found "+_0x3a003a["length"]+" servers.");for(const _0x6f7ff1 of _0x3a003a){try{const _0x17a701=_0x6f7ff1['name']||"Default";let _0x5b8316=_0x6f7ff1['url'];if(!_0x5b8316)continue;!_0x5b8316["startsWith"]("http")&&(_0x5b8316=XPASS_API+_0x5b8316);console["log"]("[Xpass] Fetching JSON from backup server: "+_0x5b8316);const _0x5cf924=yield __nvFetch(_0x5b8316,{'headers':BASE_HEADERS}),_0xf94553=yield _0x5cf924["json"](),_0x28959a=_0xf94553["playlist"]||[];if(_0x28959a["length"]===0x0)continue;const _0x209abd=_0x28959a[0x0]['sources']||[];for(const _0x344e43 of _0x209abd){const _0x24b944=_0x344e43['file'];if(!_0x24b944||!_0x24b944["startsWith"]("http"))continue;const _0xfede0f=_0x344e43["type"]&&_0x344e43['type']["toLowerCase"]()["includes"]('hls')||_0x24b944["includes"](".m3u8");if(_0xfede0f){const _0x424a9c=yield generateM3u8(_0x17a701,_0x24b944,BASE_HEADERS);_0x424a9c['forEach'](_0x949ef2=>{const _0x2197ca=_0x2dec02;_0x52ad55["push"]({'name':"Xpass ["+_0x17a701+']','title':_0x949ef2["quality"],'url':_0x949ef2["url"],'quality':_0x949ef2["quality"],'type':"m3u8",'headers':{'Referer':XPASS_API+'/','User-Agent':BASE_HEADERS["User-Agent"]},'provider':"xpass"});});}else _0x52ad55["push"]({'name':"Xpass ["+_0x17a701+']','title':"Auto",'url':_0x24b944,'quality':"Auto",'type':_0x24b944["includes"](".mp4")||_0x24b944["includes"](".mkv")?"video":null,'headers':{'Referer':XPASS_API+'/','User-Agent':BASE_HEADERS["User-Agent"]},'provider':'xpass'});}}catch(_0x361131){console["warn"]("[Xpass] Failed querying server "+_0x6f7ff1["name"]+':',_0x361131['message']);}}}catch(_0x4c1a19){console['error']("[Xpass] Unexpected overall error:",_0x4c1a19["message"]);}return console["log"]("[Xpass] Returning "+_0x52ad55["length"]+" parsed streams."),_0x52ad55;});}module["exports"]={'getStreams':getStreams};
+
+/* ============================================================
+ * xpass v2.0.0 (nv-plugins 4.32.0) — site's own v3 data lane.
+ * Old lane (inline `var backups=[...]` JSON) is gone upstream: the page now
+ * ships an empty backups=[] plus a SIGNED data URL:
+ *   var dataUrl="/data/movie/693134?autostart=false&token=<b64url>.<64hex>"
+ * The /data response is an AES-GCM ciphertext (base64url):
+ *   key = SHA256("spv3-data-response|spv3-build-1787821613-50e5fc97c9dce367|"
+ *                + pathname + "|" + token)
+ *   iv  = first 12 bytes of the decoded blob
+ * Decrypts to JSON [{url,label|name,...}] (backup playlist endpoints); each
+ * endpoint returns {playlist:[{sources:[{file,label,...}]}]}. All of this was
+ * recovered from the site's own player script and verified live (playlist 200,
+ * M3U8 served; same token valid on sibling CDN host ncdn.imgnex.top).
+ * Device crypto: AES-GCM + SHA-256 through crypto.subtle (the Nuvio crypto
+ * polyfill implements subtle.importKey/decrypt for AES-GCM 128-bit tags) with
+ * a CryptoJS SHA-256 fallback. QuickJS-safe: no Buffer, no atob, no TextEncoder.
+ * ============================================================ */
+var XPASS_API = 'https://play.xpass.top';
+var XPASS_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+var XPASS_HEADERS = { 'User-Agent': XPASS_UA, 'Referer': XPASS_API + '/' };
+var XPASS_BUILD = 'spv3-build-1787821613-50e5fc97c9dce367';
+
+function xpassSubtle() {
+  try {
+    if (typeof crypto !== 'undefined' && crypto && crypto.subtle &&
+        typeof crypto.subtle.digest === 'function' &&
+        typeof crypto.subtle.importKey === 'function' &&
+        typeof crypto.subtle.decrypt === 'function') return crypto.subtle;
+  } catch (e) {}
+  return null;
+}
+function xpassCrypto() {
+  try {
+    if (typeof CryptoJS !== 'undefined' && CryptoJS && CryptoJS.SHA256) return CryptoJS;
+    if (typeof require === 'function') { var C = require('crypto-js'); if (C && C.SHA256) return C; }
+  } catch (e) {}
+  return null;
+}
+function xpassHexToBytes(hex) {
+  var out = new Uint8Array(hex.length >> 1);
+  for (var i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return out;
+}
+function xpassBytesToB64url(bytes) {
+  var tbl = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  var out = '';
+  for (var i = 0; i < bytes.length; i += 3) {
+    var b1 = bytes[i], b2 = i + 1 < bytes.length ? bytes[i + 1] : -1, b3 = i + 2 < bytes.length ? bytes[i + 2] : -1;
+    out += tbl[b1 >> 2];
+    out += b2 >= 0 ? tbl[((b1 & 3) << 4) | (b2 >> 4)] : tbl[(b1 & 3) << 4];
+    out += b3 >= 0 ? tbl[((b2 & 15) << 2) | (b3 >> 6)] : '=';
+    out += b3 >= 0 ? tbl[b3 & 63] : '=';
+  }
+  return out;
+}
+function xpassB64ToBytes(s) {
+  s = String(s).replace(/-/g, '+').replace(/_/g, '/').replace(/=+$/, '');
+  var tbl = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  var out = [];
+  for (var i = 0; i < s.length; i += 4) {
+    var c0 = tbl.indexOf(s.charAt(i)), c1 = tbl.indexOf(s.charAt(i + 1));
+    var c2 = i + 2 < s.length ? tbl.indexOf(s.charAt(i + 2)) : -1;
+    var c3 = i + 3 < s.length ? tbl.indexOf(s.charAt(i + 3)) : -1;
+    if (c0 < 0 || c1 < 0) continue;
+    out.push((c0 << 2) | (c1 >> 4));
+    if (c2 >= 0) out.push(((c1 & 15) << 4) | (c2 >> 2));
+    if (c3 >= 0) out.push(((c2 & 3) << 6) | c3);
+  }
+  return new Uint8Array(out);
+}
+function xpassSha256Hex(str) {
+  var sub = xpassSubtle();
+  if (sub) {
+    var bytes = new Uint8Array(String(str).length);
+    for (var i = 0; i < bytes.length; i++) bytes[i] = String(str).charCodeAt(i) & 0xff;
+    return sub.digest('SHA-256', bytes).then(function (buf) {
+      return xpassBytesToHex(new Uint8Array(buf));
+    });
+  }
+  var C = xpassCrypto();
+  if (C) return Promise.resolve(C.SHA256(String(str)).toString(C.enc.Hex));
+  return Promise.reject(new Error('no sha256 available'));
+}
+function xpassBytesToHex(u8) {
+  var h = '';
+  for (var i = 0; i < u8.length; i++) h += (u8[i] < 16 ? '0' : '') + u8[i].toString(16);
+  return h;
+}
+// AES-GCM decrypt via crypto.subtle (device polyfill + browsers + node all ship it)
+function xpassAesGcmDecrypt(keyHex, ivBytes, ctBytes) {
+  var sub = xpassSubtle();
+  if (!sub) return Promise.reject(new Error('crypto.subtle unavailable (needed for AES-GCM)'));
+  return sub.importKey('raw', xpassHexToBytes(keyHex), { name: 'AES-GCM' }, false, ['decrypt'])
+    .then(function (key) {
+      return sub.decrypt({ name: 'AES-GCM', iv: ivBytes }, key, ctBytes);
+    })
+    .then(function (pt) {
+      var u8 = new Uint8Array(pt), s = '';
+      for (var i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+      return s;
+    });
+}
+function xpassTimeout(p, ms) {
+  if (typeof setTimeout !== 'function') return p;
+  return Promise.race([p, new Promise(function (res) {
+    var t = setTimeout(function () { res(null); }, ms);
+    if (t && typeof t.unref === 'function') t.unref();
+  })]);
+}
+// master playlist -> variant rows (kept from the 4.24.0 port; used per source file)
+function xpassParseMaster(masterUrl, text) {
+  try {
+    var base = masterUrl.substring(0, masterUrl.lastIndexOf('/')) + '/';
+    var rows = [], re = /#EXT-X-STREAM-INF:.*?RESOLUTION=(\d+x\d+).*?\n([^\n]+)/g, m;
+    while ((m = re.exec(text)) !== null) {
+      var q = m[1].split('x')[1] + 'p';
+      var u = m[2].trim();
+      if (!u) continue;
+      if (!/^http/i.test(u)) {
+        if (u.charAt(0) === '/') {
+          var org = '';
+          try { org = new URL(masterUrl).origin; } catch (e) {}
+          u = org + u;
+        } else u = base + u;
+      }
+      rows.push({ quality: q, url: u });
+    }
+    if (rows.length === 0) return [{ quality: 'Auto', url: masterUrl }];
+    rows.sort(function (a, b) { return parseInt(b.quality) - parseInt(a.quality); });
+    return rows.slice(0, 3);
+  } catch (e) {
+    return [{ quality: 'Auto', url: masterUrl }];
+  }
+}
+function xpassIsM3u8(u) { return /\.m3u8(\?|$)/i.test(String(u)) || /master\.txt(\?|$)/i.test(String(u)); }
+
+// one backup endpoint -> {playlist:[{sources:[{file,label}]}]} rows
+function xpassFetchBackup(url) {
+  var full = /^http/i.test(url) ? url : XPASS_API + url;
+  return xpassTimeout(__nvFetch(full, { headers: XPASS_HEADERS }), 4500)
+    .then(function (r) {
+      if (!r || !r.ok) return [];
+      return r.json();
+    })
+    .then(function (j) {
+      if (!j) return [];
+      var pl = j.playlist || j;
+      var items = Array.isArray(pl) ? pl : [];
+      var out = [];
+      items.slice(0, 2).forEach(function (item) {
+        var srcs = (item && item.sources) || [];
+        srcs.slice(0, 3).forEach(function (src) {
+          var f = src && src.file;
+          if (!f || !/^http/i.test(String(f))) return;
+          out.push({ file: String(f), label: (src && src.label) || (item && item.title) || 'Server' });
+        });
+      });
+      return out;
+    })
+    .catch(function () { return []; });
+}
+
+async function xpassDataLane(dataUrl, pageUrl) {
+  var qm = String(dataUrl).match(/token=([^&"]+)/);
+  if (!qm) throw new Error('no token in dataUrl');
+  var token = qm[1];
+  var pathname = String(dataUrl).split('?')[0];
+  var km = 'spv3-data-response|' + XPASS_BUILD + '|' + pathname + '|' + token;
+  var keyHex = await xpassSha256Hex(km);
+  var blobRes = await xpassTimeout(__nvFetch(XPASS_API + dataUrl, { headers: { 'User-Agent': XPASS_UA, 'Referer': pageUrl + '/' } }), 5500);
+  if (!blobRes || !blobRes.ok) throw new Error('data lane HTTP ' + (blobRes ? blobRes.status : 'null'));
+  var blobText = (await blobRes.text()).trim();
+  if (!blobText) throw new Error('empty data blob');
+  var raw = xpassB64ToBytes(blobText);
+  if (raw.length <= 12) throw new Error('blob too short');
+  var iv = raw.slice(0, 12);
+  var ct = raw.slice(12);
+  var plain = await xpassAesGcmDecrypt(keyHex, iv, ct);
+  var arr = JSON.parse(plain);
+  if (!Array.isArray(arr) || arr.length === 0) throw new Error('no backups');
+  return arr;
+}
+
+async function getStreams(tmdbId, type = 'movie', season = null, episode = null) {
+  console.log('[Xpass] v2.0.0 fetching ' + type + ' ' + tmdbId);
+  const isTV = type === 'tv' || type === 'series';
+  const embed = isTV
+    ? XPASS_API + '/e/tv/' + tmdbId + '/' + (season || 1) + '/' + (episode || 1)
+    : XPASS_API + '/e/movie/' + tmdbId;
+  const rows = [];
+  try {
+    const pageRes = await xpassTimeout(__nvFetch(embed, { headers: { 'User-Agent': XPASS_UA, 'Referer': 'https://xpass.top/' } }), 6000);
+    if (!pageRes || !pageRes.ok) {
+      console.log('[Xpass] embed page HTTP ' + (pageRes ? pageRes.status : 'null'));
+      return [];
+    }
+    const page = await pageRes.text();
+    const dm = page.match(/var\s+dataUrl\s*=\s*"([^"]+)"/);
+    let backups = null;
+    if (dm) {
+      const dataUrl = dm[1].replace(/&amp;/g, '&');
+      try {
+        backups = await xpassDataLane(dataUrl, XPASS_API);
+        console.log('[Xpass] data lane OK, backups: ' + backups.length);
+      } catch (e) {
+        console.log('[Xpass] data lane failed: ' + e.message);
+      }
+    } else {
+      console.log('[Xpass] no dataUrl in page');
+    }
+    // legacy lane: inline backups JSON (kept for older page shapes)
+    if (!backups || backups.length === 0) {
+      const bm = page.match(new RegExp('var backups\\s*=\\s*(\\[.*?\\])\\s*(?:;|<\\/script>)', 's'));
+      if (bm) {
+        try { backups = JSON.parse(bm[1]); } catch (e) { backups = null; }
+      }
+    }
+    if (!backups || backups.length === 0) return [];
+    // resolve up to 4 backups in parallel, each fail-soft
+    const picked = backups.slice(0, 4);
+    const lists = await Promise.all(picked.map(b => xpassFetchBackup(b && b.url)));
+    const seen = {};
+    let serverIdx = 0;
+    for (const list of lists) {
+      serverIdx++;
+      for (const src of (list || [])) {
+        if (!src || !src.file) continue;
+        const label = String(src.label || 'S' + serverIdx).replace(/[\r\n]+/g, ' ');
+        const key = src.file.slice(0, 110);
+        if (seen[key]) continue;
+        seen[key] = 1;
+        if (xpassIsM3u8(src.file)) {
+          // read variants so rows carry a real quality label (post-filter keeps them)
+          let variants = null;
+          try {
+            const mres = await xpassTimeout(__nvFetch(src.file, { headers: XPASS_HEADERS }), 3500);
+            if (mres && mres.ok) {
+              const mtext = await mres.text();
+              if (mtext && mtext.indexOf('#EXTM3U') !== -1) {
+                variants = xpassParseMaster(src.file, mtext);
+              }
+            }
+          } catch (e) {}
+          if (variants && variants.length) {
+            variants.forEach(v => {
+              rows.push({
+                name: 'Xpass | ' + label + ' | ' + v.quality,
+                title: '🎬 Xpass | ' + label + '\n📺 ' + v.quality,
+                url: v.url,
+                quality: v.quality,
+                type: 'm3u8',
+                headers: { 'Referer': XPASS_API + '/', 'User-Agent': XPASS_UA }
+              });
+            });
+          } else {
+            rows.push({
+              name: 'Xpass | ' + label + ' | Auto',
+              title: '🎬 Xpass | ' + label + '\n📺 Auto',
+              url: src.file,
+              quality: 'Auto',
+              type: 'm3u8',
+              headers: { 'Referer': XPASS_API + '/', 'User-Agent': XPASS_UA }
+            });
+          }
+        } else {
+          rows.push({
+            name: 'Xpass | ' + label + ' | Auto',
+            title: '🎬 Xpass | ' + label + '\n📺 Direct',
+            url: src.file,
+            quality: 'Auto',
+            headers: { 'Referer': XPASS_API + '/', 'User-Agent': XPASS_UA }
+          });
+        }
+        if (rows.length >= 12) break;
+      }
+      if (rows.length >= 12) break;
+    }
+  } catch (e) {
+    console.log('[Xpass] error: ' + e.message);
+  }
+  console.log('[Xpass] returning ' + rows.length + ' rows');
+  return rows;
+}
+
+module.exports = { getStreams };
 
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
    Rules (per user request 2026-09):
