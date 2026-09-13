@@ -103,7 +103,7 @@ function fetchWithTimeout(url, options, timeoutMs) {
     if (!hasTimers()) {
       return fetch(url, options || {});
     }
-    const timeout = timeoutMs || 2e4;
+    const timeout = timeoutMs || 8e3;
     let timer = null;
     try {
       const fetchPromise = fetch(url, options || {});
@@ -186,7 +186,7 @@ function makeStream(source, title, url, quality, headers, subtitles, extra) {
 function withTimeout(promise, ms, label) {
   if (!hasTimers())
     return promise;
-  const timeout = ms || 25e3;
+  const timeout = ms || 8e3;
   return Promise.race([
     promise,
     new Promise(function(resolve) {
@@ -493,7 +493,7 @@ function scrapeVaplayer(ctx) {
     const url = !ctx.isTv ? VAPLAYER_API + "/api.php?imdb=" + ctx.imdbId + "&type=movie" : VAPLAYER_API + "/api.php?imdb=" + ctx.imdbId + "&type=tv&season=" + ctx.season + "&episode=" + ctx.episode;
     try {
       const json = JSON.parse(
-        yield fetchText(url, { Referer: "https://nextgencloudfabric.com/" }, 2e4)
+        yield fetchText(url, { Referer: "https://nextgencloudfabric.com/" }, 8e3)
       );
       const data = json && json.data || {};
       const urls = data.stream_urls || [];
@@ -528,7 +528,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     try {
       const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
-      const out = yield withTimeout(scrapeVaplayer(ctx), 2e4, "vaplayer");
+      const out = yield withTimeout(scrapeVaplayer(ctx), 8e3, "vaplayer");
       return presentStreams(dedupe(out), ctx);
     } catch (e) {
       console.log("[Streamline][vaplayer] " + (e && e.message));
@@ -738,6 +738,13 @@ module.exports = { getStreams };
       try {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
+          if (typeof setTimeout === "function") {
+            // nv best-settings 4.23.0: hard 8s cap on the whole provider run
+            r = Promise.race([r, new Promise(function (res) {
+              var dl = setTimeout(function () { res([]); }, 8000);
+              if (dl && typeof dl.unref === "function") dl.unref();
+            })]);
+          }
           return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);

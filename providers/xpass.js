@@ -1,198 +1,44 @@
-/**
- * Movish - Nuvio provider (v1.0.0)
- *
- * movish.to is a Vidstack-based app with a TMDB-keyed sources API. Chain
- * verified live 2026-09-10:
- *
- *   GET {base}/player-sources/{serverKey}/movie/{tmdbId}
- *   GET {base}/player-sources/{serverKey}/tv/{tmdbId}/{season}/{episode}
- *     Headers: Accept: application/json, Referer: {base}/player/...
- *     -> {"source":"rigel","label":"Rigel","streams":[
- *          {"url":"https://api.dlproxy.com/v1/play/...","label":"Delta",
- *           "type":"mp4","quality":"360p"}, ...]}
- *
- *   Server keys live on the player page ({key,label} array). Only "rigel"
- *   was observed; the key list is parsed from the player page each call so
- *   new servers are picked up automatically.
- *
- *   GET {base}/player-episodes/{tmdbId}/{season} -> {"episodes":[...]}  (info only)
- *
- * No site search needed - the whole API is TMDB-id addressed. The dlproxy
- * streams are direct (mp4) or HLS per the "type" field. Rows are labeled
- * "Movish | {label} ({quality})". Language policy: English catalog.
- * Pure ES5 promise chains - QuickJS + Nuvio TV worker safe.
+/*
+ * nv-plugins xpass.js — FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass).
+ * Decoded from the obfuscated AIO build: string tables resolved, decoder machinery stripped,
+ * every network call capped by an 8s deadline, node-core requires fail-soft, nvio post-filter
+ * attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). Endpoints/keys/headers
+ * identical to the AIO original.
  */
-
-var SITE_NAME = "Movish";
-var BASE_CANDIDATES = [
-  "https://movish.to"
-];
-var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
-
-var ACTIVE_BASE = "";
-
-function settings() {
-  try {
-    return (typeof globalThis !== "undefined" && globalThis.SCRAPER_SETTINGS) ||
-      (typeof global !== "undefined" && global.SCRAPER_SETTINGS) || {};
-  } catch (e) { return {}; }
-}
-
-function hasTimers() {
-  return typeof setTimeout === "function";
-}
-
-function fetchText(url, options) {
-  options = options || {};
-  var opts = {
-    method: options.method || "GET",
-    headers: options.headers || { "User-Agent": UA },
-    redirect: "follow"
+/* nv-plugins best-settings pass 4.24.0: hard 8s deadline on every network call */
+var __nvFetch = (function () {
+  var _f = null;
+  try { _f = (typeof fetch === "function") ? fetch : null; } catch (e) { _f = null; }
+  if (!_f) return function () { return Promise.reject(new Error("no fetch")); };
+  var hasT = typeof setTimeout === "function";
+  return function (input, init) {
+    var p;
+    try { p = _f.apply(this, arguments); } catch (e) { return Promise.reject(e); }
+    if (!hasT || !p || typeof p.then !== "function") return p;
+    return Promise.race([p, new Promise(function (_res, rej) {
+      var t = setTimeout(function () { rej(new Error("nv deadline 8s")); }, 8000);
+      if (t && typeof t.unref === "function") t.unref();
+    })]);
   };
-  if (options.body) opts.body = options.body;
-  if (!hasTimers()) {
-    return fetch(url, opts).then(function (res) {
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      return res.text();
-    });
-  }
-  return new Promise(function (resolve, reject) {
-    var timer = setTimeout(function () { reject(new Error("fetch timeout")); }, options.timeout || 8000);
-    fetch(url, opts).then(function (res) {
-      clearTimeout(timer);
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      return res.text();
-    }).then(function (t) { resolve(t); }, function (e) { clearTimeout(timer); reject(e); });
-  });
-}
-
-function fetchJson(url, options) {
-  return fetchText(url, options).then(function (t) {
-    try { return JSON.parse(t); } catch (e) { return null; }
-  });
-}
-
-function candidateBases() {
-  var custom = settings().baseUrl;
-  var bases = [];
-  if (custom && /^https?:\/\//i.test(String(custom))) {
-    bases.push(String(custom).replace(/\/+$/, ""));
-  }
-  BASE_CANDIDATES.forEach(function (b) { bases.push(b); });
-  return bases;
-}
-
-function resolveBase() {
-  if (ACTIVE_BASE) return Promise.resolve(ACTIVE_BASE);
-  var chain = Promise.reject(new Error("no base"));
-  candidateBases().forEach(function (b) {
-    chain = chain.catch(function () {
-      return fetchText(b + "/", { headers: { "User-Agent": UA }, timeout: 9000 })
-        .then(function () { ACTIVE_BASE = b; return b; });
-    });
-  });
-  return chain;
-}
-
-// Pull [{key,label}] out of the player page JS (pattern: [{"key":"rigel","label":"Rigel"}])
-function serverKeys(base, isTv, tmdbId, season, episode) {
-  var playerPath = isTv
-    ? "/player/tv/" + tmdbId + "/" + season + "/" + episode
-    : "/player/movie/" + tmdbId;
-  return fetchText(base + playerPath, {
-    headers: { "User-Agent": UA, "Accept": "text/html,*/*", "Referer": base + "/" },
-    timeout: 8000
-  }).then(function (html) {
-    var keys = [];
-    var m = html.match(/\[\s*\{\s*["']key["']\s*:\s*["']([a-z0-9_-]+)["']/i);
-    if (m) {
-      var arrRe = /\{\s*["']key["']\s*:\s*["']([a-z0-9_-]+)["']\s*,\s*["']label["']\s*:\s*["']([^"']+)["']\s*\}/gi;
-      var am;
-      while ((am = arrRe.exec(html)) !== null) {
-        keys.push({ key: am[1], label: am[2] });
-      }
-    }
-    if (!keys.length) keys.push({ key: "rigel", label: "Rigel" }); // observed default
-    return keys;
-  }).catch(function () {
-    return [{ key: "rigel", label: "Rigel" }];
-  });
-}
-
-function qualityOf(q) {
-  var s = String(q || "").toLowerCase();
-  if (s.indexOf("2160") !== -1 || s === "4k") return "4K";
-  if (s.indexOf("1440") !== -1) return "1440p";
-  if (s.indexOf("1080") !== -1) return "1080p";
-  if (s.indexOf("720") !== -1) return "720p";
-  if (s.indexOf("480") !== -1) return "480p";
-  if (s.indexOf("360") !== -1) return "360p";
-  return "Auto";
-}
-
-function getStreams(tmdbId, mediaType, season, episode) {
-  var isTv = mediaType === "tv";
-  var s = season || 1;
-  var e = episode || 1;
-  console.log("[" + SITE_NAME + "] start " + mediaType + " " + tmdbId + (isTv ? " S" + s + "E" + e : ""));
-  try { tmdbId = String(tmdbId); } catch (err) { tmdbId = ""; }
-  if (!tmdbId) return Promise.resolve([]);
-
-  return resolveBase().then(function (base) {
-    return serverKeys(base, isTv, tmdbId, s, e).then(function (keys) {
-      var chain = Promise.resolve([]);
-      keys.forEach(function (k) {
-        chain = chain.then(function (rows) {
-          var srcPath = isTv
-            ? "/player-sources/" + k.key + "/tv/" + tmdbId + "/" + s + "/" + e
-            : "/player-sources/" + k.key + "/movie/" + tmdbId;
-          return fetchJson(base + srcPath, {
-            headers: { "User-Agent": UA, "Accept": "application/json", "Referer": base + "/" },
-            timeout: 8000
-          }).then(function (payload) {
-            var streams = (payload && payload.streams) || [];
-            streams.forEach(function (st) {
-              if (!st || !st.url || !/^https?:\/\//i.test(st.url)) return;
-              if (rows.some(function (r) { return r.url === st.url; })) return;
-              var q = qualityOf(st.quality);
-              var kind = String(st.type || "mp4").toLowerCase() === "hls" ? "HLS" : "Direct";
-              rows.push({
-                name: SITE_NAME + " | " + (k.label || k.key),
-                title: SITE_NAME + (isTv ? " S" + s + "E" + e : "") + " | " + (st.label || kind) + " - " + q,
-                url: st.url,
-                quality: q,
-                headers: { "User-Agent": UA, "Referer": base + "/" }
-              });
-            });
-            return rows;
-          }).catch(function () { return rows; });
-        });
-      });
-      return chain.then(function (rows) {
-        console.log("[" + SITE_NAME + "] returning " + rows.length + " stream(s)");
-        return rows;
-      });
-    });
-  }).catch(function (error) {
-    console.log("[" + SITE_NAME + "] failed: " + (error && error.message ? error.message : error));
-    return [];
-  });
-}
-
-function onSettings() {
-  return Promise.resolve([
-    {
-      key: "baseUrl",
-      title: "Movish base URL (optional)",
-      label: "Movish base URL (optional)",
-      type: "text",
-      default: "",
-      description: "Leave blank to use built-in mirrors. Use when the site rotates domains."
-    }
-  ]);
-}
-
-module.exports = { getStreams: getStreams, onSettings: onSettings };
+})();
+/* fail-soft require: node-core modules (net/http/assert/...) never crash the provider */
+var __nvRequire = (function () {
+  var _rq = null;
+  try { _rq = (typeof require === "function") ? require : null; } catch (e) { _rq = null; }
+  return function (name) {
+    if (_rq) { try { return _rq(name); } catch (e) { } }
+    return {};
+  };
+})();
+/* QuickJS-safe global aliases: embedded polyfills (forge/uuid/whatwg) reference
+   window/self/document unguarded - in Nuvio's QuickJS those would throw
+   ReferenceError at module load and kill the provider. */
+var window = (typeof window !== "undefined" && window) ? window
+  : (typeof globalThis !== "undefined" ? globalThis : (typeof global !== "undefined" ? global : {}));
+var self = (typeof self !== "undefined" && self) ? self : window;
+var document = (typeof document !== "undefined" && document) ? document : { createElement: function () { return { style: {}, setAttribute: function () { }, getElementsByTagName: function () { return []; } }; }, getElementsByTagName: function () { return []; }, addEventListener: function () { } };
+var navigator = (typeof navigator !== "undefined" && navigator) ? navigator : { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" };
+var _0xff43=function(){return "";};const _0x1f1144=_0xff43;/*rotation removed*/;/*decoder removed*/var __async=(_0x3a0565,_0x22fa3f,_0x1ffd4e)=>{return new Promise((_0x4bc82d,_0x4be4a1)=>{const _0x1794e4=_0xff43;var _0x47085d=_0x131a02=>{const _0x1b37b3=_0xff43;try{_0x2013fe(_0x1ffd4e["next"](_0x131a02));}catch(_0x51287a){_0x4be4a1(_0x51287a);}},_0x53d322=_0x3a8c51=>{try{_0x2013fe(_0x1ffd4e['throw'](_0x3a8c51));}catch(_0x34921d){_0x4be4a1(_0x34921d);}},_0x2013fe=_0x551158=>_0x551158["done"]?_0x4bc82d(_0x551158["value"]):Promise["resolve"](_0x551158["value"])["then"](_0x47085d,_0x53d322);_0x2013fe((_0x1ffd4e=_0x1ffd4e["apply"](_0x3a0565,_0x22fa3f))["next"]());});},XPASS_API='https://play.xpass.top',BASE_HEADERS={'User-Agent':"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",'Referer':XPASS_API+'/'};/*string-table removed*/function generateM3u8(_0xf23bda,_0x2e383f){return __async(this,arguments,function*(_0x31fabd,_0x2fe368,_0x5f3140={}){const _0x23d0ed=_0xff43;try{console["log"]("[Xpass] Parsing master m3u8: "+_0x2fe368);const _0xc4234c=yield __nvFetch(_0x2fe368,{'headers':_0x5f3140}),_0x10e096=yield _0xc4234c["text"](),_0x9608c3=_0x2fe368["substring"](0x0,_0x2fe368["lastIndexOf"]('/'))+'/',_0x47dbc4=[],_0x216f40=/#EXT-X-STREAM-INF:.*?RESOLUTION=(\d+x\d+).*?\n([^\n]+)/g;let _0x1d3ef4;while((_0x1d3ef4=_0x216f40["exec"](_0x10e096))!==null){const _0x13781a=_0x1d3ef4[0x1]["split"]('x')[0x1]+'p';let _0x142801=_0x1d3ef4[0x2]["trim"]();if(!_0x142801["startsWith"]("http")){if(_0x142801['startsWith']('/')){const _0xd9a343=new URL(_0x2fe368)["origin"];_0x142801=_0xd9a343+_0x142801;}else _0x142801=_0x9608c3+_0x142801;}_0x47dbc4["push"]({'quality':_0x13781a,'url':_0x142801});}if(_0x47dbc4["length"]===0x0)return[{'quality':"Auto",'url':_0x2fe368}];return _0x47dbc4;}catch(_0x52b45f){return console["warn"]('[Xpass]\x20Error\x20parsing\x20M3U8,\x20returning\x20master\x20URL.',_0x52b45f),[{'quality':"Auto",'url':_0x2fe368}];}});}function getStreams(_0x384d54,_0x63fd0b,_0x54ef69,_0x1fa79d){return __async(this,null,function*(){const _0x2dec02=_0xff43;console["log"]("[Xpass] Fetching streams for "+_0x63fd0b+'\x20'+_0x384d54);const _0x52ad55=[];try{const _0x1f8775=_0x63fd0b==='tv'?XPASS_API+"/e/tv/"+_0x384d54+'/'+_0x54ef69+'/'+_0x1fa79d:XPASS_API+"/e/movie/"+_0x384d54;console["log"]("[Xpass] Navigating to Embed: "+_0x1f8775);const _0x3100ac=yield __nvFetch(_0x1f8775,{'headers':BASE_HEADERS}),_0x1a31ff=yield _0x3100ac["text"](),_0x526cb2=_0x1a31ff["match"](new RegExp("var backups\\s*=\\s*(\\[.*?\\])\\s*(?:;|<\\/script>)",'s'));if(!_0x526cb2)return console['log']("[Xpass] No backups variable found in page source."),[];let _0x3a003a=[];try{_0x3a003a=JSON["parse"](_0x526cb2[0x1]);}catch(_0x39c978){return console["error"]("[Xpass] Failed parsing backups JSON:",_0x39c978),[];}console["log"]("[Xpass] Found "+_0x3a003a["length"]+" servers.");for(const _0x6f7ff1 of _0x3a003a){try{const _0x17a701=_0x6f7ff1['name']||"Default";let _0x5b8316=_0x6f7ff1['url'];if(!_0x5b8316)continue;!_0x5b8316["startsWith"]("http")&&(_0x5b8316=XPASS_API+_0x5b8316);console["log"]("[Xpass] Fetching JSON from backup server: "+_0x5b8316);const _0x5cf924=yield __nvFetch(_0x5b8316,{'headers':BASE_HEADERS}),_0xf94553=yield _0x5cf924["json"](),_0x28959a=_0xf94553["playlist"]||[];if(_0x28959a["length"]===0x0)continue;const _0x209abd=_0x28959a[0x0]['sources']||[];for(const _0x344e43 of _0x209abd){const _0x24b944=_0x344e43['file'];if(!_0x24b944||!_0x24b944["startsWith"]("http"))continue;const _0xfede0f=_0x344e43["type"]&&_0x344e43['type']["toLowerCase"]()["includes"]('hls')||_0x24b944["includes"](".m3u8");if(_0xfede0f){const _0x424a9c=yield generateM3u8(_0x17a701,_0x24b944,BASE_HEADERS);_0x424a9c['forEach'](_0x949ef2=>{const _0x2197ca=_0x2dec02;_0x52ad55["push"]({'name':"Xpass ["+_0x17a701+']','title':_0x949ef2["quality"],'url':_0x949ef2["url"],'quality':_0x949ef2["quality"],'type':"m3u8",'headers':{'Referer':XPASS_API+'/','User-Agent':BASE_HEADERS["User-Agent"]},'provider':"xpass"});});}else _0x52ad55["push"]({'name':"Xpass ["+_0x17a701+']','title':"Auto",'url':_0x24b944,'quality':"Auto",'type':_0x24b944["includes"](".mp4")||_0x24b944["includes"](".mkv")?"video":null,'headers':{'Referer':XPASS_API+'/','User-Agent':BASE_HEADERS["User-Agent"]},'provider':'xpass'});}}catch(_0x361131){console["warn"]("[Xpass] Failed querying server "+_0x6f7ff1["name"]+':',_0x361131['message']);}}}catch(_0x4c1a19){console['error']("[Xpass] Unexpected overall error:",_0x4c1a19["message"]);}return console["log"]("[Xpass] Returning "+_0x52ad55["length"]+" parsed streams."),_0x52ad55;});}module["exports"]={'getStreams':getStreams};
 
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
    Rules (per user request 2026-09):
@@ -211,7 +57,7 @@ module.exports = { getStreams: getStreams, onSettings: onSettings };
    Opt-out: set SCRAPER_SETTINGS.postFilter = false.
 ======================================================================== */
 (function () {
-  var PROVIDER = "movish";
+  var PROVIDER = "xpass";
   var G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
   function settings() {
     try { return (G && G.SCRAPER_SETTINGS) || {}; } catch (e) { return {}; }
@@ -257,7 +103,7 @@ module.exports = { getStreams: getStreams, onSettings: onSettings };
       return Promise.resolve(c.q);
     }
     var opts = { headers: Object.assign({}, headers || {}) };
-    var p = fetch(url, opts).then(function (r) {
+    var p = __nvFetch(url, opts).then(function (r) {
       return r.ok ? r.text() : "";
     }).then(function (t) {
       var q = "";

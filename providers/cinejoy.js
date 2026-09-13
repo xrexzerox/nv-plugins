@@ -193,7 +193,7 @@ function fetchWithTimeout(url, options, timeoutMs) {
     if (!hasTimers()) {
       return fetch(url, options || {});
     }
-    const timeout = timeoutMs || 2e4;
+    const timeout = timeoutMs || 6e3;
     let timer = null;
     try {
       const fetchPromise = fetch(url, options || {});
@@ -299,7 +299,7 @@ function makeStream(source, title, url, quality, headers, subtitles, extra) {
 function withTimeout(promise, ms, label) {
   if (!hasTimers())
     return promise;
-  const timeout = ms || 25e3;
+  const timeout = ms || 6e3;
   let timer = null;
   return Promise.race([
     promise,
@@ -1052,7 +1052,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     try {
       const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
-      const out = yield withTimeout(scrape(ctx), 2e4, "cinejoy");
+      const out = yield withTimeout(scrape(ctx), 6e3, "cinejoy");
       return presentStreams(dedupe(yield withSharedSubs(out, ctx)), ctx);
     } catch (e) {
       console.log("[Streamline][cinejoy] " + (e && e.message));
@@ -1277,6 +1277,13 @@ module.exports = { getStreams, onSettings };
       try {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
+          if (typeof setTimeout === "function") {
+            // nv best-settings 4.23.0: hard 12s cap on the whole provider run
+            r = Promise.race([r, new Promise(function (res) {
+              var dl = setTimeout(function () { res([]); }, 12000);
+              if (dl && typeof dl.unref === "function") dl.unref();
+            })]);
+          }
           return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);
