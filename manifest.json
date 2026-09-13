@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "4.29.0",
-  "description": "NV Plugins v4.29.0 - MIRURO FIXED: MegaPlay replaced the getSourcesNew response with an AES-256-CBC encrypted 'enc' payload (reason miruro/anime returned zero rows). Reversed MegaPlay's own player (e1-player.min.js) in a sandboxed browser and ported the full chain into miruro v2.8.0: decrypt enc (key 693f4c4d5441783051362c3a7d353055+zeros, IV W0;27ToaUpl_P%'c) -> signed master.m3u8 token (HMAC-SHA256) -> 1080p/variants, verified live on 5 episodes. torrentio.js registered per user request. asian-catalog audited healthy (27/28 catalogs live). Pack stays exactly the user-defined 31-provider set. NOTE: miruro is anime-only - non-anime titles correctly return no rows from it.",
+  "version": "4.30.0",
+  "description": "NV Plugins v4.30.0 - ANIMOTVSLASH REBUILT + ANIKOTOTV FIXED. animotvslash.js v6.0.0 (registered per user request): the site moved every episode page to a device-bound animotvslash.ru/watch iframe (tryembed signature-locked, plyr/videas lanes gone, the .ru API lanes Cloudflare-403 even to a real browser), and the .ru SPA itself falls back to MegaPlay's ani route - v6.0.0 ports exactly that: TMDB ids map via ani.zip to the AniList id, addon asian:an-<slug> rows navigate the site to the .ru watch ids, then MegaPlay enc decrypt + signed master token deliver Sub+Dub 1080p (live-verified Frieren E1/E28). anikototv.js v1.1.0: MegaPlay getSources now returns an AES \"enc\" payload (plain sources.file retired upstream) - extractHLS decrypts it and signs the CDN token; the SUB row label \"Japanese\" also tripped the post-filter language gate and is relabeled SUB (JP). miruro v2.8.0 (4.29.0) already covers mal/anilist/kitsu/anikoto catalog ids incl. the anikoto catalog lanes - the reported \"anikoto catalog no streams\" was the 4.28.0 build; uploading this pack and remove+re-add brings the fix. torrentio.js stays registered (4.29.0). 31+1 provider files, manifest 1:1, peachify/cinefreak remain disabled spares.",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -661,8 +661,8 @@
     {
       "id": "anikototv",
       "name": "AnikotoTV",
-      "description": "AnikotoTV: TVDB login + aiometadata mapping + stream lanes. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
-      "version": "1.0.0",
+      "description": "AnikotoTV v1.1.0 - FIXED: MegaPlay getSources/getSourcesNew now ship the stream URL AES-encrypted in the \"enc\" field; the old code only read the retired plain sources.file so every anime returned zero rows. extractHLS decrypts enc (AES-256-CBC, keys reversed from MegaPlay e1-player.min.js) and signs the master.m3u8 token (HMAC-SHA256) that the CDN requires; SUB row label relabeled \"SUB (JP)\" so the nvio language gate no longer drops it. Live-verified: Frieren S1E1/E5 via mal/52991. Decoded AIO port otherwise unchanged (8s caps, fail-soft, nvio post-filter attached).",
+      "version": "1.1.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -697,6 +697,29 @@
       ],
       "contentLanguage": [
         "en"
+      ]
+    },
+    {
+      "id": "animotvslash",
+      "name": "AnimeTVSlash",
+      "description": "AnimeTVSlash v6.0.0 - full rebuild, registered per user request. The site's own extract lanes died upstream (tryembed signature-locked, plyr/videas players removed, the new animotvslash.ru SPA + its API lanes Cloudflare-locked even to real browsers). The .ru watch player itself falls back to MegaPlay's ani route - v6.0.0 ports that fallback: TMDB ids via ani.zip -> AniList id; addon asian:an-<slug> rows navigate the site's own episode pages to the .ru watch ids; MegaPlay enc decrypt + signed master token -> Sub+Dub 1080p rows (whitelist Auto/480/720/1080 kept). Live-verified: Frieren S1E1/E28 Sub+Dub. Anime series only - movies fail soft (MegaPlay ani route serves no movie ids).",
+      "version": "6.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/animotvslash.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=animotvslash.org&sz=128",
+      "contentLanguage": [
+        "en"
+      ],
+      "categories": [
+        "other"
       ]
     }
   ]

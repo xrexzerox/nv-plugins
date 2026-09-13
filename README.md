@@ -73,7 +73,9 @@ Every enabled scraper was live-probed (2 movies x 2 series targets, plus anime t
 Besides QuickJS stream plugins, this repo ships an HTTP **catalog addon** (Stremio protocol) — Nuvio plugins can only provide streams, catalogs must be served over HTTP:
 
 - **[`addons/pinoyhub-catalog/`](addons/pinoyhub-catalog/README.md)** — "PinoyHub Catalog": browse Pinoy movies and Tagalog-dubbed series from pinoymovieshub.win on Nuvio's Home / Discover / Search. Resolves every title to a TMDB id and pairs with the PinoyMoviesHub plugin for playback. Deployable as a Cloudflare Worker (paste `worker-bundle.js` into the dashboard) or a zero-dependency Node server (`node server.js`), then add `https://<host>/manifest.json` under Settings → Addons.
-- **[`addons/asian-catalog/`](addons/asian-catalog/README.md)** — "Asian Catalog" (v5.7.0, repo 4.19.0): the site-mirrored directory for pinoymovieshub.win, kissasian.cam, viewasian.lol, kisskh, animotvslash.org, the Anikoto API and pencurimovie.baby — 28 catalogs (Pencuri Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb included). Anime rows carry `mal:`/`anikoto:` ids played by the miruro plugin; Pencuri rows are played by pencuri.js v1.4.0, which now attaches **English subtitles** (opensubtitles-v3) to every stream. v5.6.0's `POST /cjg` relay hops the cinejoy binary request; v5.7.0 adds `POST /cjs` — the ENTIRE cinejoy chain (enc -> /g -> dec) runs server-side for cinejoy.js v1.6.0's one-request full lane on NuvioMobile. Deploy the CF worker from `addons/asian-catalog/` (`worker-bundle.js`), add `https://<host>/manifest.json` under Settings → Addons; cinejoy users also paste the worker base URL into the provider's "Cinejoy relay base URL" setting (required for cinejoy on NuvioMobile; TV/PC need no config).## v4.29.0 — MIRURO FIXED (MegaPlay enc decrypt) + torrentio.js registered + pack audit
+- **[`addons/asian-catalog/`](addons/asian-catalog/README.md)** — "Asian Catalog" (v5.7.0, repo 4.19.0): the site-mirrored directory for pinoymovieshub.win, kissasian.cam, viewasian.lol, kisskh, animotvslash.org, the Anikoto API and pencurimovie.baby — 28 catalogs (Pencuri Movies / Series / Malaysia / Indonesia / Japan / Thailand / Most Viewed / Most Rating / Top IMDb included). Anime rows carry `mal:`/`anikoto:` ids played by the miruro plugin; Pencuri rows are played by pencuri.js v1.4.0, which now attaches **English subtitles** (opensubtitles-v3) to every stream. v5.6.0's `POST /cjg` relay hops the cinejoy binary request; v5.7.0 adds `POST /cjs` — the ENTIRE cinejoy chain (enc -> /g -> dec) runs server-side for cinejoy.js v1.6.0's one-request full lane on NuvioMobile. Deploy the CF worker from `addons/asian-catalog/` (`worker-bundle.js`), add `https://<host>/manifest.json` under Settings → Addons; cinejoy users also paste the worker base URL into the provider's "Cinejoy relay base URL" setting (required for cinejoy on NuvioMobile; TV/PC need no config).
+
+## v4.29.0 — MIRURO FIXED (MegaPlay enc decrypt) + torrentio.js registered + pack audit
 
 ### miruro v2.8.0 — the anime zero-rows root cause, fixed
 MegaPlay (miruro's stream chain) replaced its `getSourcesNew` response: the plain `{sources:{file}}` body is gone upstream and the stream URL now ships **AES-encrypted in an `enc` field** — that is why miruro (and the anime lanes) stopped giving streams. The fix reverses MegaPlay's own player (`e1-player.min.js`, self-defending eval loader) by running it in a sandboxed browser and hooking `crypto.subtle`, then ports the full chain into miruro.js:
@@ -94,7 +96,7 @@ Local run of the addon core: **27/28 catalogs return 20 items each** (only `anik
 - Upstream changed / content-limited (fail-soft, stay enabled): fibwatch, moviesdrive, movieshunt, nakios, xpass (new jwplayer + anti-bot data lane), anikototv, hdhub4u (site lacks many EN titles)
 - animotvslash (NOT in the pack): upstream replaced tryembed with a signed p2pplay.pro player — not portable; miruro covers the same content.
 
-## v4.28.0 — USER-DEFINED PACK## v4.28.0 — USER-DEFINED PACK: exactly the providers from the user's zip, nothing re-added
+## v4.28.0 — USER-DEFINED PACK: exactly the providers from the user's zip, nothing re-added
 
 Per user directive, the pack now contains **only the provider files present in the user's own nv-plugin.zip** — 31 files, of which **30 are registered** in the manifest. The 34 entries whose files were not in the zip are removed from the manifest (hexa, vidzee, vidrock, vaplayer, movish, movix, hianime, kurage, animekai, animepahe, animetsu, animeworld, allanime, animezey, vixsrc, cinejoy, streamflix, vaplayer-class others — all gone by design, NOT re-added).
 
@@ -104,4 +106,38 @@ Per user directive, the pack now contains **only the provider files present in t
 - peachify + cinefreak remain registered-but-disabled (upstream dead evidence unchanged)
 - Verify after upload: `providers/` on GitHub must contain **at least these 31 `.js` files** (netmirror.js must be 74,735 bytes). If older leftover files remain on GitHub from previous uploads, they are harmless - the manifest only loads the 30 registered providers - but deleting them keeps the repo clean.
 
+## v4.30.0 — ANIMOTVSLASH REBUILT (registered) + ANIKOTOTV FIXED (MegaPlay enc)
 
+Report: "animotvslash and anikoto catalog doesnt show streams - review miruro.js and animotvslash.js".
+
+### Why animotvslash.js had zero streams (audited live this cycle)
+The site finished its player migration. Every episode page now embeds a single device-bound iframe `animotvslash.ru/watch/{anilistId}/{episode}?lang=sub|dub&embed=1`:
+- tryembed.us.cc lane: "Forbidden: Invalid Request Signature" (already dead in the 4.28.0 cycle)
+- plyr-player / cdn.videas.fr configs: no longer present on episode pages
+- animotvslash.p2pplay.pro: removed from pages (was fingerprint-locked anyway)
+- the .ru SPA's own API lanes (`/api/stream/sources/{senshi|miku|neko}`, `/api/stream/watch`) answer Cloudflare "Just a moment..." 403 even to a real headless Chromium with a warmed session — not portable to Nuvio's plain HTTP runtime.
+
+### What the site itself does (captured in a real browser)
+When its own servers fail, the .ru watch SPA falls back to MegaPlay's ani route `megaplay.buzz/stream/ani/{anilistId}/{ep}/{sub|dub}` → getSources → AES "enc" payload → tokenized master.m3u8 — the capture played Frieren E28 1080p end-to-end.
+
+### animotvslash.js v6.0.0 (NEW registration, per user request)
+Ports exactly that fallback as the provider's engine:
+- TMDB ids map via api.ani.zip (`mappings?themoviedb_id=`) to the AniList id (24h cache)
+- addon `asian:an-<slug>` / `asian:<slug>` rows navigate the site's own pages: /anime/{slug}/ → real -episode-{n}/ link → extract the .ru watch ids from the episode page → MegaPlay ani route (zero title matching; slug 404 falls back to the site's WordPress search)
+- MegaPlay lane: enc decrypt (AES-256-CBC, keys reversed from e1-player.min.js) + signed master token (HMAC-SHA256) — the same proven 4.29.0 scheme; legacy plain responses still supported
+- v5.4.0 quality whitelist kept (Auto master + 480p/720p/1080p); English/Tagalog subtitle tracks attached
+- Movies fail soft (MegaPlay's ani route serves no movie ids). Live-verified: Frieren S1E1/E28 = Sub 1080p + Dub 1080p; addon direct lane E5/E28 = 2 rows.
+
+### anikototv.js v1.1.0 — FIXED
+Two stacked causes for "anikoto catalog doesnt show streams" on 4.28.0 and older:
+1. MegaPlay's getSources AND getSourcesNew now ship the stream URL AES-encrypted in the "enc" field (plain sources.file retired) — the old code read only the plain body, so extractHLS returned null on every anime. extractHLS now decrypts enc and signs the CDN master token.
+2. Even with a working URL, the SUB row label "Japanese (SUB)" tripped the nvio post-filter language gate (blocks \\bjapanese\\b) and the row was silently dropped — relabeled "SUB (JP)" (miruro-style labels pass the gate).
+Live-verified: Frieren S1E1 (720p) / S1E5 (1080p) via mal/52991.
+
+### miruro.js — already fixed in 4.29.0
+miruro v2.8.0 decrypts MegaPlay's enc and covers the anikoto catalog ids too (`anikoto:{id}` → Anikoto API → MegaPlay s-2 lanes): anikoto:8952 E1 = 4 rows (Sub+Dub 1080p/720p), E9 = 2 rows. If the device still shows no anime streams after this upload, the installed pack predates 4.29.0 — remove + re-add.
+
+### Pack facts
+- 32 provider files, manifest 1:1 (32 scrapers; peachify/cinefreak remain disabled spares; torrentio stays registered from 4.29.0)
+- validate-manifest.js: 0 errors; every provider syntax-checked; all fixes live-verified from the datacenter (device IPs may answer even better — most MegaPlay lanes are retail/mobile-friendly)
+- asian-catalog addon unchanged — no CF Worker redeploy needed this cycle
