@@ -699,6 +699,73 @@ function mpFileId(malId, anilistId, epNumber, lang) {
 var MP_SRC_CACHE_TTL = 10 * 60 * 1000;
 var _mpSrcCache = _muState.mpSources || (_muState.mpSources = {});
 
+// ---------------------------------------------------------------------------
+// v2.8.0 (2026-09-13): MegaPlay changed the getSourcesNew response format.
+// The plain {sources:{file}} body is GONE; the stream URL now ships AES-
+// encrypted in the "enc" field (base64url). Reverse-engineered from MegaPlay's
+// own e1-player.min.js (obfuscated, self-defending eval loader) by running it
+// in a sandboxed browser and hooking crypto.subtle, then verified end-to-end
+// against 5 live episodes (Frieren E1/E2, JJK E1, One Piece E1, Spy x Family E1):
+//   1. enc (base64url) -> 128 bytes
+//   2. AES-256-CBC, key = hex 693f4c4d5441783051362c3a7d353055 followed by 16
+//      zero bytes, IV = ASCII "W0;27ToaUpl_P%'c", PKCS7 padding
+//      -> {"file":"https://<cdn>/<type>/<md5a>/<md5b>/master.m3u8"}
+//   3. master.m3u8 answers 403 WITHOUT a signed token:
+//      token = b64url("<unixtime>|<md5a>/<md5b>") + "." +
+//              b64url(HMAC-SHA256(key, "<unixtime>|<md5a>/<md5b>"))
+//      HMAC key (UTF8): "MpCdnT0k3n!9f2K#xQ7vL5mR8wN1pY4s"
+//      -> then the CDN serves the master + variant playlists (variants need
+//      no token). Subtitle tracks stay plain in the same response.
+// ---------------------------------------------------------------------------
+var MP_AES_KEY = null, MP_HMAC_KEY = null, MP_CBC_IV = null;
+function mpCrypto() {
+  if (MP_AES_KEY) return true;
+  try {
+    var CJS = typeof __nvRequire === "function" ? __nvRequire("crypto-js") : null;
+    if (!CJS || !CJS.AES || !CJS.HmacSHA256 || !CJS.lib || !CJS.lib.CipherParams) return false;
+    MP_AES_KEY = CJS.enc.Hex.parse("693f4c4d5441783051362c3a7d35305500000000000000000000000000000000");
+    MP_CBC_IV = CJS.enc.Utf8.parse("W0;27ToaUpl_P%'c");
+    MP_HMAC_KEY = CJS.enc.Utf8.parse("MpCdnT0k3n!9f2K#xQ7vL5mR8wN1pY4s");
+    return true;
+  } catch (e) { return false; }
+}
+function mpB64urlToWordArray(s) {
+  var CJS = __nvRequire("crypto-js");
+  return CJS.enc.Base64.parse(String(s).replace(/-/g, "+").replace(/_/g, "/"));
+}
+function mpDecryptFile(enc) {
+  try {
+    if (!mpCrypto()) return null;
+    var CJS = __nvRequire("crypto-js");
+    var params = CJS.lib.CipherParams.create({ ciphertext: mpB64urlToWordArray(enc) });
+    var pt = CJS.AES.decrypt(params, MP_AES_KEY,
+      { iv: MP_CBC_IV, mode: CJS.mode.CBC, padding: CJS.pad.Pkcs7 });
+    var txt = pt.toString(CJS.enc.Utf8);
+    if (!txt) return null;
+    var j = JSON.parse(txt);
+    return j && j.file ? String(j.file) : null;
+  } catch (e) { return null; }
+}
+/** signed master URL for a decrypted CDN path ("<type>/<md5a>/<md5b>") */
+function mpTokenForPath(path) {
+  var CJS = __nvRequire("crypto-js");
+  var msg = Math.floor(Date.now() / 1000) + "|" + path;
+  var b64url = function (wa) {
+    return wa.toString(CJS.enc.Base64).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  };
+  var sig = b64url(CJS.HmacSHA256(msg, MP_HMAC_KEY));
+  return b64url(CJS.enc.Utf8.parse(msg)) + "." + sig;
+}
+/** decrypted "file" -> { plain, tokenized, path } (file may already carry master.m3u8) */
+function mpBuildMaster(fileUrl) {
+  var f = String(fileUrl);
+  if (/\/$/.test(f)) f += "master.m3u8";
+  var m = f.match(/^https?:\/\/[^/]+\/(?:anime|movie|series|tv)\/(.+?)(?:\/master\.m3u8)?$/);
+  var path = m ? m[1] : "";
+  if (!mpCrypto() || !path) return { plain: f, tokenized: f, path: "" };
+  return { plain: f, tokenized: f + "?token=" + mpTokenForPath(path), path: path };
+}
+
 /**
  * sources JSON for a file id: {file, tracks}. Fail-soft.
  * v2.5.0: sHint selects MegaPlay's own CDN (verified live: null ->
@@ -709,7 +776,16 @@ function mpSources(fileId, sHint) {
   var cacheKey = fileId + ":" + (sHint || "def");
   var hit = _mpSrcCache[cacheKey];
   if (hit && Date.now() - hit.ts < MP_SRC_CACHE_TTL) {
-    return Promise.resolve(hit.data);
+    var d0 = hit.data;
+    // v2.8.0: refresh the signed token when the cached copy ages past 15min
+    if (d0 && d0.path && d0.plain && Date.now() - (d0.tokenAt || 0) > 15 * 60 * 1000) {
+      try {
+        d0.file = d0.plain + "?token=" + mpTokenForPath(d0.path);
+        d0.tokenAt = Date.now();
+        hit.ts = Date.now();
+      } catch (e) {}
+    }
+    return Promise.resolve(d0);
   }
   return mpGap().then(function () {
     var url = MEGAPLAY_BASE + "/stream/getSourcesNew?id=" + encodeURIComponent(fileId);
@@ -721,11 +797,26 @@ function mpSources(fileId, sHint) {
       "X-Requested-With": "XMLHttpRequest"
     }, 6000);
   }).then(function (data) {
-    if (!data || !data.sources || !data.sources.file ||
-        !/^https?:\/\//i.test(String(data.sources.file))) return null;
+    if (!data) return null;
+    var tracks = Array.isArray(data.tracks) ? data.tracks : [];
+    // v2.8.0: encrypted "enc" format (current MegaPlay)
+    var built = null;
+    if (data.enc) {
+      var f = mpDecryptFile(data.enc);
+      if (f) built = mpBuildMaster(f);
+    }
+    // legacy plain format (kept as a fallback)
+    if (!built && data.sources && data.sources.file &&
+        /^https?:\/\//i.test(String(data.sources.file))) {
+      built = { plain: String(data.sources.file), tokenized: String(data.sources.file), path: "" };
+    }
+    if (!built || !/^https?:\/\//i.test(built.tokenized)) return null;
     var out = {
-      file: String(data.sources.file),
-      tracks: Array.isArray(data.tracks) ? data.tracks : []
+      file: built.tokenized,
+      plain: built.plain,
+      path: built.path,
+      tokenAt: built.path ? Date.now() : 0,
+      tracks: tracks
     };
     _mpSrcCache[cacheKey] = { ts: Date.now(), data: out };
     return out;

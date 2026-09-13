@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "4.28.0",
-  "description": "NV Plugins v4.28.0 - USER-DEFINED PACK: exactly the provider set from the user's own nv-plugin.zip (30 registered providers; nothing re-added). 20 files damaged in the 4.26.0 upload were repaired byte-exact from the verified build (same provider, same version): netmirror v14 (Alpha+net27, English-only), playimdb, 4khdhub, castle, cineby, videasy, vidfast, vidlink, vidlove, xpass, cinemacity (Tagalog), hdhub4u, moviebox, moviesdrive, movieshunt, nakios, topcartoons, movieblast, purstream, peachify(spare, disabled). peachify/cinefreak remain disabled (upstreams dead). torrents.js covers torrentio.strem.fun + torrentsdb with debrid settings; the old torrentio.js file ships unregistered as a spare to avoid duplicate rows. Verify upload: providers/ must show 31 .js files.",
+  "version": "4.29.0",
+  "description": "NV Plugins v4.29.0 - MIRURO FIXED: MegaPlay replaced the getSourcesNew response with an AES-256-CBC encrypted 'enc' payload (reason miruro/anime returned zero rows). Reversed MegaPlay's own player (e1-player.min.js) in a sandboxed browser and ported the full chain into miruro v2.8.0: decrypt enc (key 693f4c4d5441783051362c3a7d353055+zeros, IV W0;27ToaUpl_P%'c) -> signed master.m3u8 token (HMAC-SHA256) -> 1080p/variants, verified live on 5 episodes. torrentio.js registered per user request. asian-catalog audited healthy (27/28 catalogs live). Pack stays exactly the user-defined 31-provider set. NOTE: miruro is anime-only - non-anime titles correctly return no rows from it.",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -235,8 +235,8 @@
     {
       "id": "miruro",
       "name": "Miruro",
-      "description": "Anime from miruro.tv: MegaPlay file resolution (embed -> file-id -> getSourcesNew m3u8, sub+dub in parallel) plus the site secure pipe (4-mirror ring) on device; v2.6.0 fresh-episode + dead-lane fixes: mal: catalog ids are enriched with their AniList id via ani.zip (24h cache) so MegaPlay's mal AND ani routes both resolve the same episode (one side lags less on just-aired episodes), the pipe lane is circuit-broken for 15min after a 403 hard block instead of burning 4x6s per call, and the master-probe verdict is memoized module-wide (3min) so identical master URLs from MegaPlay's ?s= hint rotation (which anime sources ignore) and the double sweep are probed once; v2.5.0 device resilience: CDN self-healing rotation, fail-open post-filter (probe failures keep rows), 10.5s overall deadline flushing partial rows, stream cache written; v2.4.0: accepts catalog-issued anime ids verbatim (mal:/anilist:/kitsu:/anikoto:) and resolves anikoto ids through the /series episode list to the exact MegaPlay s-2 embed-id routes MegaPlay's own API docs pair with them; v2.3.0: deterministic TMDB mapping via ani.zip themoviedb_id (mal+anilist in one CDN request), Kitsu/Jikan/AniList title search demoted to fallback. v2.7.0 series-fix: Nuvio hands providers the TAPPED EPISODE's id for series (Stremio protocol, \"mal:61240:1:9\"; bare meta id only for movies) and the old strict prefix regex rejected every decorated shape -> 0 rows for every TV/series tap while movies worked (reproduced live). parseCatalogAnimeId now tolerates all observed decorations (episode-id :s:e suffix, urlencoded %3A, path separators, trailing .json, query strings, any case), extracts the season/episode from the id when the app omits them, and auto-detects the mediaType slot so legacy 3-arg calls can no longer shift season/episode.",
-      "version": "2.7.0",
+      "description": "Miruro v2.8.0 - FIXED: MegaPlay's getSourcesNew now returns the stream URL AES-encrypted in 'enc' (the old plain sources.file body is gone upstream - this is why miruro stopped giving streams). v2.8.0 decrypts enc via CryptoJS AES-256-CBC, signs the master.m3u8 token with HMAC-SHA256 ( MegaPlay's own scheme, reversed from e1-player.min.js), keeps the CDN-hint rotation, host swaps, English/Tagalog subtitle tracks and the fail-open post-filter. Live-verified: Frieren S1E1 = Sub 1080p + Dub 1080p. Anime-only provider (non-anime = 0 rows by design).",
+      "version": "2.8.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -679,6 +679,25 @@
         "en"
       ],
       "hasSettings": true
+    },
+    {
+      "id": "torrentio",
+      "name": "Torrentio",
+      "description": "Torrentio v1.1.0 - registered per user request (2026-09-13). Original Torrentio provider (torrentio.strem.fun + TMDB/IMDb meta, magnet rows with seed/size info, debrid settings supported). NOTE: torrents.js already queries the same torrentio.strem.fun upstream (plus torrentsdb) - expect overlapping magnet rows between the two; both stay per user choice.",
+      "version": "1.1.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/torrentio.js",
+      "enabled": true,
+      "formats": [
+        "magnet"
+      ],
+      "contentLanguage": [
+        "en"
+      ]
     }
   ]
 }

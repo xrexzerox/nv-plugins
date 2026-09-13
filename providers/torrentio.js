@@ -72,9 +72,12 @@ async function getStreams(tmdbId, type = 'movie', season = null, episode = null)
 
     const debridSegment = getDebridPathSegment();
     const prefix = debridSegment ? debridSegment + '/' : '';
+    // fix (4.29.0): Torrentio's API wants path-style ids (stream/movie/tt...json);
+    // the old 'movie:tt...' colon form returned HTTP 404 -> provider was silently empty
+    // Stremio stream id convention: movies = movie/tt....json, series = series/tt...:S:E.json
     const streamId = isTV
-      ? 'series:' + imdbId + ':' + (season || 1) + ':' + (episode || 1)
-      : 'movie:' + imdbId;
+      ? 'series/' + imdbId + ':' + (season || 1) + ':' + (episode || 1)
+      : 'movie/' + imdbId;
     const torrentioUrl = TORRENTIO_API + '/' + prefix + 'stream/' + streamId + '.json';
 
     const data = await fetch(torrentioUrl, { headers: HEADERS })
