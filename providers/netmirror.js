@@ -1,136 +1,8 @@
 /**
- * NetMirror - Nuvio provider (v14.0.0)
+ * NetMirror - Nuvio provider (v9.0.0)
  *
- * v14.0.0: FULL DECODE + net27.cc lane (2026-09-13).
- *  - User report on 4.24.0: "SLOW TO FETCH STREAMS / FULLY DECODE THE NETMIRROR.JS".
- *  - The All-in-One-Nuvio netmirror.js (obfuscated string-array + rotation) was
- *    FULLY DECODED this cycle: string table executed in a sandbox, every decoder
- *    call rewritten to its literal (117/117 calls resolved, 0 failures), then
- *    the decoded flow was LIVE-PROBED endpoint by endpoint. Findings:
- *      (a) AIO's primary lane is GET https://net27.cc/api/embed-tmdb/{id} -
- *          LIVE and answering 200 with {ok:true, streams:[{url,resolution}],
- *          mp4, captions:[{url,lang,name}]}. Wednesday S1E1 returned 3 signed
- *          mp4 rows (360/480/720 on bcdnxw.hakunaymatata.com) + multi-language
- *          SRT captions INCLUDING English. The 502 seen on 2026-09-12 was a
- *          burst rate limit (2 rapid calls -> 502), not a dead API.
- *      (b) The signed mp4 CDN serves 206 @ 8MB/s ONLY with
- *          Referer: https://videodownloader.site/ (206) - the net27 referer
- *          and no-referer both get 429. Row headers replicate that exactly.
- *      (c) Captions are relative (/api/proxy/video?url=...) -> prefixed with
- *          https://net27.cc (the AIO decode does the same); English-only per
- *          the standing netmirror rule.
- *      (d) AIO's NewTV lane confirmed: 24 mobiledetect/mobidetect domains ->
- *          /checknewtv.php (X-Requested-With: NetmirrorNewTV v1.0, truncated
- *          Chrome UA) -> {token_hash}=base64 api base (verified live:
- *          mobiledetects.com -> https://tv.imgcdn.kim). The /newtv/* API stays
- *          IP-gated (403 from datacenter, device lane for retail/mobile IPs).
- *  - v14 adds the net27 lane as the second row source (Alpha first - the
- *    user-validated lane - then net27, then NewTV, then VidSpark), URL-deduped.
- *    Every lane stays parallel; the provider run is bounded by the Alpha 9s cap
- *    and the per-fetch 8s caps, so the sheet is no longer hostage to any relay.
- *
- * v13.0.0: speed + coverage pass (2026-09-12).
- *  - User report on 4.23.0: "netmirror still not fix, only alpha works" + the
- *    whole pack loading slower than All-in-One-Nuvio.
- *  - Findings (live probes, 2026-09-12):
- *      (a) the Alpha candidate chain ran its search candidates SEQUENTIALLY -
- *          3 candidates x a stalled watchpvr fetch stacked to 17s with zero
- *          rows. Candidates now resolve IN PARALLEL (first set with rows wins).
- *      (b) the VidSpark (moviesapi.to vidora) API is ALIVE - same key, same
- *          paths - but only carries titles it has encoded: new releases answer
- *          in ~350ms (result:true + proxied HLS master verified to the variant
- *          level), older titles answer 404 {result:false,"Movie not yet
- *          encoded"}. That is not a lane failure - the lane is kept, fails
- *          fast on result:false, and covers exactly the titles the Alpha
- *          relay is slowest for.
- *      (c) the NewTV bootstrap (mobiledetects.com/checknewtv.php -> token_hash
- *          -> tv.imgcdn.kim) verified live; the newtv API stays IP-gated
- *          (403 "Page Not Found" from datacenter IPs) - it remains the AIO
- *          device lane for retail/mobile IPs.
- *  - v13 lane caps (the pack's sheet is bounded by the SLOWEST provider, so
- *    every cap was tightened): Alpha 9s (was 16s), NewTV 6s (was 12s),
- *    VidSpark 6s, overall provider run 10s (was 17s). The full late result is
- *    still late-cached, so a title whose Alpha rows missed the first serve has
- *    them on the next open of the sheet.
- *  - Lanes unchanged: Alpha relay (watchpvr, /^Alpha/ only, English) + NewTV
- *    (AIO device lane) + VidSpark (vidora proxied HLS, English/Tagalog VTT).
- *    English-only + Tagalog caption rules, caches and tolerant ids unchanged.
- *
- * v12.0.0 history: full AIO decode applied - NewTV lane added, net27 lane REMOVED (2026-09-12).
- *  - User report on 4.22.0: "netmirror not providing stream".
- *  - Root cause (full decode of the AIO netmirror + live probes):
- *      (a) v11's net27 embed lane returns rows whose URLs point at
- *          bcdnw/bcdnxw.hakunaymatata.com - the SAME CDN the user's device
- *          gets 429-blocked on (that is WHY v10 removed the watchbox rows;
- *          v11 accidentally re-added them via net27). REMOVED again here.
- *      (b) The decoded AIO build's REAL device path is its "NewTV" lane:
- *          24 base64 mobiledetect and mobidetect domains -> GET /checknewtv.php
- *          (X-Requested-With: NetmirrorNewTV v1.0) -> {token_hash} -> base64
- *          decode = the LIVE API base (verified: mobiledetects.com ->
- *          tv.imgcdn.kim). Then /newtv/search.php?s=title -> /newtv/post.php
- *          -> /newtv/episodes.php -> /newtv/player.php?id= -> {video_link,
- *          referer}. Datacenter IPs get 403 "Page Not Found" on the API
- *          (IP-gated) - which is exactly why this lane looked dead before;
- *          on retail/mobile IPs it is the lane AIO users stream with.
- *          Ported 1:1 here (headers incl. the Ott: <ott> app header, exact
- *          episode matching incl. E/S-number parsing + pagination).
- *      (c) v11 capped the Alpha relay lane at 10s - on mobile the relay
- *          needs 12-15s, so the sheet served BEFORE the only user-proven
- *          lane had rows. Cap raised to 16s (inside Nuvio's ~20s budget;
- *          the fast lanes still serve first when they have rows).
- *  - v12 lanes (parallel): Alpha relay (watchpvr, /^Alpha/ only) + NewTV
- *    (AIO device lane) + VidSpark (net77 stack, proxied CDNs). Combine:
- *    Alpha first, then NewTV, then VidSpark. English-only + Tagalog caption
- *    rules unchanged; caches and tolerant id parsing unchanged.
- *
- * v10.0.0 history: Alpha-only + VidSpark lane (2026-09-12).
- *  - User report: "netmirror only alpha stream works - remove not working
- *    stream just leave alpha" + "review net77.cc for netmirror to get more
- *    streams" + cinejoy still broken.
- *  - Recon (live):
- *      (a) Of the Multi-Lang Server sources ONLY "Alpha - English" plays on
- *          the user's device (Halo/Beta/... lanes and the watchbox mp4 CDN
- *          rows all fail there). Per the user's instruction the watchpvr
- *          lane now emits ONLY Alpha sources and the ENTIRE watchbox
- *          6-host mp4 fan-out is REMOVED (its bcdn*.hakunaymatata.com URLs
- *          were the "not working" rows).
- *      (b) net77.cc (IP-gated to residential ranges; probed via its SEO
- *          funnel netmirror.hair -> ww1.surf -> netmirror-app.pages.dev)
- *          is a Netmirror-branded TMDB catalog app that embeds PUBLIC
- *          providers: vidlink.pro, vidsrc.to, vidsrc-embed.ru,
- *          player.videasy.net, player.vidzee.wtf, player.autoembed.cc,
- *          moviesapi.to, mapple.uk, 111movies.com, 2embed.cc,
- *          primesrc.me, multiembed.mov. Verified reachable + resolvable
- *          end-to-end from a plain HTTP client: MOVIESAPI.TO "VidSpark"
- *          (vidora API - the same stack the app embeds):
- *              GET https://moviesapi.to/api/vidora/v1/movie/{tmdbId}
- *                  /api/vidora/v1/tv/{tmdbId}/{s}/{e}
- *                  x-player-key: 3a67e886...aa6b13 (static, from the
- *                  site's own player bundle), Referer moviesapi.to
- *              -> {result:true, sources:[{url: HLS master, tracks: VTT}]}
- *              master -> variants (1280x640, 1920x960...) -> SEGMENT 200
- *              video/MP2T verified; delivery rotates proxied CDNs
- *              (cdn-proxy.sparkvid.workers.dev, bx.netrocdn.site) - the
- *              429-happy hakunaymatata CDN is never touched. English +
- *              Filipino VTT subtitles included.
- *  - New flow:
- *      1. VidSpark lane (NEW, primary for coverage): TMDB id -> vidora API
- *         -> HLS master parsed into one row per variant (quality from
- *         RESOLUTION), fallback single "Auto" row (the post-filter's m3u8
- *         probe labels it) - works for ANY tmdb id with zero title
- *         mapping, plain text GETs, 100% Mobile-safe.
- *      2. Alpha lane (netmirror.center): search2 -> detail -> signed
- *         watchpvr.php -> sources filtered to /^Alpha/ only (English-only
- *         rule + the user's "leave alpha" instruction).
- *      3. Both lanes run in PARALLEL; rows merged (Alpha first, VidSpark
- *         after); subtitles unioned (Alpha SRTs preferred, VidSpark VTTs
- *         fill in) and filtered to the captionLang setting.
- *  - All requests are plain GETs with text bodies - 100% NuvioMobile-safe
- *    (no binary transport, no relay, no settings needed).
- *  - HMAC-SHA256 is implemented in pure JS (no CryptoJS in the plugin
- *    runtime); unit-tested against openssl vectors.
- *
- * v9.0.0 history: watchpvr multi-lane + watchbox fan-out (2026-09-12).
+ * v9.0.0: the watchpvr multi-lane + watchbox fan-out rebuild (2026-09-12).
+ *  - User report: "netmirror 429 only 1 stream showing" (4.19.0).
  *    Live recon findings:
  *      (a) "only 1 stream": v8 resolved ONE watchbox host and stopped - the
  *          watchbox backends are inconsistent (same title served with 360P-
@@ -240,7 +112,7 @@ function fetchText(url, headers, timeoutMs) {
     return res.text();
   });
   return new Promise(function (resolve, reject) {
-    var timer = setTimeout(function () { reject(new Error("fetch timeout")); }, timeoutMs || 8000);
+    var timer = setTimeout(function () { reject(new Error("fetch timeout")); }, timeoutMs || 15000);
     fetch(url, opts).then(function (res) {
       clearTimeout(timer);
       if (!res.ok) fail(res).then(function (e) { reject(e); }, function (e) { reject(e); });
@@ -504,15 +376,22 @@ var NM_PAGE_BASE = "https://netmirror.center";        // referer origin
 var NM_DETAIL_API = "https://api2.imdb3.shop/api";    // detail: /{movie|tv}/{nmId}
 var NM_SEARCH_API = "https://api2.imdb4.shop/api/search2";
 var NM_SIGN_KEY = "net###@@sss";
+// watchbox mirror hosts (the site randomizes p==1..7; v9 queries ALL in
+// parallel and merges - the backends carry inconsistent file sets)
+var WB_HOSTS = [
+  "https://bet.watch21.shop",
+  "https://play.watch21.shop",
+  "https://bet.watch22.shop",
+  "https://limit.watch22.shop",
+  "https://spedostream2.shop",
+  "https://dv.watch22.shop"
+];
 // v9: the site's "Multi-Lang Server" (p==7) - a second delivery stack whose
 // HLS/DASH sources are fully proxied through cinemaos-relay workers (no
-// bcdnxw contact -> immune to the video CDN's 429 rate limiting). v10: the
-// ONLY netmirror.center lane kept - and only its Alpha sources (user report:
-// every other source row fails to play on the device).
+// bcdnxw contact -> immune to the video CDN's 429 rate limiting)
 var NM_PVR_URL = "https://play.watch21.shop/play/watchpvr.php";
-// watchpvr source labels: v10 emits ONLY "Alpha ..." rows (user instruction:
-// "remove not working stream just leave alpha"); PVR_BLOCK_RE stays as a
-// second safety net for dubbed/unlabeled Alpha variants.
+// watchpvr source labels: dubbed/subbed variants are never streamed (standing
+// English-only rule); unlabeled sources = the site's default-audio lanes
 var PVR_BLOCK_RE = new RegExp(
   "\\b(hindi|arabic|russian|kurdish|french|spanish|portuguese|indonesian|bahasa|" +
   "tamil|telugu|malayalam|kannada|korean|japanese|chinese|mandarin|cantonese|" +
@@ -622,6 +501,81 @@ function nmSign(nmId) {
   return { ts: ts, sig: hmacSha256Hex(NM_SIGN_KEY, nmId + ":" + ts) };
 }
 
+function nmWatchboxUrl(host, d, se, ep, tmdbId) {
+  var s = nmSign(d.id);
+  var year = nmYearOf(d.release.split(",")[1] ? d.release : "");  // "Aug 21,2026" -> "2026"; "2013" -> ""
+  var commaYear = "";
+  if (d.release.indexOf(",") !== -1) commaYear = d.release.split(",")[1] || "";
+  year = commaYear || year;
+  return host + "/play/watchbox.php?" + formEncode({
+    id: d.subjectid,
+    se: se || 0,
+    ep: ep || 0,
+    dp: d.dp,
+    na: b64Utf8(d.title),
+    year: year,
+    tm_id: tmdbId == null ? "" : String(tmdbId),
+    ts: s.ts,
+    sig: s.sig,
+    nid: d.id,
+    exten: "",
+    tv: "",
+    token: ""
+  });
+}
+
+/** Fetch + parse ONE watchbox host; { quals, subs } or null on any failure. */
+function nmWatchboxOne(host, d, se, ep, tmdbId) {
+  return fetchText(nmWatchboxUrl(host, d, se, ep, tmdbId), { Referer: NM_PAGE_BASE + "/" }, 12000)
+    .then(function (html) {
+      if (!html || (html.indexOf("artplayer") === -1 && html.indexOf("quality_new") === -1)) {
+        throw new Error("no player page");
+      }
+      var parsed = parseWatchbox(html);
+      if (!parsed.quals.length) throw new Error("no quals");
+      return parsed;
+    }).catch(function () { return null; });
+}
+
+/**
+ * v9: resolve ALL watchbox hosts in PARALLEL and merge their quality URLs.
+ * The backends are load-balanced and inconsistent (same title, different
+ * file sets) - a single-host resolution stranded titles on a low-quality-
+ * only backend and the merged view recovers the full set. Same-URL entries
+ * keep the highest label; subtitle tracks are unioned by URL.
+ */
+function nmWatchboxAll(d, se, ep, tmdbId) {
+  return Promise.all(WB_HOSTS.map(function (host) {
+    return nmWatchboxOne(host, d, se, ep, tmdbId);
+  })).then(function (results) {
+    var byUrl = {}, subByUrl = {};
+    results.forEach(function (r) {
+      if (!r) return;
+      r.quals.forEach(function (q) {
+        if (!q || !q.url) return;
+        var at = byUrl[q.url];
+        if (at) {
+          if (qRank(q.label) > qRank(at.label)) at.label = q.label;
+        } else {
+          byUrl[q.url] = { label: q.label, url: q.url };
+        }
+      });
+      (r.subs || []).forEach(function (s) {
+        if (s && s.url && !subByUrl[s.url]) subByUrl[s.url] = s;
+      });
+    });
+    var quals = [], subs = [];
+    for (var u in byUrl) {
+      if (Object.prototype.hasOwnProperty.call(byUrl, u)) quals.push(byUrl[u]);
+    }
+    for (var s2 in subByUrl) {
+      if (Object.prototype.hasOwnProperty.call(subByUrl, s2)) subs.push(subByUrl[s2]);
+    }
+    quals.sort(function (a, b) { return qRank(b.label) - qRank(a.label); });
+    return { quals: quals, subs: subs };
+  });
+}
+
 function qRank(txt) {
   var q = qualityLabel(txt);
   if (q === "4K") return 5;
@@ -630,6 +584,41 @@ function qRank(txt) {
   if (q === "720p") return 2;
   if (q === "Auto") return 1;
   return 0;
+}
+
+/**
+ * Pull the quality selector + SRT tracks out of an ArtPlayer watchbox page.
+ * v6 lesson re-applied: netmirror lists the SAME mp4 URL at several labels
+ * (e.g. Wednesday S1E1: 480P and 720P share one URL). Naive URL-dedupe keeps
+ * the first (lowest) label and strands the row in the post-filter's CAM gate
+ * -> zero rows. So: same URL twice = ONE row, upgraded to the HIGHEST label.
+ */
+function parseWatchbox(html) {
+  var quals = [], subs = [], byUrl = {};
+  var re = /\{[^{}]*?html\s*:\s*['"]([^'"]+)['"]\s*,\s*url\s*:\s*\(?['"]([^'"]+)['"]/g;
+  var m;
+  while ((m = re.exec(html)) !== null) {
+    var label = String(m[1] || "").trim();
+    var url = String(m[2] || "").trim();
+    if (!url) continue;
+    if (/\.srt(\?|$)/i.test(url)) { subs.push({ label: label, url: url }); continue; }
+    if (!/\.(mp4|m3u8)(\?|$)/i.test(url)) continue;
+    if (byUrl[url]) {
+      var at = byUrl[url];
+      if (qRank(label) > qRank(at.label)) at.label = label;
+      continue;
+    }
+    var entry = { label: label, url: url };
+    byUrl[url] = entry;
+    quals.push(entry);
+  }
+  // last-resort: the art.url default candidate (same URL as a selector entry
+  // in practice; only used when the selector parse came up empty)
+  if (!quals.length) {
+    var am = html.match(/art\.url\s*=\s*play_url\(\s*['"]([^'"]+)['"]/);
+    if (am && /\.(mp4|m3u8)(\?|$)/i.test(am[1])) quals.push({ label: "", url: am[1] });
+  }
+  return { quals: quals, subs: subs };
 }
 
 function qualityLabel(txt) {
@@ -641,231 +630,6 @@ function qualityLabel(txt) {
   if (n >= 1000) return "1080p";
   if (n >= 640) return "720p";
   return n + "p";
-}
-
-// =============================================== VidSpark lane (v10)
-// moviesapi.to "VidSpark" - one of the public providers the net77.cc /
-// netmirror-app.pages.dev family embeds. TMDB-id direct (NO title mapping),
-// static x-player-key from the site's own player bundle, text-only GETs,
-// HLS delivery on rotating PROXIED CDNs (cdn-proxy.sparkvid.workers.dev /
-// *.netrocdn.site) + VTT subtitle tracks. Verified end-to-end: master 200 ->
-// variant 200 -> segment 200 video/MP2T.
-var VS_API = "https://moviesapi.to";
-var VS_KEY = "3a67e8866ae1d2bb9e81fe7f73315a56eb3bdf5e3e755c7554c8be6910aa6b13";
-
-function vsHeaders() {
-  return {
-    "x-player-key": VS_KEY,
-    "Accept": "application/json",
-    "Referer": VS_API + "/",
-    "Origin": VS_API
-  };
-}
-
-function vsQuality(h) {
-  if (h >= 2100) return "4K";
-  if (h >= 1300) return "1440p";
-  if (h >= 1000) return "1080p";
-  if (h >= 640) return "720p";
-  return h + "p";
-}
-
-/** relative playlist URI -> absolute (no URL dependency - QuickJS-safe). */
-function vsAbs(base, uri) {
-  var u = String(uri || "").trim();
-  if (!u) return "";
-  if (/^https?:\/\//i.test(u)) return u;
-  if (u.charAt(0) === "/") {
-    var m = String(base).match(/^(https?:\/\/[^\/]+)/i);
-    return m ? m[1] + u : u;
-  }
-  return String(base).replace(/[^\/]*$/, "") + u;
-}
-
-/**
- * Resolve the VidSpark master playlist into per-variant rows.
- * Returns { rows, master } - rows carry explicit quality labels parsed from
- * RESOLUTION so the post-filter never needs to probe them; when the master
- * cannot be fetched, one "Auto" row is emitted and the post-filter's m3u8
- * probe labels it instead.
- */
-function vsRowsFromMaster(masterUrl, referer) {
-  return fetchText(masterUrl, { Referer: referer }, 10000).then(function (txt) {
-    if (!txt || txt.indexOf("#EXTM3U") === -1) return { rows: [{ url: masterUrl, quality: "Auto" }], master: masterUrl };
-    var rows = [], seen = {};
-    var re = /#EXT-X-STREAM-INF:([^\n]*)\n([^\n#][^\n]*)/g, m;
-    while ((m = re.exec(txt)) !== null) {
-      var attrs = m[1] || "", uri = vsAbs(masterUrl, m[2]);
-      if (!uri || seen[uri]) continue;
-      seen[uri] = 1;
-      var res = attrs.match(/RESOLUTION=(\d+)x(\d+)/i);
-      if (res) {
-        var h = parseInt(res[2], 10) || 0;
-        if (h < 640) continue;                         // post-filter drops <720p anyway
-        rows.push({ url: uri, quality: vsQuality(h) });
-      } else {
-        var bw = attrs.match(/BANDWIDTH=(\d+)/i);
-        if (bw && parseInt(bw[1], 10) >= 2000000) rows.push({ url: uri, quality: "720p" });
-      }
-    }
-    if (!rows.length) rows.push({ url: masterUrl, quality: "Auto" });
-    rows.sort(function (a, b) { return qRank(b.quality) - qRank(a.quality); });
-    return { rows: rows, master: masterUrl };
-  }).catch(function () {
-    return { rows: [{ url: masterUrl, quality: "Auto" }], master: masterUrl };
-  });
-}
-
-/**
- * VidSpark lane: vidora API -> sources[0] (HLS master + VTT tracks) -> rows.
- * Returns { rows, subs } - subs are raw { label, url } VTT entries fed
- * through the same subsFor() filter as every other lane. Short TTL memo
- * (the signed URLs live 12h upstream; refresh well before that).
- */
-function vsResolve(type, tmdbId, se, ep) {
-  var path = type === "tv"
-    ? "/api/vidora/v1/tv/" + encodeURIComponent(tmdbId) + "/" + parseInt(se, 10) + "/" + parseInt(ep, 10)
-    : "/api/vidora/v1/movie/" + encodeURIComponent(tmdbId);
-  var ckey = "vs:" + path;
-  var hit = _nmState.cache[ckey];
-  if (hit && Date.now() - hit.ts < 10 * 60 * 1000) return Promise.resolve(hit.data);
-  var referer = VS_API + "/";
-  return fetchJson(VS_API + path, vsHeaders(), 12000).then(function (j) {
-    if (!j || j.result !== true || !j.sources || !j.sources.length) throw new Error("no vidora sources");
-    var src = j.sources[0] || {};
-    if (!src.url) throw new Error("empty vidora source");
-    var subs = [];
-    (src.tracks || []).forEach(function (t) {
-      if (t && t.file) subs.push({ label: String(t.label || "").trim(), url: t.file });
-    });
-    return vsRowsFromMaster(src.url, referer).then(function (parsed) {
-      var rows = [];
-      parsed.rows.forEach(function (r) {
-        var quality = r.quality === "Auto" ? "Auto" : r.quality;
-        rows.push({
-          name: "NetMirror | VidSpark " + quality,
-          title: (j.title || "VidSpark") + " | " + quality + " | VidSpark HLS",
-          url: r.url,
-          quality: quality,
-          headers: { Referer: referer }
-        });
-      });
-      var out = { rows: rows, subs: subs };
-      _nmState.cache[ckey] = { ts: Date.now(), data: out };
-      return out;
-    });
-  }).catch(function (e) {
-    console.log("[NetMirror] vidspark lane: " + (e && e.message ? e.message : e));
-    return { rows: [], subs: [] };
-  });
-}
-
-// ================================================== net27.cc embed lane (v14)
-// FULLY DECODED from the All-in-One-Nuvio provider (string tables resolved,
-// decoder machinery stripped) and LIVE-VERIFIED on 2026-09-13:
-//   * GET https://net27.cc/api/embed-tmdb/{tmdbId} (movie) or
-//         https://net27.cc/api/embed-tmdb/{tmdbId}?type=tv&s={se}&e={ep}
-//     with {Accept: application/json..., Referer: https://net27.cc/, UA Chrome/147}
-//     answers {ok:true, streams:[{url,resolution}], mp4, captions:[{url,lang,name}]}
-//   * The signed mp4 CDNs (bcdnxw.hakunaymatata.com family) serve
-//     HTTP 206 @ 8MB/s with Referer https://videodownloader.site/ but answer
-//     429 with the net27 referer or no referer - the videodownloader referer
-//     is REQUIRED on the stream rows (this is the exact AIO device behaviour).
-//   * Captions come RELATIVE (/api/proxy/video?url=...) and must be prefixed
-//     with https://net27.cc - the proxy 302s to the signed CloudFront SRT.
-//   * The endpoint burst-limits (2 rapid calls then 502 "error code: 502"):
-//     ONE call per getStreams run, 502 -> empty lane (other lanes cover), 8min
-//     response cache via the module cache. No probing, no verification.
-var N27_API = "https://net27.cc/api/embed-tmdb/";
-var N27_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
-var N27_STREAM_HEADERS = { Referer: "https://videodownloader.site/", "User-Agent": N27_UA };
-
-function nmN27Quality(res) {
-  var n = parseInt(res, 10);
-  if (!n || n <= 0) return "Auto";
-  return n + "p";
-}
-
-var qRankN27 = { "2160p": 0, "1440p": 1, "1080p": 2, "720p": 3, "480p": 4, "360p": 5, "Auto": 6 };
-
-function nmN27Rows(d, mediaTitle) {
-  var rows = [];
-  var seen = {};
-  var subs = [];
-  (d.captions || []).forEach(function (c) {
-    if (!c || !c.url) return;
-    // standing rule: netmirror is English-only (cinemacity covers Tagalog)
-    var lang = String(c.lang || "en").toLowerCase();
-    if (lang !== "en" && lang !== "english") return;
-    var url = String(c.url);
-    if (url.charAt(0) === "/") url = "https://net27.cc" + url;
-    subs.push({ url: url, language: "en", name: String(c.name || "English") });
-  });
-  var push = function (url, quality) {
-    if (!url) return;
-    var prev = seen[url];
-    if (prev) {
-      // same file advertised at several resolutions (480p/720p share one URL):
-      // keep the HIGHEST label so the post-filter's >=720p floor keeps the row
-      var pr = qRankN27[prev], nr = qRankN27[quality];
-      if (nr != null && (pr == null || nr < pr)) seen[url] = quality;
-      return;
-    }
-    seen[url] = quality;
-  };
-  (d.streams || []).forEach(function (s) {
-    if (s && s.url) push(String(s.url), nmN27Quality(s.resolution));
-  });
-  if (!Object.keys(seen).length && d.mp4) push(String(d.mp4), "Auto");
-  // rebuild rows keeping the best quality per url, highest first
-  var qRank = qRankN27;
-  var best = {};
-  Object.keys(seen).forEach(function (u) {
-    var q = seen[u];
-    var cur = best[u];
-    if (!cur || (qRank[q] != null && qRank[cur] != null && qRank[q] < qRank[cur])) best[u] = q;
-  });
-  var list = Object.keys(best).map(function (u) {
-    var q = best[u];
-    return {
-      name: "NetMirror (Netflix) - " + q,
-      title: (mediaTitle ? mediaTitle : "NetMirror") + " | " + q + " | NetMirror",
-      url: u,
-      quality: q,
-      headers: N27_STREAM_HEADERS,
-      behaviorHints: { notWebReady: false },
-      subtitles: subs.length ? subs : undefined
-    };
-  });
-  list.sort(function (a, b) {
-    var ra = qRank[a.quality] != null ? qRank[a.quality] : 99;
-    var rb = qRank[b.quality] != null ? qRank[b.quality] : 99;
-    return ra - rb;
-  });
-  return { rows: list, subs: subs };
-}
-
-function nmNet27(type, tmdbId, se, ep, mediaTitle) {
-  var ckey = "n27:" + tmdbId + ":" + type + ":" + se + ":" + ep;
-  var hit = _nmState.cache[ckey];
-  if (hit && Date.now() - hit.ts < CACHE_TTL) return Promise.resolve(hit.data);
-  var url = N27_API + encodeURIComponent(tmdbId);
-  if (type === "tv") url += "?type=tv&s=" + parseInt(se, 10) + "&e=" + parseInt(ep, 10);
-  return fetchJson(url, {
-    "Accept": "application/json, text/plain, */*",
-    "Referer": "https://net27.cc/",
-    "User-Agent": N27_UA
-  }, 8000).then(function (d) {
-    if (!d || d.ok !== true) throw new Error(d && d.error ? "net27: " + d.error : "net27: not ok");
-    var out = nmN27Rows(d, mediaTitle);
-    if (!out.rows.length) throw new Error("net27: no sources (mode " + (d.mode || "?") + ")");
-    console.log("[NetMirror] net27 lane: " + out.rows.length + " row(s) + " + out.subs.length + " en caption(s)");
-    _nmState.cache[ckey] = { ts: Date.now(), data: out };
-    return out;
-  }).catch(function (e) {
-    console.log("[NetMirror] net27 lane: " + (e && e.message ? e.message : e));
-    return { rows: [], subs: [] };
-  });
 }
 
 // ================================================== watchpvr (Multi-Lang) lane
@@ -880,7 +644,7 @@ function parsePvr(html) {
   } catch (e0) { return []; }
 }
 
-/** Parse the watchpvr page's subtitle array (Alpha-row caption fallback). */
+/** Parse the watchpvr page's subtitle array (fallback when watchbox is down). */
 function parsePvrSubs(html) {
   var m = String(html || "").match(/(const|let|var)\s+subtitles\s*=\s*(\[[\s\S]*?\])\s*;/);
   if (!m) return [];
@@ -979,10 +743,7 @@ function nmPvrResolve(d, se, ep, tmdbId, attempts) {
       if (!entry || !entry.url) return;
       var label = String(entry.html || entry.label || "").trim();
       if (!label) return;
-      // v10: ONLY "Alpha" sources (user: "remove not working stream just
-      // leave alpha" - every other Multi-Lang source fails on the device)
-      if (!/^alpha\b/i.test(label)) return;
-      if (PVR_BLOCK_RE.test(label)) return;          // dubbed/subbed safety net
+      if (PVR_BLOCK_RE.test(label)) return;          // dubbed/subbed variant
       var kind = pvrKind(entry);
       var q = pvrEntryQuality(entry);
       if (!q || q === "Auto") return;                // unlabelable -> skip
@@ -1016,7 +777,7 @@ function nmPvrResolve(d, se, ep, tmdbId, attempts) {
 // masquerades as English)
 var SUB_LANG_MAP = [
   [/english|eng/i, "en", "English"],
-  [/filipino|tagalog|pilipino|\bfil\b/i, "fil", "Tagalog / Filipino"],
+  [/filipino|tagalog|pilipino/i, "fil", "Tagalog / Filipino"],
   [/espanol|spanish/i, "es", "Spanish"],
   [/fran/i, "fr", "French"],
   [/kiswahili|swahili/i, "sw", "Swahili"],
@@ -1041,9 +802,7 @@ function subsFor(subEntries) {
   var prio = [];
   subEntries.forEach(function (s) {
     if (!s || !s.url) return;
-    // v10: unmatched labels stay "unk" (VidSpark carries 30+ tracks; an
-    // unmatched "May"/"Baq" must never masquerade as English)
-    var lang = "unk", name = s.label || "Subtitles";
+    var lang = "en", name = s.label || "English";
     for (var i = 0; i < SUB_LANG_MAP.length; i++) {
       if (SUB_LANG_MAP[i][0].test(s.label || "")) {
         lang = SUB_LANG_MAP[i][1];
@@ -1063,205 +822,47 @@ function subsFor(subEntries) {
 }
 
 /**
- * One netmirror candidate (v10): detail -> watchpvr lane (ALPHA SOURCES ONLY)
- * -> stream rows. The watchbox mp4 fan-out is GONE (its bcdn*.hakunaymatata
- * rows were the "not working" streams the user asked to remove); extra
- * coverage now comes from the VidSpark lane in getStreams.
+ * One netmirror candidate: detail -> BOTH lanes in PARALLEL -> stream rows.
+ * Lane 1 (primary): watchpvr "Multi-Lang Server" - relay-proxied HLS/DASH
+ * sources, immune to the video CDN 429s. Lane 2: watchbox mp4 selector merged
+ * across all 6 mirror hosts (may 429 at playback on rate-limited IPs).
+ * Subtitles: watchbox SRT tracks preferred, watchpvr tracks as fallback.
  */
 function nmResolveCandidate(nmId, type, se, ep, meta, tmdbId) {
   return nmDetail(nmId, type).then(function (d) {
     if (!d) return [];
-    return nmPvrResolve(d, se, ep, tmdbId, 3).then(function (pvr) {
-      var subs = subsFor((pvr && pvr.subs) || []);
+    var label = (meta && meta.title ? meta.title : d.title) || "NetMirror";
+    if (meta && meta.year) label += " (" + meta.year + ")";
+    var referer = { Referer: NM_PAGE_BASE + "/" };
+    return Promise.all([
+      nmPvrResolve(d, se, ep, tmdbId, 3),
+      nmWatchboxAll(d, se, ep, tmdbId)
+    ]).then(function (res) {
+      var pvr = res[0] || { rows: [], subs: [] };
+      var wb = res[1] || { quals: [], subs: [] };
+      var rawSubs = (wb.subs && wb.subs.length) ? wb.subs : (pvr.subs || []);
+      var subs = subsFor(rawSubs);
       var rows = [];
-      ((pvr && pvr.rows) || []).forEach(function (r) {
-        r.headers = { Referer: NM_PAGE_BASE + "/" };
+      (pvr.rows || []).forEach(function (r) {
+        r.headers = referer;
         if (subs.length) r.subtitles = subs;
         rows.push(r);
+      });
+      (wb.quals || []).forEach(function (q) {
+        var quality = qualityLabel(q.label);
+        var row = {
+          name: "NetMirror | " + quality,
+          title: label + " | " + quality + " | NetMirror CDN",
+          url: q.url,
+          quality: quality,
+          headers: referer
+        };
+        if (subs.length) row.subtitles = subs;
+        rows.push(row);
       });
       return rows;
     });
   }).catch(function () { return []; });
-}
-
-/**
- * v12: NewTV lane - the decoded AIO netmirror's REAL device path (1:1 port).
- * 1. resolveNtvApi(): GET {base}/checknewtv.php across the 24 mobiledetect/
- *    mobidetect domains (X-Requested-With: NetmirrorNewTV v1.0, GatuNewTV user agent)
- *    -> {token_hash: base64} -> decode = live API base (memoized module-wide;
- *    verified 2026-09: mobiledetects.com -> tv.imgcdn.kim; the API itself is
- *    IP-gated - 403 "Page Not Found" from datacenter, works on retail IPs).
- * 2. GET {api}/newtv/search.php?s={title} -> searchResult[0].id
- * 3. GET {api}/newtv/post.php?id= (Lastep/Usertoken headers) -> type,
- *    episodes[{id,ep|epNum,sNum}], main_id, season[], nextPageShow
- * 4. tv: match season/episode (incl. pagination via /newtv/episodes.php?id=
- *    &page=N while nextPageShow==1); movie: main_id (skip when type==="t")
- * 5. GET {api}/newtv/player.php?id={id} -> {status:"ok",video_link,referer}
- *    -> one Auto row, Referer = resp.referer || api base.
- * Fail-soft everywhere; resolution memoized across calls; platforms tried in
- * AIO order (netflix -> primevideo -> hotstar) until one yields a stream.
- */
-var NM_NTV_DOMAINS = [
-  "aHR0cHM6Ly9tb2JpbGVkZXRlY3RzLmNvbQ==", "aHR0cHM6Ly9tb2JpbGVkZXRlY3QuYXBw", "aHR0cHM6Ly9tb2JpZGV0ZWN0LmFydA==",
-  "aHR0cHM6Ly9tb2JpZGV0ZWN0LmNj", "aHR0cHM6Ly9tb2JpZGV0ZWN0LmNsaWNr", "aHR0cHM6Ly9tb2JpZGV0ZWN0Lmluaw==",
-  "aHR0cHM6Ly9tb2JpZGV0ZWN0LmxpdmU=", "aHR0cHM6Ly9tb2JpZGV0ZWN0LnBybw==", "aHR0cHM6Ly9tb2JpZGV0ZWN0LnNob3A=",
-  "aHR0cHM6Ly9tb2JpZGV0ZWN0LnNpdGU=", "aHR0cHM6Ly9tb2JpZGV0ZWN0LnNwYWNl", "aHR0cHM6Ly9tb2JpZGV0ZWN0LnN0b3Jl",
-  "aHR0cHM6Ly9tb2JpZGV0ZWN0LnZpcA==", "aHR0cHM6Ly9tb2JpZGV0ZWN0Lndpa2k=", "aHR0cHM6Ly9tb2JpZGV0ZWN0Lnh5eg==",
-  "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5hcnQ=", "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5jYw==", "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5pbmZv",
-  "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5pbms=", "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5saXZl", "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5wcm8=",
-  "aHR0cHM6Ly9tb2JpZGV0ZWN0cy5zdG9yZQ==", "aHR0cHM6Ly9tb2JpZGV0ZWN0cy50b3A=", "aHR0cHM6Ly9tb2JpZGV0ZWN0cy54eXo="
-];
-var NM_NTV_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0";
-
-function nmNtvHeaders(ott, extra) {
-  var h = {
-    "Cache-Control": "no-cache, no-store, must-revalidate",
-    "Pragma": "no-cache",
-    "Expires": "0",
-    "X-Requested-With": "NetmirrorNewTV v1.0",
-    "User-Agent": NM_NTV_UA,
-    "Accept": "application/json, text/plain, */*",
-    "Ott": ott || "nf"
-  };
-  return merge(h, extra || {});
-}
-
-function nmB64Decode(s) {
-  try {
-    if (typeof atob === "function") return atob(s);
-  } catch (e0) { }
-  try {
-    if (typeof Buffer !== "undefined" && Buffer.from) return Buffer.from(s, "base64").toString("binary");
-  } catch (e1) { }
-  var B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=", out = "", bits = 0, acc = 0;
-  for (var i = 0; i < s.length; i++) {
-    var c = B64.indexOf(s.charAt(i));
-    if (c < 0 || c === 64) continue;
-    acc = (acc << 6) | c; bits += 6;
-    if (bits >= 8) { bits -= 8; out += String.fromCharCode((acc >> bits) & 0xff); }
-  }
-  return out;
-}
-
-function nmNtvResolve() {
-  if (_nmState.ntvApi) return Promise.resolve(_nmState.ntvApi);
-  if (_nmState.ntvResolving) return _nmState.ntvResolving;
-  var resolved = null;
-  var tryOne = function (i) {
-    if (resolved || i >= NM_NTV_DOMAINS.length) return Promise.resolve();
-    var base = nmB64Decode(NM_NTV_DOMAINS[i]).replace(/\/$/, "");
-    return fetchJson(base + "/checknewtv.php", null, 3000).then(function (j) {
-      if (j && j.token_hash) {
-        var api = nmB64Decode(j.token_hash).replace(/\/$/, "");
-        if (api) {
-          resolved = api;
-          _nmState.ntvApi = api;
-          console.log("[NetMirror] NewTV api resolved: " + api);
-          return;
-        }
-      }
-      return tryOne(i + 1);
-    }).catch(function () { return tryOne(i + 1); });
-  };
-  _nmState.ntvResolving = tryOne(0).then(function () {
-    _nmState.ntvResolving = null;
-    return resolved;
-  }).catch(function () {
-    _nmState.ntvResolving = null;
-    return null;
-  });
-  return _nmState.ntvResolving;
-}
-
-function nmNtvEpFromEntry(e) {
-  if (!e) return null;
-  var ep = null;
-  if (e.ep != null && e.ep !== "") ep = parseInt(e.ep, 10);
-  else if (e.epNum) ep = parseInt(String(e.epNum).replace("E", ""), 10);
-  var s = null;
-  if (e.sNum) s = parseInt(String(e.sNum).replace("S", ""), 10);
-  return { id: e.id, s: s, ep: ep };
-}
-
-function nmNtvRows(title, type, se, ep) {
-  return nmNtvResolve().then(function (api) {
-    if (!api || !title) return { rows: [] };
-    // platform order mirrors AIO: netflix -> primevideo -> hotstar
-    var platforms = ["nf", "pv", "hs"];
-    var names = { nf: "Netflix", pv: "Prime Video", hs: "Hotstar" };
-    var chain = Promise.resolve({ rows: [] });
-    platforms.forEach(function (ott) {
-      chain = chain.then(function (acc) {
-        if (acc && acc.rows && acc.rows.length) return acc;
-        return nmNtvPlatform(api, ott, names[ott] || ott, title, type, se, ep).catch(function () { return { rows: [] }; });
-      });
-    });
-    return chain;
-  }).catch(function () { return { rows: [] }; });
-}
-
-function nmNtvPlatform(api, ott, label, title, type, se, ep) {
-  var H = nmNtvHeaders(ott);
-  return fetchJson(api + "/newtv/search.php?s=" + encodeURIComponent(title), H, 5000).then(function (sr) {
-    var list = sr && sr.searchResult;
-    if (!list || !list.length) return { rows: [] };
-    var showId = list[0].id;
-    return fetchJson(api + "/newtv/post.php?id=" + showId, merge(H, { Lastep: "", Usertoken: "" }), 5000).then(function (post) {
-      if (!post) return { rows: [] };
-      var pid = showId;
-      if (type === "tv") {
-        var eps = (post.episodes || []).filter(function (x) { return !!x; }).map(nmNtvEpFromEntry);
-        var found = null;
-        for (var i = 0; i < eps.length; i++) {
-          if (eps[i] && eps[i].s === (parseInt(se, 10) || 1) && eps[i].ep === (parseInt(ep, 10) || 1)) { found = eps[i]; break; }
-        }
-        if (!found) {
-          var seasonId = null;
-          if (post.season && post.season.length) {
-            for (var k = 0; k < post.season.length; k++) {
-              if (post.season[k] && post.season[k].id) { seasonId = post.season[k].id; break; }
-            }
-          } else if (post.nextPageSeason) seasonId = post.nextPageSeason;
-          if (seasonId && post.nextPageShow === 1) {
-            return nmNtvEpisodesPage(api, H, seasonId, 2, parseInt(se, 10) || 1, parseInt(ep, 10) || 1);
-          }
-          return { rows: [] };
-        }
-        pid = found.id;
-      } else {
-        if (post.type === "t") return { rows: [] }; // it is a tv show, not a movie
-        pid = post.main_id || showId;
-      }
-      return fetchJson(api + "/newtv/player.php?id=" + pid, merge(H, { Usertoken: "" }), 5000).then(function (pl) {
-        if (!pl || pl.status !== "ok" || !pl.video_link) return { rows: [] };
-        return {
-          rows: [{
-            name: "NetMirror | " + label,
-            title: label + " | NetMirror NewTV",
-            url: pl.video_link,
-            quality: "Auto",
-            headers: { Referer: pl.referer || api }
-          }]
-        };
-      });
-    });
-  });
-}
-
-function nmNtvEpisodesPage(api, H, seasonId, page, se, ep) {
-  return fetchJson(api + "/newtv/episodes.php?id=" + seasonId + "&page=" + page, H, 5000).then(function (p) {
-    var eps = (p && p.episodes ? p.episodes : []).filter(function (x) { return !!x; }).map(nmNtvEpFromEntry);
-    for (var i = 0; i < eps.length; i++) {
-      if (eps[i] && (eps[i].s == null || eps[i].s === se) && eps[i].ep === ep) {
-        return fetchJson(api + "/newtv/player.php?id=" + eps[i].id, merge(H, { Usertoken: "" }), 5000).then(function (pl) {
-          if (!pl || pl.status !== "ok" || !pl.video_link) return { rows: [] };
-          return { rows: [{ name: "NetMirror | NewTV", title: "NetMirror NewTV", url: pl.video_link, quality: "Auto", headers: { Referer: pl.referer || api } }] };
-        });
-      }
-    }
-    if (p && p.nextPageShow === 1 && page < 6) return nmNtvEpisodesPage(api, H, seasonId, page + 1, se, ep);
-    return { rows: [] };
-  });
 }
 
 function getStreams(tmdbId, mediaType, season, episode) {
@@ -1276,8 +877,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
   }
   if (_nmState.inflight[key]) return _nmState.inflight[key];
 
-  console.log("[NetMirror] v14 start " + mediaType + " " + rawId + " S" + season + "E" + episode);
-  var type = (mediaType === "tv" || mediaType === "series") ? "tv" : "movie";
+  console.log("[NetMirror] v9 start " + mediaType + " " + rawId + " S" + season + "E" + episode);
+  var type = mediaType === "tv" ? "tv" : "movie";
 
   var run = parseTmdbId(rawId, mediaType, season, episode).then(function (p) {
     // v7 tolerant parser: unresolvable ids (garbage prefixes) -> fail-soft
@@ -1290,108 +891,33 @@ function getStreams(tmdbId, mediaType, season, episode) {
       se = (season != null && season !== "") ? parseInt(season, 10) || 1 : (p.season || 1);
       ep = (episode != null && episode !== "") ? parseInt(episode, 10) || 1 : (p.episode || 1);
     } else {
-      // v8: the watchpvr endpoint treats a movie like an episode-less show
-      // and serves an empty player page for se=1&ep=1 - keep 0/0 there.
+      // v8: movies MUST pass se=0&ep=0 - the watchbox endpoint treats a
+      // movie like an episode-less show and serves an empty player page for
+      // se=1&ep=1 (verified live: Mutiny 1080p at 0/0, empty at 1/1)
       se = 0;
       ep = 0;
     }
-    // v10: VidSpark lane (net77 stack) runs FIRST and INDEPENDENT of the
-    // netmirror.center title mapping - TMDB id direct, so even a failed
-    // search2 mapping still yields rows.
-    var vsP = vsResolve(type, p.tmdbId, se, ep);
-    // v12: ONE shared TMDB meta fetch feeds both the Alpha lane and the NewTV lane
-    var metaP = tmdbMeta(p.tmdbId, type).catch(function () { return null; });
-    // v14: net27.cc embed lane (the FULLY DECODED AIO primary) - TMDB id direct,
-    // one fetch, real signed mp4s + English captions. Runs INDEPENDENT of meta
-    // (the meta title is optional row dressing).
-    var n27P = metaP.then(function (meta) {
-      return nmNet27(type, p.tmdbId, se, ep, meta && (meta.title || meta.name));
-    }).catch(function () { return { rows: [], subs: [] }; });
-    var alphaP = metaP.then(function (meta) {
-      if (!meta || !meta.title) {
-        console.log("[NetMirror] no TMDB meta for " + p.tmdbId + " - VidSpark only");
+    return tmdbMeta(p.tmdbId, mediaType).then(function (meta) {
+      if (!meta.title) {
+        console.log("[NetMirror] no TMDB meta for " + p.tmdbId);
         return [];
       }
-      return nmCandidates(meta, type).then(function (cands) {
+      return nmCandidates(meta, mediaType).then(function (cands) {
         if (!cands.length) {
-          console.log("[NetMirror] no netmirror id for " + JSON.stringify(meta) + " - VidSpark only");
+          console.log("[NetMirror] no netmirror id for " + JSON.stringify(meta));
           return [];
         }
-        // v13: resolve candidates IN PARALLEL (v12 chained them sequentially -
-        // 3 candidates x a stalled watchpvr fetch stacked multi-second waits
-        // before the first row). First lane with rows wins; ties keep order.
-        return Promise.all(cands.slice(0, 3).map(function (nmId) {
-          return nmResolveCandidate(nmId, type, se, ep, meta, p.tmdbId)
-            .catch(function () { return []; });
-        })).then(function (sets) {
-          for (var i = 0; i < sets.length; i++) {
-            if (sets[i] && sets[i].length) return sets[i];
-          }
-          return [];
+        var chain = Promise.resolve([]);
+        cands.forEach(function (nmId) {
+          chain = chain.then(function (acc) {
+            if (acc && acc.length) return acc;
+            return nmResolveCandidate(nmId, type, se, ep, meta, p.tmdbId);
+          });
         });
-      });
-    }).catch(function () { return []; });
-    // v13: NewTV lane (decoded AIO device path) - 6s lane cap (bootstrap + API
-    // answer in <1s when they answer at all; a longer wait never produced rows)
-    var ntP = metaP.then(function (meta) {
-      var run = nmNtvRows(meta && meta.title, type, se, ep);
-      return hasTimers()
-        ? Promise.race([run, new Promise(function (res) { setTimeout(function () { res({ rows: [] }); }, 6000); })])
-        : run;
-    }).catch(function () { return { rows: [] }; });
-
-    function nmCombine(alphaRows, nt, vs, n27) {
-      var rows = [];
-      var seenUrl = {};
-      function add(r) {
-        if (!r || !r.url) return;
-        var k = String(r.url).split("#")[0];
-        if (seenUrl[k]) return;
-        seenUrl[k] = 1;
-        rows.push(r);
-      }
-      // Alpha rows first (the user's proven lane), then the decoded net27
-      // embed lane (multi-res mp4s + English captions), then the AIO NewTV
-      // lane, then VidSpark fills in after
-      (alphaRows || []).forEach(add);
-      ((n27 && n27.rows) || []).forEach(add);
-      ((nt && nt.rows) || []).forEach(add);
-      (vs.rows || []).forEach(function (r) {
-        if (vsSubsOf(vs)) r.subtitles = vsSubsOf(vs);
-        add(r);
-      });
-      return rows;
-    }
-    function vsSubsOf(vs) { return subsFor(vs.subs || []); }
-
-    // v13: the Alpha relay lane gets a 9s cap (down from 16s). The relay chain
-    // (search2 -> detail -> watchpvr via cinemaos-relay) answers in ~2-4s on
-    // device; when it needs longer, the VidSpark/NewTV rows fill the sheet and
-    // the FULL Alpha result is late-cached below so the next play of the same
-    // title serves it instantly (v11-style cut-off risk is gone - the pack no
-    // longer depends on Alpha alone for coverage).
-    var alphaCapP = hasTimers()
-      ? Promise.race([alphaP, new Promise(function (res) { setTimeout(function () { res([]); }, 9000); })])
-      : alphaP;
-    var servedP = Promise.all([alphaCapP, ntP.catch(function () { return { rows: [] }; }), vsP.catch(function () { return { rows: [], subs: [] }; }), n27P.catch(function () { return { rows: [], subs: [] }; })]).then(function (res) {
-      var rows = nmCombine(res[0], res[1], res[2], res[3]);
-      console.log("[NetMirror] serving " + rows.length + " stream(s) (alpha " + (res[0] || []).length + ", net27 " + ((res[3] && res[3].rows) || []).length + ", newtv " + ((res[1] && res[1].rows) || []).length + ", vidspark " + ((res[2] && res[2].rows) || []).length + ")");
-      return rows;
-    });
-    return servedP.then(function (rows) {
-      if (rows.length) _nmState.cache[key] = { ts: Date.now(), streams: rows };
-      return rows;
-    }).then(function (rows) {
-      // late-cache: wait for the full Alpha result; if it added rows that the
-      // early serve missed, store the combined set for the next play.
-      return Promise.all([alphaP.catch(function () { return []; }), ntP.catch(function () { return { rows: [] }; }), vsP.catch(function () { return { rows: [], subs: [] }; }), n27P.catch(function () { return { rows: [], subs: [] }; })]).then(function (res) {
-        var full = nmCombine(res[0], res[1], res[2], res[3]);
-        var cur = _nmState.cache[key];
-        if (full.length && (!cur || ((cur.streams || []).length < full.length))) {
-          console.log("[NetMirror] late alpha result cached (" + full.length + " rows)");
-          _nmState.cache[key] = { ts: Date.now(), streams: full };
-        }
-        return rows;
+        return chain.then(function (rows) {
+          console.log("[NetMirror] returning " + (rows ? rows.length : 0) + " stream(s)");
+          return rows || [];
+        });
       });
     });
   }).catch(function (error) {
@@ -1399,12 +925,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
     return [];
   }).then(function (streams) {
     delete _nmState.inflight[key];
-    // v11: never clobber a cache entry that already holds MORE rows (the
-    // late-cache branch may have stored the full Alpha result already)
-    var cur = _nmState.cache[key];
-    if (streams && streams.length && (!cur || ((cur.streams || []).length <= streams.length))) {
-      _nmState.cache[key] = { ts: Date.now(), streams: streams };
-    }
+    if (streams && streams.length) _nmState.cache[key] = { ts: Date.now(), streams: streams };
     return streams || [];
   });
   _nmState.inflight[key] = run;
@@ -1633,15 +1154,6 @@ module.exports = {
       try {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
-          if (typeof setTimeout === "function") {
-            // nv best-settings 4.24.0 (netmirror v13): 10s overall cap - the
-            // Alpha lane serves at 9s, NewTV/VidSpark at 6s, and the full late
-            // result is late-cached for the next open of the sheet.
-            r = Promise.race([r, new Promise(function (res) {
-              var dl = setTimeout(function () { res([]); }, 10000);
-              if (dl && typeof dl.unref === "function") dl.unref();
-            })]);
-          }
           return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);

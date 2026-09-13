@@ -1,44 +1,120 @@
-/*
- * nv-plugins dooflix.js — FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass).
- * Decoded from the obfuscated AIO build: string tables resolved, decoder machinery stripped,
- * every network call capped by an 8s deadline, node-core requires fail-soft, nvio post-filter
- * attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). Endpoints/keys/headers
- * identical to the AIO original.
+/**
+ * dooflix - Built from src/dooflix/
+ * Generated: 2026-03-21T08:41:32.792Z
  */
-/* nv-plugins best-settings pass 4.24.0: hard 8s deadline on every network call */
-var __nvFetch = (function () {
-  var _f = null;
-  try { _f = (typeof fetch === "function") ? fetch : null; } catch (e) { _f = null; }
-  if (!_f) return function () { return Promise.reject(new Error("no fetch")); };
-  var hasT = typeof setTimeout === "function";
-  return function (input, init) {
-    var p;
-    try { p = _f.apply(this, arguments); } catch (e) { return Promise.reject(e); }
-    if (!hasT || !p || typeof p.then !== "function") return p;
-    return Promise.race([p, new Promise(function (_res, rej) {
-      var t = setTimeout(function () { rej(new Error("nv deadline 8s")); }, 8000);
-      if (t && typeof t.unref === "function") t.unref();
-    })]);
-  };
-})();
-/* fail-soft require: node-core modules (net/http/assert/...) never crash the provider */
-var __nvRequire = (function () {
-  var _rq = null;
-  try { _rq = (typeof require === "function") ? require : null; } catch (e) { _rq = null; }
-  return function (name) {
-    if (_rq) { try { return _rq(name); } catch (e) { } }
-    return {};
-  };
-})();
-/* QuickJS-safe global aliases: embedded polyfills (forge/uuid/whatwg) reference
-   window/self/document unguarded - in Nuvio's QuickJS those would throw
-   ReferenceError at module load and kill the provider. */
-var window = (typeof window !== "undefined" && window) ? window
-  : (typeof globalThis !== "undefined" ? globalThis : (typeof global !== "undefined" ? global : {}));
-var self = (typeof self !== "undefined" && self) ? self : window;
-var document = (typeof document !== "undefined" && document) ? document : { createElement: function () { return { style: {}, setAttribute: function () { }, getElementsByTagName: function () { return []; } }; }, getElementsByTagName: function () { return []; }, addEventListener: function () { } };
-var navigator = (typeof navigator !== "undefined" && navigator) ? navigator : { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" };
-var _0xe5ff=function(){return "";};var _0x11dac7=_0xe5ff;/*rotation removed*/;/*string-table removed*/var __defProp=Object['defineProperty'],__getOwnPropDesc=Object["getOwnPropertyDescriptor"],__getOwnPropNames=Object["getOwnPropertyNames"],__hasOwnProp=Object["prototype"]["hasOwnProperty"],__export=(_0x30dfd2,_0x2defd7)=>{for(var _0x2a744a in _0x2defd7)__defProp(_0x30dfd2,_0x2a744a,{'get':_0x2defd7[_0x2a744a],'enumerable':!![]});},__copyProps=(_0x599d71,_0x355933,_0x5f08bd,_0x364e9b)=>{var _0x3c3b88=_0x11dac7;if(_0x355933&&typeof _0x355933==="object"||typeof _0x355933==="function"){for(let _0x146172 of __getOwnPropNames(_0x355933))if(!__hasOwnProp["call"](_0x599d71,_0x146172)&&_0x146172!==_0x5f08bd)__defProp(_0x599d71,_0x146172,{'get':()=>_0x355933[_0x146172],'enumerable':!(_0x364e9b=__getOwnPropDesc(_0x355933,_0x146172))||_0x364e9b["enumerable"]});}return _0x599d71;},__toCommonJS=_0x4ea6ad=>__copyProps(__defProp({},"__esModule",{'value':!![]}),_0x4ea6ad),__async=(_0x556b42,_0x2554fa,_0x3f930d)=>{return new Promise((_0x3e1d23,_0x194ff4)=>{var _0x34241e=_0xe5ff,_0x48cf60=_0x1c05c4=>{var _0x1c91a5=_0xe5ff;try{_0x525665(_0x3f930d["next"](_0x1c05c4));}catch(_0x84a9da){_0x194ff4(_0x84a9da);}},_0x2fff47=_0x3b61bb=>{var _0x40d00b=_0xe5ff;try{_0x525665(_0x3f930d["throw"](_0x3b61bb));}catch(_0x365145){_0x194ff4(_0x365145);}},_0x525665=_0x21972c=>_0x21972c["done"]?_0x3e1d23(_0x21972c["value"]):Promise["resolve"](_0x21972c["value"])["then"](_0x48cf60,_0x2fff47);_0x525665((_0x3f930d=_0x3f930d['apply'](_0x556b42,_0x2554fa))["next"]());});},dooflix_exports={};/*decoder removed*/__export(dooflix_exports,{'getStreams':()=>getStreams}),module['exports']=__toCommonJS(dooflix_exports);var BASE_API="https://panel.watchkaroabhi.com",API_KEY="qNhKLJiZVyoKdi9NCQGz8CIGrpUijujE",HEADERS={'X-Package-Name':'com.king.moja','User-Agent':"dooflix",'X-App-Version':"305"},STREAM_REFERER="https://molop.art/";function getStreams(_0x421279,_0x588383="movie",_0x4d7743=null,_0xc410b3=null){return __async(this,null,function*(){var _0x51ce3d=_0xe5ff;console['log']("[DooFlix] Fetching streams for TMDB ID: "+_0x421279+", Type: "+_0x588383);try{let _0x1f301c;if(_0x588383==="movie")_0x1f301c=BASE_API+'/api/3/movie/'+_0x421279+"/links?api_key="+API_KEY;else{if(!_0x4d7743||!_0xc410b3)return console["error"]("[DooFlix] Missing season or episode for TV show"),[];_0x1f301c=BASE_API+"/api/3/tv/"+_0x421279+"/season/"+_0x4d7743+"/episode/"+_0xc410b3+"/links?api_key="+API_KEY;}const _0x267192=yield __nvFetch(_0x1f301c,{'headers':HEADERS});if(!_0x267192['ok'])return console['log']('[DooFlix]\x20API\x20error:\x20'+_0x267192['status']),[];const _0x50eb08=yield _0x267192["json"](),_0x58477c=_0x50eb08["links"]||[],_0x5d71cc=[];for(const _0x5c8478 of _0x58477c){try{const _0x556f38=yield __nvFetch(_0x5c8478["url"],{'method':'GET','headers':{'Referer':STREAM_REFERER,'User-Agent':HEADERS["User-Agent"]},'redirect':"manual"});let _0xfa14f7=_0x556f38['headers']["get"]("location")||_0x556f38["url"];_0xfa14f7&&_0xfa14f7!==_0x5c8478["url"]&&_0x5d71cc["push"]({'name':'DooFlix','title':"DooFlix - "+(_0x5c8478["host"]||'Server'),'url':_0xfa14f7,'quality':"Auto",'headers':{'Referer':STREAM_REFERER,'User-Agent':HEADERS["User-Agent"]},'provider':"dooflix"});}catch(_0x4d1b70){console['log']("[DooFlix] Error fetching redirect for "+_0x5c8478["url"]+':\x20'+_0x4d1b70['message']);}}return _0x5d71cc;}catch(_0x2be428){return console["error"]("[DooFlix] Error: "+_0x2be428["message"]),[];}});}
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var __async = (__this, __arguments, generator) => {
+  return new Promise((resolve, reject) => {
+    var fulfilled = (value) => {
+      try {
+        step(generator.next(value));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    var rejected = (value) => {
+      try {
+        step(generator.throw(value));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    var step = (x) => x.done ? resolve(x.value) : Promise.resolve(x.value).then(fulfilled, rejected);
+    step((generator = generator.apply(__this, __arguments)).next());
+  });
+};
+
+// src/dooflix/index.js
+var dooflix_exports = {};
+__export(dooflix_exports, {
+  getStreams: () => getStreams
+});
+module.exports = __toCommonJS(dooflix_exports);
+
+// src/dooflix/constants.js
+var BASE_API = "https://panel.watchkaroabhi.com";
+var API_KEY = "qNhKLJiZVyoKdi9NCQGz8CIGrpUijujE";
+var HEADERS = {
+  "X-Package-Name": "com.king.moja",
+  "User-Agent": "dooflix",
+  "X-App-Version": "305"
+};
+var STREAM_REFERER = "https://molop.art/";
+
+// src/dooflix/index.js
+function getStreams(tmdbId, mediaType = "movie", season = null, episode = null) {
+  return __async(this, null, function* () {
+    console.log(`[DooFlix] Fetching streams for TMDB ID: ${tmdbId}, Type: ${mediaType}`);
+    try {
+      let requestUrl;
+      if (mediaType === "movie") {
+        requestUrl = `${BASE_API}/api/3/movie/${tmdbId}/links?api_key=${API_KEY}`;
+      } else {
+        if (!season || !episode) {
+          console.error("[DooFlix] Missing season or episode for TV show");
+          return [];
+        }
+        requestUrl = `${BASE_API}/api/3/tv/${tmdbId}/season/${season}/episode/${episode}/links?api_key=${API_KEY}`;
+      }
+      const response = yield fetch(requestUrl, { headers: HEADERS });
+      if (!response.ok) {
+        console.log(`[DooFlix] API error: ${response.status}`);
+        return [];
+      }
+      const data = yield response.json();
+      const links = data.links || [];
+      const streams = [];
+      for (const linkObj of links) {
+        try {
+          const res = yield fetch(linkObj.url, {
+            method: "GET",
+            headers: {
+              "Referer": STREAM_REFERER,
+              "User-Agent": HEADERS["User-Agent"]
+            },
+            redirect: "manual"
+          });
+          let streamUrl = res.headers.get("location") || res.url;
+          if (streamUrl && streamUrl !== linkObj.url) {
+            streams.push({
+              name: "DooFlix",
+              title: `DooFlix - ${linkObj.host || "Server"}`,
+              url: streamUrl,
+              quality: "Auto",
+              headers: {
+                "Referer": STREAM_REFERER,
+                "User-Agent": HEADERS["User-Agent"]
+              },
+              provider: "dooflix"
+            });
+          }
+        } catch (e) {
+          console.log(`[DooFlix] Error fetching redirect for ${linkObj.url}: ${e.message}`);
+        }
+      }
+      return streams;
+    } catch (error) {
+      console.error(`[DooFlix] Error: ${error.message}`);
+      return [];
+    }
+  });
+}
 
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
    Rules (per user request 2026-09):
@@ -103,7 +179,7 @@ var _0xe5ff=function(){return "";};var _0x11dac7=_0xe5ff;/*rotation removed*/;/*
       return Promise.resolve(c.q);
     }
     var opts = { headers: Object.assign({}, headers || {}) };
-    var p = __nvFetch(url, opts).then(function (r) {
+    var p = fetch(url, opts).then(function (r) {
       return r.ok ? r.text() : "";
     }).then(function (t) {
       var q = "";
@@ -240,13 +316,6 @@ var _0xe5ff=function(){return "";};var _0x11dac7=_0xe5ff;/*rotation removed*/;/*
       try {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
-          if (typeof setTimeout === "function") {
-            // nv best-settings 4.23.0: hard 8s cap on the whole provider run
-            r = Promise.race([r, new Promise(function (res) {
-              var dl = setTimeout(function () { res([]); }, 8000);
-              if (dl && typeof dl.unref === "function") dl.unref();
-            })]);
-          }
           return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);

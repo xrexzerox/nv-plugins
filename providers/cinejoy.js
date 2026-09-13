@@ -1,25 +1,6 @@
 /**
  * cinejoy - Built from src/cinejoy/ (run bun build.js to regenerate)
  *
- * v1.7.0 (fast-fail + full server sweep, 2026-09-12):
- *  User report: "cinejoy not working no streams" (4.20.0). The chain was
- *  re-verified healthy end-to-end AGAIN from a plain HTTP client (servers
- *  8x -> enc-cinejoy -> binary /g -> dec-cinejoy -> playable HLS; Lisbon
- *  returned a movieboxnoob.cc master for Mutiny within ~4s). The failure
- *  modes on the device are unchanged AND now fail FAST:
- *   - NuvioMobile without the relay: the two direct /g attempts are
- *     structurally impossible (string-only bridge). v1.7.0 memoizes
- *     __CINEJOY_G_LANE__ = "none" after the first server proves both direct
- *     lanes dead and no relay is configured, so the remaining servers skip
- *     straight to the log line instead of burning the 20s scrape budget on
- *     2 doomed fetches per server.
- *   - Server sweep widened: waves of 3 now cover ALL 8 servers
- *     (Lisbon..Canaias) instead of the first 6 - later servers (Sakura,
- *     Canaias) do carry titles the first waves miss.
- *   - The empty-sheet log states the runtime-specific cause + fix.
- *  No transport changes: the binary /g leg still needs TV/PC (direct) or
- *  the asian-catalog worker relay /cjg + /cjs lanes on Mobile.
- *
  * v1.6.1 (diagnostics, 2026-09-12):
  *  User report: "cinejoy still not showing stream" on 4.19.0. Re-verified the
  *  whole chain live (servers 8x, enc -> binary /g -> dec -> HLS master; 3 rows
@@ -193,7 +174,7 @@ function fetchWithTimeout(url, options, timeoutMs) {
     if (!hasTimers()) {
       return fetch(url, options || {});
     }
-    const timeout = timeoutMs || 6e3;
+    const timeout = timeoutMs || 2e4;
     let timer = null;
     try {
       const fetchPromise = fetch(url, options || {});
@@ -299,7 +280,7 @@ function makeStream(source, title, url, quality, headers, subtitles, extra) {
 function withTimeout(promise, ms, label) {
   if (!hasTimers())
     return promise;
-  const timeout = ms || 6e3;
+  const timeout = ms || 25e3;
   let timer = null;
   return Promise.race([
     promise,
@@ -737,7 +718,7 @@ function b64urlEncodeNoPad(bytes) {
 }
 // src/cinejoy/relay.js (v1.5.0)
 var __CJ_G = (typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this);
-var __cjLane = __CJ_G.__CINEJOY_G_LANE__ || (__CJ_G.__CINEJOY_G_LANE__ = { mode: "" }); // "" | "direct" | "relay" | "none"
+var __cjLane = __CJ_G.__CINEJOY_G_LANE__ || (__CJ_G.__CINEJOY_G_LANE__ = { mode: "" }); // "" | "direct" | "relay"
 // v1.6.0: top-level lane memo ("" | "chain" | "full") - skips the doomed
 // chain attempts on Mobile after the full worker lane won once.
 var __cjTop = __CJ_G.__CINEJOY_TOP_LANE__ || (__CJ_G.__CINEJOY_TOP_LANE__ = { mode: "" });
@@ -821,9 +802,6 @@ function gLaneRelay(bodyBytes) {
  * the memo so Mobile skips its doomed direct attempts after the first server.
  */
 function gRequest(bodyBytes, headers) {
-  // v1.7.0: "none" = both direct lanes proved dead AND no relay configured -
-  // every further /g call is a guaranteed failure, skip it entirely.
-  if (__cjLane.mode === "none") return Promise.resolve(null);
   const lanes = __cjLane.mode === "relay"
     ? [gLaneRelay]
     : [gLaneDirectBytes, gLaneDirectString, gLaneRelay];
@@ -834,12 +812,6 @@ function gRequest(bodyBytes, headers) {
     });
   });
   return chain.catch(function() {
-    // v1.7.0: first server proves the runtime cannot reach /g directly and
-    // no relay is configured -> stop repeating the doomed attempts.
-    if (!__cjLane.mode && !relayBase()) {
-      __cjLane.mode = "none";
-      console.log("[Streamline][cinejoy] binary /g unreachable on this runtime and no relay configured - further server attempts skipped");
-    }
     return null;
   });
 }
@@ -1015,29 +987,26 @@ function scrape(ctx) {
       const servers = serversJson && serversJson.servers || [];
       if (!servers.length)
         return [];
-      // v1.5.0: parallel waves of 3 servers; v1.7.0: sweep covers ALL
-      // servers (8x) in three waves - the last wave (Sakura, Canaias) does
-      // carry titles the first waves miss.
+      // v1.5.0: parallel waves of 3 servers. If the first wave yields rows,
+      // the second is skipped - typical path finishes in one wave's latency
+      // (fits the 20s getStreams budget with margin; the old sequential loop
+      // did not).
       const out = [];
-      const waves = [servers.slice(0, 3), servers.slice(3, 6), servers.slice(6, 9)];
+      const wave1 = servers.slice(0, 3);
+      const wave2 = servers.slice(3, 6);
       const runWave = (list) => Promise.all(list.map(function(srv) {
         return scrapeServer(srv, ctx, headers, type).catch(function() { return []; });
       }));
-      for (let w = 0; w < waves.length && waves[w].length; w++) {
-        const rw = yield runWave(waves[w]);
-        rw.forEach(function(arr) { out.push.apply(out, arr); });
-        if (out.length) break;
+      const r1 = yield runWave(wave1);
+      r1.forEach(function(arr) { out.push.apply(out, arr); });
+      if (!out.length && wave2.length) {
+        const r2 = yield runWave(wave2);
+        r2.forEach(function(arr) { out.push.apply(out, arr); });
       }
-      // v1.6.1/v1.7.0: say WHY the sheet is empty - on Mobile the binary /g
-      // legs are structurally impossible, so an unconfigured relay is the
-      // usual cause; TV/PC direct failures point at enc-dec.app reachability.
-      if (!out.length) {
-        const rb = relayBase();
-        if (!rb) {
-          console.log("[Streamline][cinejoy] 0 rows and no relay configured. NuvioMobile CANNOT send the binary /g request - set the 'Cinejoy relay base URL' setting to your asian-catalog worker URL (bundle v5.7.0+ with /cjg + /cjs). NuvioTV/PC resolve without it.");
-        } else {
-          console.log("[Streamline][cinejoy] 0 rows with relay " + rb + " - check the worker is deployed (bundle v5.7.0+, /cjg + /cjs routes) and enc-dec.app is reachable from it");
-        }
+      // v1.6.1: say WHY the sheet is empty - on Mobile the binary /g legs are
+      // structurally impossible, so an unconfigured relay is the usual cause
+      if (!out.length && !relayBase()) {
+        console.log("[Streamline][cinejoy] 0 rows and no relay configured. On NuvioMobile set the 'Cinejoy relay base URL' setting to your asian-catalog worker URL (bundle v5.7.0+ with /cjg + /cjs). TV/PC resolve without it.");
       }
       return out;
     } catch (e) {
@@ -1052,7 +1021,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     try {
       const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
-      const out = yield withTimeout(scrape(ctx), 6e3, "cinejoy");
+      const out = yield withTimeout(scrape(ctx), 2e4, "cinejoy");
       return presentStreams(dedupe(yield withSharedSubs(out, ctx)), ctx);
     } catch (e) {
       console.log("[Streamline][cinejoy] " + (e && e.message));
@@ -1069,7 +1038,7 @@ function onSettings() {
         label: "Cinejoy relay base URL",
         type: "text",
         default: "",
-        description: "NuvioMobile cannot send the binary request cinejoy.to's API needs. Paste your asian-catalog worker base URL (https://<your-worker>.workers.dev) running the v5.7.0+ bundle with the /cjg and /cjs relay routes. Leave blank on NuvioTV/PC - the direct lane works there without a relay."
+        description: "NuvioMobile cannot send the binary request cinejoy.to's API needs. Paste your asian-catalog worker base URL (https://<your-worker>.workers.dev) running the v5.6.0+ bundle with the /cjg relay route. Leave blank on NuvioTV/PC - the direct lane works there without a relay."
       },
       wyzieKeyField()
     ];
@@ -1277,13 +1246,6 @@ module.exports = { getStreams, onSettings };
       try {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
-          if (typeof setTimeout === "function") {
-            // nv best-settings 4.23.0: hard 12s cap on the whole provider run
-            r = Promise.race([r, new Promise(function (res) {
-              var dl = setTimeout(function () { res([]); }, 12000);
-              if (dl && typeof dl.unref === "function") dl.unref();
-            })]);
-          }
           return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);

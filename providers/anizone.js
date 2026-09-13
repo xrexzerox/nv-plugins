@@ -1,6 +1,28 @@
 /**
- * vaplayer - Built from src/vaplayer/ (run bun build.js to regenerate)
+ * anizone - Built from src/anizone/ (run bun build.js to regenerate)
  */
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
     var fulfilled = (value) => {
@@ -25,7 +47,6 @@ var __async = (__this, __arguments, generator) => {
 // src/_shared/constants.js
 var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 var TMDB_BASE_URL = "https://api.themoviedb.org/3";
-var VAPLAYER_API = "https://streamdata.vaplayer.ru";
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 // src/_shared/tmdb.js
@@ -475,63 +496,80 @@ function presentStreams(streams, ctx) {
   });
 }
 
-// src/_shared/sources/misc.js
-function enabled(key) {
+// src/_shared/sources/anime.js
+var import_cheerio_without_node_native = __toESM(require("cheerio-without-node-native"));
+var ANIZONE_API = "https://anizone.to";
+function enabled() {
   try {
     const s = globalThis.SCRAPER_SETTINGS || {};
-    return s[key] !== false;
+    return s.anizone !== false;
   } catch (e) {
     return true;
   }
 }
-function scrapeVaplayer(ctx) {
+function scrapeAnizone(ctx) {
   return __async(this, null, function* () {
-    if (!enabled("vaplayer"))
+    if (!enabled())
       return [];
-    if (!ctx.imdbId)
+    const title = ctx.originalTitle || ctx.title;
+    if (!title)
       return [];
-    const url = !ctx.isTv ? VAPLAYER_API + "/api.php?imdb=" + ctx.imdbId + "&type=movie" : VAPLAYER_API + "/api.php?imdb=" + ctx.imdbId + "&type=tv&season=" + ctx.season + "&episode=" + ctx.episode;
     try {
-      const json = JSON.parse(
-        yield fetchText(url, { Referer: "https://nextgencloudfabric.com/" }, 2e4)
+      const searchHtml = yield fetchText(
+        ANIZONE_API + "/anime?search=" + encodeURIComponent(title),
+        { "User-Agent": UA },
+        2e4
       );
-      const data = json && json.data || {};
-      const urls = data.stream_urls || [];
-      const subs = (json && json.default_subs || []).filter(function(s) {
-        return s && s.url;
-      }).map(function(s) {
-        return {
-          url: s.url,
-          language: s.lang || s.code || "en",
-          name: (s.lang || s.code || "Subtitle") + " [VaPlayer]"
-        };
+      let $ = import_cheerio_without_node_native.default.load(searchHtml);
+      const link = $("div.truncate > a").attr("href");
+      if (!link)
+        return [];
+      const ep = ctx.isTv ? ctx.episode || 1 : 1;
+      const pageHtml = yield fetchText(
+        (link.indexOf("http") === 0 ? link : ANIZONE_API + link) + "/" + ep,
+        { "User-Agent": UA },
+        2e4
+      );
+      $ = import_cheerio_without_node_native.default.load(pageHtml);
+      const subs = [];
+      $("track").each(function(_, el) {
+        const src2 = $(el).attr("src");
+        if (src2) {
+          subs.push({
+            url: src2,
+            language: $(el).attr("srclang") || "en",
+            name: ($(el).attr("label") || "Subtitle") + " [Anizone]"
+          });
+        }
       });
-      return urls.map(function(u) {
-        return makeStream(
-          "VaPlayer",
-          "VaPlayer [HLS]",
-          u,
-          "Auto",
-          { Referer: "https://nextgencloudfabric.com/" },
-          subs.slice(0, 8)
-        );
-      }).filter(Boolean);
+      const src = $("media-player").attr("src");
+      if (!src)
+        return [];
+      const s = makeStream(
+        "Anizone",
+        "Anizone Multi Audio E" + ep + " [HLS]",
+        src,
+        "1080p",
+        { Referer: ANIZONE_API + "/", "User-Agent": UA },
+        subs.slice(0, 8)
+      );
+      return s ? [s] : [];
     } catch (e) {
-      console.log("[Streamline][vaplayer] " + e.message);
+      console.log("[Streamline][anizone] " + e.message);
       return [];
     }
   });
 }
 
-// src/vaplayer/index.js
+// src/anizone/index.js
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     try {
       const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
-      const out = yield withTimeout(scrapeVaplayer(ctx), 2e4, "vaplayer");
+      const out = yield withTimeout(scrapeAnizone(ctx), 2e4, "anizone");
       return presentStreams(dedupe(out), ctx);
     } catch (e) {
-      console.log("[Streamline][vaplayer] " + (e && e.message));
+      console.log("[Streamline][anizone] " + (e && e.message));
       return [];
     }
   });
@@ -555,7 +593,7 @@ module.exports = { getStreams };
    Opt-out: set SCRAPER_SETTINGS.postFilter = false.
 ======================================================================== */
 (function () {
-  var PROVIDER = "vaplayer";
+  var PROVIDER = "anizone";
   var G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
   function settings() {
     try { return (G && G.SCRAPER_SETTINGS) || {}; } catch (e) { return {}; }

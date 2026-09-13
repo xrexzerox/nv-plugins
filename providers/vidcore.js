@@ -1,5 +1,5 @@
 /**
- * vaplayer - Built from src/vaplayer/ (run bun build.js to regenerate)
+ * vidcore - Built from src/vidcore/ (run bun build.js to regenerate)
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
@@ -25,7 +25,8 @@ var __async = (__this, __arguments, generator) => {
 // src/_shared/constants.js
 var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 var TMDB_BASE_URL = "https://api.themoviedb.org/3";
-var VAPLAYER_API = "https://streamdata.vaplayer.ru";
+var MULTI_DECRYPT_API = "https://enc-dec.app/api";
+var VIDCORE_API = "https://vidcore.io";
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 // src/_shared/tmdb.js
@@ -129,6 +130,29 @@ function fetchText(url, headers, timeoutMs) {
     if (!res.ok)
       throw new Error("HTTP " + res.status + " for " + url);
     return yield res.text();
+  });
+}
+function postJson(url, body, headers, timeoutMs) {
+  return __async(this, null, function* () {
+    const res = yield fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: defaultHeaders(
+          Object.assign({ "Content-Type": "application/json", Accept: "application/json" }, headers || {})
+        ),
+        body: typeof body === "string" ? body : JSON.stringify(body == null ? {} : body)
+      },
+      timeoutMs
+    );
+    if (!res.ok)
+      throw new Error("HTTP " + res.status + " for " + url);
+    const text = yield res.text();
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      return text;
+    }
   });
 }
 function parseQuality(raw) {
@@ -475,7 +499,7 @@ function presentStreams(streams, ctx) {
   });
 }
 
-// src/_shared/sources/misc.js
+// src/_shared/sources/vidfast.js
 function enabled(key) {
   try {
     const s = globalThis.SCRAPER_SETTINGS || {};
@@ -484,54 +508,93 @@ function enabled(key) {
     return true;
   }
 }
-function scrapeVaplayer(ctx) {
+function extractToken(page) {
+  const m = String(page || "").match(/\\"(?:en|token)\\":\\"(.*?)\\"/);
+  return m ? m[1] : null;
+}
+function scrapeVidcore(ctx) {
   return __async(this, null, function* () {
-    if (!enabled("vaplayer"))
+    if (!enabled("vidcore"))
       return [];
-    if (!ctx.imdbId)
+    if (!ctx.tmdbId)
       return [];
-    const url = !ctx.isTv ? VAPLAYER_API + "/api.php?imdb=" + ctx.imdbId + "&type=movie" : VAPLAYER_API + "/api.php?imdb=" + ctx.imdbId + "&type=tv&season=" + ctx.season + "&episode=" + ctx.episode;
     try {
-      const json = JSON.parse(
-        yield fetchText(url, { Referer: "https://nextgencloudfabric.com/" }, 2e4)
+      const extra = { Referer: VIDCORE_API + "/", "X-Requested-With": "XMLHttpRequest", "User-Agent": UA };
+      const pageUrl = !ctx.isTv ? VIDCORE_API + "/movie/" + ctx.tmdbId : VIDCORE_API + "/tv/" + ctx.tmdbId + "/" + ctx.season + "/" + ctx.episode;
+      const page = yield fetchText(pageUrl, extra, 2e4);
+      const tokenText = extractToken(page);
+      if (!tokenText)
+        return [];
+      const initJson = JSON.parse(
+        yield fetchText(
+          MULTI_DECRYPT_API + "/enc-vidcore?text=" + encodeURIComponent(tokenText),
+          {},
+          15e3
+        )
       );
-      const data = json && json.data || {};
-      const urls = data.stream_urls || [];
-      const subs = (json && json.default_subs || []).filter(function(s) {
-        return s && s.url;
-      }).map(function(s) {
-        return {
-          url: s.url,
-          language: s.lang || s.code || "en",
-          name: (s.lang || s.code || "Subtitle") + " [VaPlayer]"
-        };
-      });
-      return urls.map(function(u) {
-        return makeStream(
-          "VaPlayer",
-          "VaPlayer [HLS]",
-          u,
-          "Auto",
-          { Referer: "https://nextgencloudfabric.com/" },
-          subs.slice(0, 8)
-        );
-      }).filter(Boolean);
+      const init = initJson && initJson.result || {};
+      if (!init.servers || !init.stream)
+        return [];
+      const headers = Object.assign({}, extra);
+      if (init.token)
+        headers["X-CSRF-Token"] = init.token;
+      const serversEnc = yield function() {
+        return __async(this, null, function* () {
+          const res = yield fetch(init.servers, { method: "POST", headers });
+          return yield res.text();
+        });
+      }();
+      const serversJson = yield postJson(MULTI_DECRYPT_API + "/dec-vidcore", { text: serversEnc }, {}, 15e3);
+      const servers = serversJson && serversJson.result || [];
+      const out = [];
+      for (const server of servers) {
+        try {
+          const streamRes = yield fetch(init.stream + "/" + server.data, { method: "POST", headers });
+          const streamEnc = yield streamRes.text();
+          const streamJson = yield postJson(MULTI_DECRYPT_API + "/dec-vidcore", { text: streamEnc }, {}, 15e3);
+          const data = streamJson && streamJson.result || {};
+          if (!data.url)
+            continue;
+          const subs = (data.tracks || []).filter(function(t) {
+            return t && t.file;
+          }).map(function(t) {
+            return {
+              url: t.file,
+              language: t.label || "en",
+              name: (t.label || "Subtitle") + " [Vidcore]"
+            };
+          });
+          const s = makeStream(
+            "Vidcore",
+            "Vidcore - " + (server.name || "server"),
+            data.url,
+            "Auto",
+            { Referer: VIDCORE_API + "/" },
+            subs.slice(0, 8)
+          );
+          if (s)
+            out.push(s);
+        } catch (e) {
+          continue;
+        }
+      }
+      return out;
     } catch (e) {
-      console.log("[Streamline][vaplayer] " + e.message);
+      console.log("[Streamline][vidcore] " + e.message);
       return [];
     }
   });
 }
 
-// src/vaplayer/index.js
+// src/vidcore/index.js
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     try {
       const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
-      const out = yield withTimeout(scrapeVaplayer(ctx), 2e4, "vaplayer");
+      const out = yield withTimeout(scrapeVidcore(ctx), 2e4, "vidcore");
       return presentStreams(dedupe(out), ctx);
     } catch (e) {
-      console.log("[Streamline][vaplayer] " + (e && e.message));
+      console.log("[Streamline][vidcore] " + (e && e.message));
       return [];
     }
   });
@@ -555,7 +618,7 @@ module.exports = { getStreams };
    Opt-out: set SCRAPER_SETTINGS.postFilter = false.
 ======================================================================== */
 (function () {
-  var PROVIDER = "vaplayer";
+  var PROVIDER = "vidcore";
   var G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
   function settings() {
     try { return (G && G.SCRAPER_SETTINGS) || {}; } catch (e) { return {}; }

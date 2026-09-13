@@ -1,5 +1,5 @@
 /**
- * vaplayer - Built from src/vaplayer/ (run bun build.js to regenerate)
+ * primesrc - Built from src/primesrc/ (run bun build.js to regenerate)
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
@@ -25,7 +25,8 @@ var __async = (__this, __arguments, generator) => {
 // src/_shared/constants.js
 var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 var TMDB_BASE_URL = "https://api.themoviedb.org/3";
-var VAPLAYER_API = "https://streamdata.vaplayer.ru";
+var PRIMESRC_API = "https://primesrc.me";
+var WYZIE_API = "https://sub.wyzie.io";
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 // src/_shared/tmdb.js
@@ -475,6 +476,105 @@ function presentStreams(streams, ctx) {
   });
 }
 
+// src/_shared/subs.js
+var STREMIO_SUBS = [
+  "https://opensubtitles.stremio.homes/en|tl/ai-translated=true|from=all|auto-adjustment=true",
+  'https://subsense.nepiraw.com/n0tcjfba-{"languages":["en","tl"],"maxSubtitles":10}'
+];
+function settings() {
+  try {
+    return globalThis.SCRAPER_SETTINGS || {};
+  } catch (e) {
+    return {};
+  }
+}
+function stremioSubtitles(imdbId, season, episode, isTv) {
+  return __async(this, null, function* () {
+    const out = [];
+    if (!imdbId)
+      return out;
+    const path = isTv ? "/subtitles/series/" + imdbId + ":" + season + ":" + episode + ".json" : "/subtitles/movie/" + imdbId + ".json";
+    const jobs = STREMIO_SUBS.map(function(base) {
+      return function() {
+        return __async(this, null, function* () {
+          try {
+            const json = JSON.parse(yield fetchText(base + path, {}, 12e3));
+            const list = json && json.subtitles || [];
+            list.slice(0, 12).forEach(function(s) {
+              if (!s || !s.url)
+                return;
+              out.push({
+                url: s.url,
+                language: s.lang || s.lang_code || "en",
+                name: (s.title || s.lang || "Subtitle") + " [Stremio]"
+              });
+            });
+          } catch (e) {
+            console.log("[Streamline][subs] " + base + ": " + e.message);
+          }
+        });
+      }();
+    });
+    yield Promise.all(jobs);
+    return out;
+  });
+}
+function wyzieSubtitles(imdbId, season, episode, isTv) {
+  return __async(this, null, function* () {
+    const key = settings().wyzieKey;
+    if (!key || !imdbId)
+      return [];
+    const url = isTv ? WYZIE_API + "/search?id=" + imdbId + "&season=" + season + "&episode=" + episode + "&source=all&key=" + key : WYZIE_API + "/search?id=" + imdbId + "&source=all&key=" + key;
+    try {
+      const list = JSON.parse(yield fetchText(url, {}, 12e3));
+      return (Array.isArray(list) ? list : []).slice(0, 12).map(function(s) {
+        return {
+          url: s.url,
+          language: s.language || "en",
+          name: (s.display || s.language || "Subtitle") + " [Wyzie]"
+        };
+      });
+    } catch (e) {
+      console.log("[Streamline][wyzie] " + e.message);
+      return [];
+    }
+  });
+}
+function attachSubtitles(streams, subtitles) {
+  if (!subtitles || !subtitles.length)
+    return streams;
+  return streams.map(function(s) {
+    if (s.subtitles && s.subtitles.length)
+      return s;
+    const copy = Object.assign({}, s);
+    copy.subtitles = subtitles.slice(0, 8);
+    return copy;
+  });
+}
+function withSharedSubs(streams, ctx) {
+  return __async(this, null, function* () {
+    try {
+      if (!ctx || !ctx.imdbId)
+        return streams;
+      const subs = (yield stremioSubtitles(ctx.imdbId, ctx.season, ctx.episode, ctx.isTv)).concat(
+        yield wyzieSubtitles(ctx.imdbId, ctx.season, ctx.episode, ctx.isTv)
+      );
+      return attachSubtitles(streams, subs);
+    } catch (e) {
+      return streams;
+    }
+  });
+}
+function wyzieKeyField() {
+  return {
+    type: "text",
+    key: "wyzieKey",
+    label: "Wyzie subtitles key",
+    placeholder: "Optional Wyzie API key",
+    description: "Extra subtitles alongside the built-in Stremio ones."
+  };
+}
+
 // src/_shared/sources/misc.js
 function enabled(key) {
   try {
@@ -484,59 +584,70 @@ function enabled(key) {
     return true;
   }
 }
-function scrapeVaplayer(ctx) {
+function scrapePrimesrc(ctx) {
   return __async(this, null, function* () {
-    if (!enabled("vaplayer"))
+    if (!enabled("primesrc"))
       return [];
     if (!ctx.imdbId)
       return [];
-    const url = !ctx.isTv ? VAPLAYER_API + "/api.php?imdb=" + ctx.imdbId + "&type=movie" : VAPLAYER_API + "/api.php?imdb=" + ctx.imdbId + "&type=tv&season=" + ctx.season + "&episode=" + ctx.episode;
+    const headers = { Referer: PRIMESRC_API + "/", "User-Agent": UA };
+    const url = !ctx.isTv ? PRIMESRC_API + "/api/v1/s?imdb=" + ctx.imdbId + "&type=movie" : PRIMESRC_API + "/api/v1/s?imdb=" + ctx.imdbId + "&season=" + ctx.season + "&episode=" + ctx.episode + "&type=tv";
     try {
-      const json = JSON.parse(
-        yield fetchText(url, { Referer: "https://nextgencloudfabric.com/" }, 2e4)
-      );
-      const data = json && json.data || {};
-      const urls = data.stream_urls || [];
-      const subs = (json && json.default_subs || []).filter(function(s) {
-        return s && s.url;
-      }).map(function(s) {
-        return {
-          url: s.url,
-          language: s.lang || s.code || "en",
-          name: (s.lang || s.code || "Subtitle") + " [VaPlayer]"
-        };
-      });
-      return urls.map(function(u) {
-        return makeStream(
-          "VaPlayer",
-          "VaPlayer [HLS]",
-          u,
-          "Auto",
-          { Referer: "https://nextgencloudfabric.com/" },
-          subs.slice(0, 8)
-        );
-      }).filter(Boolean);
+      const list = JSON.parse(yield fetchText(url, headers, 2e4));
+      const servers = list && list.servers || [];
+      const out = [];
+      for (const srv of servers) {
+        try {
+          if (!srv || !srv.key)
+            continue;
+          const raw = JSON.parse(
+            yield fetchText(PRIMESRC_API + "/api/v1/l?key=" + srv.key, headers, 15e3)
+          );
+          const link = raw && raw.link;
+          if (!link)
+            continue;
+          const quality = parseQuality(srv.quality || srv.name || link);
+          const s = makeStream(
+            "PrimeSrc",
+            "PrimeSrc [" + (srv.name || "server") + "] - " + quality,
+            link,
+            quality,
+            headers,
+            []
+          );
+          if (s)
+            out.push(s);
+        } catch (e) {
+          continue;
+        }
+      }
+      return out;
     } catch (e) {
-      console.log("[Streamline][vaplayer] " + e.message);
+      console.log("[Streamline][primesrc] " + e.message);
       return [];
     }
   });
 }
 
-// src/vaplayer/index.js
+// src/primesrc/index.js
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     try {
       const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
-      const out = yield withTimeout(scrapeVaplayer(ctx), 2e4, "vaplayer");
-      return presentStreams(dedupe(out), ctx);
+      const out = yield withTimeout(scrapePrimesrc(ctx), 2e4, "primesrc");
+      return presentStreams(dedupe(yield withSharedSubs(out, ctx)), ctx);
     } catch (e) {
-      console.log("[Streamline][vaplayer] " + (e && e.message));
+      console.log("[Streamline][primesrc] " + (e && e.message));
       return [];
     }
   });
 }
-module.exports = { getStreams };
+function onSettings() {
+  return __async(this, null, function* () {
+    return [wyzieKeyField()];
+  });
+}
+module.exports = { getStreams, onSettings };
 
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
    Rules (per user request 2026-09):
@@ -555,7 +666,7 @@ module.exports = { getStreams };
    Opt-out: set SCRAPER_SETTINGS.postFilter = false.
 ======================================================================== */
 (function () {
-  var PROVIDER = "vaplayer";
+  var PROVIDER = "primesrc";
   var G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
   function settings() {
     try { return (G && G.SCRAPER_SETTINGS) || {}; } catch (e) { return {}; }

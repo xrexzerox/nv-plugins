@@ -1,44 +1,275 @@
-/*
- * nv-plugins allmovieland.js — FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass).
- * Decoded from the obfuscated AIO build: string tables resolved, decoder machinery stripped,
- * every network call capped by an 8s deadline, node-core requires fail-soft, nvio post-filter
- * attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). Endpoints/keys/headers
- * identical to the AIO original.
+/**
+ * allmovieland - Built from src/allmovieland/
+ * Generated: 2026-04-26T06:39:13.171Z
  */
-/* nv-plugins best-settings pass 4.24.0: hard 8s deadline on every network call */
-var __nvFetch = (function () {
-  var _f = null;
-  try { _f = (typeof fetch === "function") ? fetch : null; } catch (e) { _f = null; }
-  if (!_f) return function () { return Promise.reject(new Error("no fetch")); };
-  var hasT = typeof setTimeout === "function";
-  return function (input, init) {
-    var p;
-    try { p = _f.apply(this, arguments); } catch (e) { return Promise.reject(e); }
-    if (!hasT || !p || typeof p.then !== "function") return p;
-    return Promise.race([p, new Promise(function (_res, rej) {
-      var t = setTimeout(function () { rej(new Error("nv deadline 8s")); }, 8000);
-      if (t && typeof t.unref === "function") t.unref();
-    })]);
-  };
-})();
-/* fail-soft require: node-core modules (net/http/assert/...) never crash the provider */
-var __nvRequire = (function () {
-  var _rq = null;
-  try { _rq = (typeof require === "function") ? require : null; } catch (e) { _rq = null; }
-  return function (name) {
-    if (_rq) { try { return _rq(name); } catch (e) { } }
-    return {};
-  };
-})();
-/* QuickJS-safe global aliases: embedded polyfills (forge/uuid/whatwg) reference
-   window/self/document unguarded - in Nuvio's QuickJS those would throw
-   ReferenceError at module load and kill the provider. */
-var window = (typeof window !== "undefined" && window) ? window
-  : (typeof globalThis !== "undefined" ? globalThis : (typeof global !== "undefined" ? global : {}));
-var self = (typeof self !== "undefined" && self) ? self : window;
-var document = (typeof document !== "undefined" && document) ? document : { createElement: function () { return { style: {}, setAttribute: function () { }, getElementsByTagName: function () { return []; } }; }, getElementsByTagName: function () { return []; }, addEventListener: function () { } };
-var navigator = (typeof navigator !== "undefined" && navigator) ? navigator : { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" };
-var _0x1535=function(){return "";};const _0x585d93=_0x1535;/*rotation removed*/;var __create=Object["create"],__defProp=Object["defineProperty"],__defProps=Object['defineProperties'],__getOwnPropDesc=Object["getOwnPropertyDescriptor"],__getOwnPropDescs=Object["getOwnPropertyDescriptors"],__getOwnPropNames=Object["getOwnPropertyNames"],__getOwnPropSymbols=Object["getOwnPropertySymbols"],__getProtoOf=Object["getPrototypeOf"],__hasOwnProp=Object["prototype"]["hasOwnProperty"],__propIsEnum=Object['prototype']["propertyIsEnumerable"],__defNormalProp=(_0x2272e3,_0xab69db,_0x2d1cea)=>_0xab69db in _0x2272e3?__defProp(_0x2272e3,_0xab69db,{'enumerable':!![],'configurable':!![],'writable':!![],'value':_0x2d1cea}):_0x2272e3[_0xab69db]=_0x2d1cea,__spreadValues=(_0x4bc988,_0x51d5a0)=>{const _0x535d00=_0x585d93;for(var _0x121b6c in _0x51d5a0||(_0x51d5a0={}))if(__hasOwnProp["call"](_0x51d5a0,_0x121b6c))__defNormalProp(_0x4bc988,_0x121b6c,_0x51d5a0[_0x121b6c]);if(__getOwnPropSymbols)for(var _0x121b6c of __getOwnPropSymbols(_0x51d5a0)){if(__propIsEnum["call"](_0x51d5a0,_0x121b6c))__defNormalProp(_0x4bc988,_0x121b6c,_0x51d5a0[_0x121b6c]);}return _0x4bc988;},__spreadProps=(_0x2408c2,_0x231be8)=>__defProps(_0x2408c2,__getOwnPropDescs(_0x231be8)),__copyProps=(_0x49facb,_0x5a8e9a,_0x4cb84b,_0x5de8ad)=>{const _0xee573a=_0x585d93;if(_0x5a8e9a&&typeof _0x5a8e9a==="object"||typeof _0x5a8e9a==="function"){for(let _0x549c2a of __getOwnPropNames(_0x5a8e9a))if(!__hasOwnProp['call'](_0x49facb,_0x549c2a)&&_0x549c2a!==_0x4cb84b)__defProp(_0x49facb,_0x549c2a,{'get':()=>_0x5a8e9a[_0x549c2a],'enumerable':!(_0x5de8ad=__getOwnPropDesc(_0x5a8e9a,_0x549c2a))||_0x5de8ad["enumerable"]});}return _0x49facb;},__toESM=(_0x2bf915,_0x453623,_0x3b6817)=>(_0x3b6817=_0x2bf915!=null?__create(__getProtoOf(_0x2bf915)):{},__copyProps(_0x453623||!_0x2bf915||!_0x2bf915["__esModule"]?__defProp(_0x3b6817,"default",{'value':_0x2bf915,'enumerable':!![]}):_0x3b6817,_0x2bf915)),__async=(_0x3be590,_0x2163a4,_0x206f1d)=>{return new Promise((_0x21fad8,_0x177450)=>{const _0x24bbdc=_0x1535;var _0x59b2f7=_0x39c5f8=>{const _0x13220e=_0x1535;try{_0x24c22d(_0x206f1d["next"](_0x39c5f8));}catch(_0x2e2a51){_0x177450(_0x2e2a51);}},_0x1c9322=_0x47bf87=>{const _0x1092ad=_0x1535;try{_0x24c22d(_0x206f1d["throw"](_0x47bf87));}catch(_0x2c4275){_0x177450(_0x2c4275);}},_0x24c22d=_0x1b6dbd=>_0x1b6dbd['done']?_0x21fad8(_0x1b6dbd['value']):Promise['resolve'](_0x1b6dbd["value"])['then'](_0x59b2f7,_0x1c9322);_0x24c22d((_0x206f1d=_0x206f1d['apply'](_0x3be590,_0x2163a4))["next"]());});},import_cheerio_without_node_native=__toESM(__nvRequire("cheerio-without-node-native")),TMDB_API_KEY="439c478a771f35c05022f9feabcca01c",TMDB_BASE_URL="https://api.themoviedb.org/3",MAIN_URL='https://allmovieland.you',HEADERS={'User-Agent':"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",'Accept':"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",'Accept-Language':"en-US,en;q=0.5"};/*string-table removed*/function getTMDBDetails(_0x2aebb6,_0x12d1ab){return __async(this,null,function*(){const _0xc42d13=_0x1535;var _0x4b6787;const _0x88c99f=_0x12d1ab==='tv'?'tv':"movie",_0x36c80f=TMDB_BASE_URL+'/'+_0x88c99f+'/'+_0x2aebb6+"?api_key="+TMDB_API_KEY+'&append_to_response=external_ids',_0x3f44a0=yield __nvFetch(_0x36c80f,{'method':"GET",'headers':{'Accept':"application/json",'User-Agent':'Mozilla/5.0'}});if(!_0x3f44a0['ok'])throw new Error('TMDB\x20API\x20error:\x20'+_0x3f44a0['status']);const _0x1c16a5=yield _0x3f44a0['json'](),_0x4fe47f=_0x12d1ab==='tv'?_0x1c16a5["name"]:_0x1c16a5['title'],_0x4b9608=_0x12d1ab==='tv'?_0x1c16a5["first_air_date"]:_0x1c16a5["release_date"],_0x5d5561=_0x4b9608?parseInt(_0x4b9608["split"]('-')[0x0]):null;return{'title':_0x4fe47f,'year':_0x5d5561,'imdbId':((_0x4b6787=_0x1c16a5["external_ids"])==null?void 0x0:_0x4b6787["imdb_id"])||null,'data':_0x1c16a5};});}function normalizeTitle(_0x40dc60){const _0x27878f=_0x585d93;if(!_0x40dc60)return'';return _0x40dc60['toLowerCase']()["replace"](/\b(the|a|an)\b/g,'')["replace"](/[:\-_]/g,'\x20')["replace"](/\s+/g,'\x20')['replace'](/[^\w\s]/g,'')["trim"]();}function calculateTitleSimilarity(_0x2700af,_0x2844df){const _0x4d1634=_0x585d93,_0x2754bb=normalizeTitle(_0x2700af),_0x2228a7=normalizeTitle(_0x2844df);if(_0x2754bb===_0x2228a7)return 0x1;const _0x316f42=_0x2754bb["split"](/\s+/)["filter"](_0x52a881=>_0x52a881["length"]>0x0),_0x2b902d=_0x2228a7['split'](/\s+/)["filter"](_0x5f008e=>_0x5f008e["length"]>0x0);if(_0x316f42["length"]===0x0||_0x2b902d["length"]===0x0)return 0x0;const _0x1fcca6=new Set(_0x316f42),_0x2f4a0d=new Set(_0x2b902d),_0x3912f4=_0x316f42["filter"](_0x338654=>_0x2f4a0d["has"](_0x338654)),_0x3232a5=new Set([..._0x316f42,..._0x2b902d]),_0x12e40d=_0x3912f4["length"]/_0x3232a5["size"],_0x114b72=_0x2b902d["filter"](_0x12bdf3=>!_0x1fcca6["has"](_0x12bdf3))["length"];let _0x1153bc=_0x12e40d-_0x114b72*0.05;return _0x316f42["length"]>0x0&&_0x316f42["every"](_0x451666=>_0x2f4a0d["has"](_0x451666))&&(_0x1153bc+=0.2),_0x1153bc;}function findBestTitleMatch(_0x1a9474,_0x45cfa2){const _0x5af6a3=_0x585d93;if(!_0x45cfa2||_0x45cfa2['length']===0x0)return null;let _0x506ece=null,_0xddfc75=0x0;for(const _0x3f31e9 of _0x45cfa2){let _0x5f02cd=calculateTitleSimilarity(_0x1a9474['title'],_0x3f31e9["title"]);if(_0x1a9474["year"]&&_0x3f31e9["year"]){const _0x255d12=Math['abs'](_0x1a9474['year']-_0x3f31e9["year"]);if(_0x255d12===0x0)_0x5f02cd+=0.2;else{if(_0x255d12<=0x1)_0x5f02cd+=0.1;else{if(_0x255d12>0x5)_0x5f02cd-=0.3;}}}_0x5f02cd>_0xddfc75&&_0x5f02cd>0.3&&(_0xddfc75=_0x5f02cd,_0x506ece=_0x3f31e9);}return _0x506ece;}/*decoder removed*/function getStreams(_0x557378,_0x5e7559="movie",_0x2c24f0=null,_0xa15d0c=null){return __async(this,null,function*(){const _0x4b221f=_0x1535;console["log"]("[AllMovieLand] Fetching streams for TMDB ID: "+_0x557378+',\x20Type:\x20'+_0x5e7559);try{const _0x4120bf=yield getTMDBDetails(_0x557378,_0x5e7559);console['log']("[AllMovieLand] TMDB Info: \""+_0x4120bf["title"]+'\x22\x20('+(_0x4120bf["year"]||"N/A")+')');const _0x17e515=_0x4120bf["title"],_0x4e358c=MAIN_URL+"/index.php?story="+encodeURIComponent(_0x17e515)+"&do=search&subaction=search",_0x59312e=yield __nvFetch(_0x4e358c,{'headers':HEADERS}),_0x3908e7=yield _0x59312e["text"](),_0x54f259=import_cheerio_without_node_native["default"]["load"](_0x3908e7),_0x186d64=[];_0x54f259("article.short-mid")["each"]((_0x3e65f7,_0xc5f9f2)=>{const _0x504c80=_0x4b221f,_0x3c7620=_0x54f259(_0xc5f9f2)["find"]("a > h3")['text']()["trim"](),_0x256940=_0x54f259(_0xc5f9f2)["find"]('a')["attr"]('href'),_0x5e0f21=_0x3c7620['match'](new RegExp("(?<=\\()[\\d(\\]]+(?=\\))")),_0x4e2544=_0x5e0f21?parseInt(_0x5e0f21[0x0]):null;_0x186d64["push"]({'title':_0x3c7620,'href':_0x256940,'year':_0x4e2544});});if(_0x186d64["length"]===0x0)return console["log"]('[AllMovieLand]\x20No\x20search\x20results\x20found.'),[];const _0x3bb101=findBestTitleMatch(_0x4120bf,_0x186d64),_0x34e089=_0x3bb101||_0x186d64[0x0];console["log"]("[AllMovieLand] Selected: \""+_0x34e089["title"]+"\" ("+_0x34e089["href"]+')');const _0x450560=yield __nvFetch(_0x34e089["href"],{'headers':HEADERS}),_0x36ade9=yield _0x450560["text"](),_0x16773f=import_cheerio_without_node_native["default"]['load'](_0x36ade9),_0x1eb60e=_0x16773f("div.tabs__content script")["html"]()||'',_0x17503d=_0x1eb60e["match"](/const AwsIndStreamDomain\s*=\s*'([^']+)'/),_0x3058d2=_0x17503d?_0x17503d[0x1]["replace"](/\/$/,''):null,_0x78315c=_0x1eb60e["match"](/src:\s*'([^']+)'/),_0x5c2c01=_0x78315c?_0x78315c[0x1]:null;if(!_0x3058d2||!_0x5c2c01)return console["log"]("[AllMovieLand] Could not find player domain or ID."),[];const _0x57c41d=_0x3058d2+'/play/'+_0x5c2c01,_0x3d0b4b=yield __nvFetch(_0x57c41d,{'headers':__spreadProps(__spreadValues({},HEADERS),{'Referer':_0x34e089['href']})}),_0x439dc4=yield _0x3d0b4b["text"](),_0x3004ae=import_cheerio_without_node_native["default"]["load"](_0x439dc4),_0x56742f=_0x3004ae("body > script")["last"]()["html"]()||'',_0x539e26=_0x56742f["match"](/let\s+p3\s*=\s*(\{.*\});/);if(!_0x539e26)return console["log"]("[AllMovieLand] No p3 JSON found in embed."),[];const _0x351c54=JSON["parse"](_0x539e26[0x1]);let _0x3b59e0=_0x351c54["file"]['replace'](/\\\//g,'/');if(!_0x3b59e0["startsWith"]("http"))_0x3b59e0=''+_0x3058d2+_0x3b59e0;const _0x3ad049=yield __nvFetch(_0x3b59e0,{'method':"POST",'headers':__spreadProps(__spreadValues({},HEADERS),{'X-CSRF-TOKEN':_0x351c54["key"],'Referer':_0x57c41d})}),_0x48b3a6=yield _0x3ad049["text"]();let _0x267f03=[];const _0x20ddc1=JSON["parse"](_0x48b3a6["replace"](/,\]/g,']'));if(_0x5e7559==="movie")_0x267f03=_0x20ddc1["filter"](_0x21c86c=>_0x21c86c&&_0x21c86c['file']);else{if(_0x5e7559==='tv'){const _0x2332d6=_0x20ddc1['find'](_0x4e06e5=>_0x4e06e5['id']==_0x2c24f0);if(_0x2332d6&&_0x2332d6["folder"]){const _0x445e05=_0x2332d6["folder"]["find"](_0x18558c=>_0x18558c["episode"]==_0xa15d0c);_0x445e05&&_0x445e05["folder"]&&(_0x267f03=_0x445e05['folder']["filter"](_0x714d85=>_0x714d85&&_0x714d85["file"]));}}}if(_0x267f03["length"]===0x0)return console["log"]("[AllMovieLand] No streams found for the requested media."),[];const _0x4742a2=[];return yield Promise["all"](_0x267f03["map"](_0x4cac34=>__async(this,null,function*(){const _0x4589ca=_0x4b221f;try{const _0x18efde=_0x4cac34["file"]["replace"](/^~/,''),_0x2e0e93=_0x3058d2+"/playlist/"+_0x18efde+".txt",_0x3d19f2=yield __nvFetch(_0x2e0e93,{'method':"POST",'headers':__spreadProps(__spreadValues({},HEADERS),{'X-CSRF-TOKEN':_0x351c54["key"],'Referer':_0x57c41d})}),_0x171484=(yield _0x3d19f2['text']())["trim"]();if(_0x171484&&_0x171484["startsWith"]("http")){const _0x5a4747=_0x4cac34["title"]||"Unknown";_0x4742a2["push"]({'name':"AllMovieLand",'title':"AllMovieLand - "+_0x5a4747,'url':_0x171484,'quality':_0x5a4747,'headers':{'Referer':_0x3058d2+'/','Origin':_0x3058d2,'User-Agent':HEADERS["User-Agent"]},'provider':"allmovieland"});}}catch(_0x21d4de){console["error"]("[AllMovieLand] Failed to extract stream: "+_0x21d4de["message"]);}}))),_0x4742a2;}catch(_0x2c0cf5){return console["error"]('[AllMovieLand]\x20Error:\x20'+_0x2c0cf5['message']),[];}});}module["exports"]={'getStreams':getStreams};
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __defProps = Object.defineProperties;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getOwnPropSymbols = Object.getOwnPropertySymbols;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __propIsEnum = Object.prototype.propertyIsEnumerable;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __spreadValues = (a, b) => {
+  for (var prop in b || (b = {}))
+    if (__hasOwnProp.call(b, prop))
+      __defNormalProp(a, prop, b[prop]);
+  if (__getOwnPropSymbols)
+    for (var prop of __getOwnPropSymbols(b)) {
+      if (__propIsEnum.call(b, prop))
+        __defNormalProp(a, prop, b[prop]);
+    }
+  return a;
+};
+var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+var __async = (__this, __arguments, generator) => {
+  return new Promise((resolve, reject) => {
+    var fulfilled = (value) => {
+      try {
+        step(generator.next(value));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    var rejected = (value) => {
+      try {
+        step(generator.throw(value));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    var step = (x) => x.done ? resolve(x.value) : Promise.resolve(x.value).then(fulfilled, rejected);
+    step((generator = generator.apply(__this, __arguments)).next());
+  });
+};
+
+// src/allmovieland/index.js
+var import_cheerio_without_node_native = __toESM(require("cheerio-without-node-native"));
+
+// src/allmovieland/constants.js
+var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
+var TMDB_BASE_URL = "https://api.themoviedb.org/3";
+var MAIN_URL = "https://allmovieland.you";
+var HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.5"
+};
+
+// src/allmovieland/utils.js
+function getTMDBDetails(tmdbId, mediaType) {
+  return __async(this, null, function* () {
+    var _a;
+    const endpoint = mediaType === "tv" ? "tv" : "movie";
+    const url = `${TMDB_BASE_URL}/${endpoint}/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`;
+    const response = yield fetch(url, {
+      method: "GET",
+      headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" }
+    });
+    if (!response.ok)
+      throw new Error(`TMDB API error: ${response.status}`);
+    const data = yield response.json();
+    const title = mediaType === "tv" ? data.name : data.title;
+    const releaseDate = mediaType === "tv" ? data.first_air_date : data.release_date;
+    const year = releaseDate ? parseInt(releaseDate.split("-")[0]) : null;
+    return { title, year, imdbId: ((_a = data.external_ids) == null ? void 0 : _a.imdb_id) || null, data };
+  });
+}
+function normalizeTitle(title) {
+  if (!title)
+    return "";
+  return title.toLowerCase().replace(/\b(the|a|an)\b/g, "").replace(/[:\-_]/g, " ").replace(/\s+/g, " ").replace(/[^\w\s]/g, "").trim();
+}
+function calculateTitleSimilarity(title1, title2) {
+  const norm1 = normalizeTitle(title1);
+  const norm2 = normalizeTitle(title2);
+  if (norm1 === norm2)
+    return 1;
+  const words1 = norm1.split(/\s+/).filter((w) => w.length > 0);
+  const words2 = norm2.split(/\s+/).filter((w) => w.length > 0);
+  if (words1.length === 0 || words2.length === 0)
+    return 0;
+  const set1 = new Set(words1);
+  const set2 = new Set(words2);
+  const intersection = words1.filter((w) => set2.has(w));
+  const union = /* @__PURE__ */ new Set([...words1, ...words2]);
+  const jaccard = intersection.length / union.size;
+  const extraWordsCount = words2.filter((w) => !set1.has(w)).length;
+  let score = jaccard - extraWordsCount * 0.05;
+  if (words1.length > 0 && words1.every((w) => set2.has(w))) {
+    score += 0.2;
+  }
+  return score;
+}
+function findBestTitleMatch(mediaInfo, searchResults) {
+  if (!searchResults || searchResults.length === 0)
+    return null;
+  let bestMatch = null;
+  let bestScore = 0;
+  for (const result of searchResults) {
+    let score = calculateTitleSimilarity(mediaInfo.title, result.title);
+    if (mediaInfo.year && result.year) {
+      const yearDiff = Math.abs(mediaInfo.year - result.year);
+      if (yearDiff === 0)
+        score += 0.2;
+      else if (yearDiff <= 1)
+        score += 0.1;
+      else if (yearDiff > 5)
+        score -= 0.3;
+    }
+    if (score > bestScore && score > 0.3) {
+      bestScore = score;
+      bestMatch = result;
+    }
+  }
+  return bestMatch;
+}
+
+// src/allmovieland/index.js
+function getStreams(tmdbId, mediaType = "movie", season = null, episode = null) {
+  return __async(this, null, function* () {
+    console.log(`[AllMovieLand] Fetching streams for TMDB ID: ${tmdbId}, Type: ${mediaType}`);
+    try {
+      const mediaInfo = yield getTMDBDetails(tmdbId, mediaType);
+      console.log(`[AllMovieLand] TMDB Info: "${mediaInfo.title}" (${mediaInfo.year || "N/A"})`);
+      const query = mediaInfo.title;
+      const searchUrl = `${MAIN_URL}/index.php?story=${encodeURIComponent(query)}&do=search&subaction=search`;
+      const res = yield fetch(searchUrl, { headers: HEADERS });
+      const html = yield res.text();
+      const $ = import_cheerio_without_node_native.default.load(html);
+      const searchResults = [];
+      $("article.short-mid").each((i, el) => {
+        const title = $(el).find("a > h3").text().trim();
+        const href = $(el).find("a").attr("href");
+        const yearMatch = title.match(/\((\d{4})\)/);
+        const year = yearMatch ? parseInt(yearMatch[1]) : null;
+        searchResults.push({ title, href, year });
+      });
+      if (searchResults.length === 0) {
+        console.log("[AllMovieLand] No search results found.");
+        return [];
+      }
+      const bestMatch = findBestTitleMatch(mediaInfo, searchResults);
+      if (!bestMatch) {
+        console.log("[AllMovieLand] No confident match found.");
+        return [];
+      }
+      const selectedMedia = bestMatch;
+      console.log(`[AllMovieLand] Selected: "${selectedMedia.title}" (${selectedMedia.href})`);
+      const docRes = yield fetch(selectedMedia.href, { headers: HEADERS });
+      const docHtml = yield docRes.text();
+      const doc$ = import_cheerio_without_node_native.default.load(docHtml);
+      const tabsContent = doc$("div.tabs__content script").html() || "";
+      const playerScriptMatch = tabsContent.match(/const AwsIndStreamDomain\s*=\s*'([^']+)'/);
+      const playerDomain = playerScriptMatch ? playerScriptMatch[1].replace(/\/$/, "") : null;
+      const idMatch = tabsContent.match(/src:\s*'([^']+)'/);
+      const id = idMatch ? idMatch[1] : null;
+      if (!playerDomain || !id) {
+        console.log("[AllMovieLand] Could not find player domain or ID.");
+        return [];
+      }
+      const embedLink = `${playerDomain}/play/${id}`;
+      const embedRes = yield fetch(embedLink, { headers: __spreadProps(__spreadValues({}, HEADERS), { Referer: selectedMedia.href }) });
+      const embedHtml = yield embedRes.text();
+      const embed$ = import_cheerio_without_node_native.default.load(embedHtml);
+      const lastScript = embed$("body > script").last().html() || "";
+      const p3Match = lastScript.match(/let\s+p3\s*=\s*(\{.*\});/);
+      if (!p3Match) {
+        console.log("[AllMovieLand] No p3 JSON found in embed.");
+        return [];
+      }
+      const json = JSON.parse(p3Match[1]);
+      let fileUrl = json.file.replace(/\\\//g, "/");
+      if (!fileUrl.startsWith("http"))
+        fileUrl = `${playerDomain}${fileUrl}`;
+      const fileRes = yield fetch(fileUrl, {
+        method: "POST",
+        headers: __spreadProps(__spreadValues({}, HEADERS), { "X-CSRF-TOKEN": json.key, "Referer": embedLink })
+      });
+      const fileText = yield fileRes.text();
+      let targetFiles = [];
+      const parsedData = JSON.parse(fileText.replace(/,\]/g, "]"));
+      if (mediaType === "movie") {
+        targetFiles = parsedData.filter((s) => s && s.file);
+      } else if (mediaType === "tv") {
+        const seasonData = parsedData.find((s) => {
+          const sTitle = s.title || "";
+          const sNumMatch = sTitle.match(/Season\s*(\d+)/i) || sTitle.match(/(\d+)\s*Season/i);
+          const sNum = sNumMatch ? parseInt(sNumMatch[1]) : null;
+          return sNum === season || s.id == season;
+        });
+        if (seasonData && seasonData.folder) {
+          const episodeData = seasonData.folder.find((e) => {
+            const eTitle = e.title || "";
+            const eNumMatch = eTitle.match(/Episode\s*(\d+)/i) || eTitle.match(/(\d+)\s*Episode/i);
+            const eNum = eNumMatch ? parseInt(eNumMatch[1]) : null;
+            return eNum === episode || e.episode == episode;
+          });
+          if (episodeData && episodeData.folder) {
+            targetFiles = episodeData.folder.filter((s) => s && s.file);
+          }
+        }
+      }
+      if (targetFiles.length === 0) {
+        console.log("[AllMovieLand] No streams found for the requested media.");
+        return [];
+      }
+      const streams = [];
+      yield Promise.all(targetFiles.map((fileObj) => __async(this, null, function* () {
+        try {
+          const playlistFile = fileObj.file.replace(/^~/, "");
+          const playlistUrl = `${playerDomain}/playlist/${playlistFile}.txt`;
+          const postRes = yield fetch(playlistUrl, {
+            method: "POST",
+            headers: __spreadProps(__spreadValues({}, HEADERS), { "X-CSRF-TOKEN": json.key, "Referer": embedLink })
+          });
+          const m3u8Url = (yield postRes.text()).trim();
+          if (m3u8Url && m3u8Url.startsWith("http")) {
+            const qualityStr = fileObj.title || "Unknown";
+            streams.push({
+              name: "AllMovieLand",
+              title: `AllMovieLand - ${qualityStr}`,
+              url: m3u8Url,
+              quality: qualityStr,
+              headers: {
+                "Referer": `${playerDomain}/`,
+                "Origin": playerDomain,
+                "User-Agent": HEADERS["User-Agent"]
+              },
+              provider: "allmovieland"
+            });
+          }
+        } catch (e) {
+          console.error(`[AllMovieLand] Failed to extract stream: ${e.message}`);
+        }
+      })));
+      return streams;
+    } catch (error) {
+      console.error(`[AllMovieLand] Error: ${error.message}`);
+      return [];
+    }
+  });
+}
+module.exports = { getStreams };
 
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
    Rules (per user request 2026-09):
@@ -103,7 +334,7 @@ var _0x1535=function(){return "";};const _0x585d93=_0x1535;/*rotation removed*/;
       return Promise.resolve(c.q);
     }
     var opts = { headers: Object.assign({}, headers || {}) };
-    var p = __nvFetch(url, opts).then(function (r) {
+    var p = fetch(url, opts).then(function (r) {
       return r.ok ? r.text() : "";
     }).then(function (t) {
       var q = "";
@@ -240,13 +471,6 @@ var _0x1535=function(){return "";};const _0x585d93=_0x1535;/*rotation removed*/;
       try {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
-          if (typeof setTimeout === "function") {
-            // nv best-settings 4.23.0: hard 8s cap on the whole provider run
-            r = Promise.race([r, new Promise(function (res) {
-              var dl = setTimeout(function () { res([]); }, 8000);
-              if (dl && typeof dl.unref === "function") dl.unref();
-            })]);
-          }
           return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);

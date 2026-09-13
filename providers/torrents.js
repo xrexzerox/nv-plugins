@@ -104,7 +104,7 @@ function fetchWithTimeout(url, options, timeoutMs) {
     if (!hasTimers()) {
       return fetch(url, options || {});
     }
-    const timeout = timeoutMs || 8e3;
+    const timeout = timeoutMs || 2e4;
     let timer = null;
     try {
       const fetchPromise = fetch(url, options || {});
@@ -187,7 +187,7 @@ function makeStream(source, title, url, quality, headers, subtitles, extra) {
 function withTimeout(promise, ms, label) {
   if (!hasTimers())
     return promise;
-  const timeout = ms || 8e3;
+  const timeout = ms || 25e3;
   return Promise.race([
     promise,
     new Promise(function(resolve) {
@@ -496,14 +496,8 @@ function buildMagnet(infoHash, fileIdx, trackers) {
 function stremioTorrents(sourceName, api, ctx) {
   return __async(this, null, function* () {
     const imdbId = ctx.imdbId, season = ctx.season, episode = ctx.episode, isTv = ctx.isTv;
-    var debridPrefix = "";
-    try {
-      const dp = settings().debridProvider, dk = settings().debridKey;
-      if (dp && dp !== "none" && dk && String(api).indexOf("torrentio.strem.fun") !== -1)
-        debridPrefix = "/" + String(dp).toLowerCase().trim() + "=" + String(dk).trim();
-    } catch (e) {}
-    const path = debridPrefix + (!isTv ? "/stream/movie/" + imdbId + ".json" : "/stream/series/" + imdbId + ":" + season + ":" + episode + ".json");
-    const json = JSON.parse(yield fetchText(api + path, {}, 6e3));
+    const path = !isTv ? "/stream/movie/" + imdbId + ".json" : "/stream/series/" + imdbId + ":" + season + ":" + episode + ".json";
+    const json = JSON.parse(yield fetchText(api + path, {}, 2e4));
     const streams = json && json.streams || [];
     const line1 = ctx.title || ctx.originalTitle ? headline(
       ctx.originalTitle || ctx.title,
@@ -598,7 +592,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
       const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
       const out = yield withTimeout(
         torrentSources(ctx.imdbId, ctx.season, ctx.episode, ctx.isTv, ctx),
-        8e3,
+        2e4,
         "torrents"
       );
       return presentStreams(dedupe(out), ctx);
@@ -614,23 +608,7 @@ function onSettings() {
       { type: "header", label: "P2P backends (resolved by Nuvio debrid)" },
       { type: "toggle", key: "enableTorrents", label: "Enable torrent sources", defaultValue: true },
       { type: "toggle", key: "torrentio", label: "Torrentio", defaultValue: true },
-      { type: "toggle", key: "torrentsdb", label: "TorrentsDB", defaultValue: true },
-      { type: "header", label: "Debrid (optional - instant cached links via Torrentio)" },
-      {
-        type: "select", key: "debridProvider", label: "Debrid Provider", defaultValue: "none",
-        options: [
-          { label: "None", value: "none" },
-          { label: "Real-Debrid", value: "realdebrid" },
-          { label: "Premiumize", value: "premiumize" },
-          { label: "AllDebrid", value: "alldebrid" },
-          { label: "DebridLink", value: "debridlink" },
-          { label: "EasyDebrid", value: "easydebrid" },
-          { label: "Offcloud", value: "offcloud" },
-          { label: "TorBox", value: "torbox" },
-          { label: "Put.io", value: "putio" }
-        ]
-      },
-      { type: "text", key: "debridKey", label: "Debrid API Key", isPassword: true, placeholder: "Paste your debrid API key" }
+      { type: "toggle", key: "torrentsdb", label: "TorrentsDB", defaultValue: true }
     ];
   });
 }
@@ -836,13 +814,6 @@ module.exports = { getStreams, onSettings };
       try {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
-          if (typeof setTimeout === "function") {
-            // nv best-settings 4.23.0: hard 8s cap on the whole provider run
-            r = Promise.race([r, new Promise(function (res) {
-              var dl = setTimeout(function () { res([]); }, 8000);
-              if (dl && typeof dl.unref === "function") dl.unref();
-            })]);
-          }
           return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);

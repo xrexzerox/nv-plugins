@@ -1,44 +1,448 @@
-/*
- * nv-plugins animepahe.js — FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass).
- * Decoded from the obfuscated AIO build: string tables resolved, decoder machinery stripped,
- * every network call capped by an 8s deadline, node-core requires fail-soft, nvio post-filter
- * attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). Endpoints/keys/headers
- * identical to the AIO original.
- */
-/* nv-plugins best-settings pass 4.24.0: hard 8s deadline on every network call */
-var __nvFetch = (function () {
-  var _f = null;
-  try { _f = (typeof fetch === "function") ? fetch : null; } catch (e) { _f = null; }
-  if (!_f) return function () { return Promise.reject(new Error("no fetch")); };
-  var hasT = typeof setTimeout === "function";
-  return function (input, init) {
-    var p;
-    try { p = _f.apply(this, arguments); } catch (e) { return Promise.reject(e); }
-    if (!hasT || !p || typeof p.then !== "function") return p;
-    return Promise.race([p, new Promise(function (_res, rej) {
-      var t = setTimeout(function () { rej(new Error("nv deadline 8s")); }, 8000);
-      if (t && typeof t.unref === "function") t.unref();
-    })]);
+// animepahe.js v5.0.0
+// v5.0.0 fixes ("not working" on device):
+//  1. The third-party proxy worker (animepaheproxy.phisheranimepahe.workers.dev)
+//     is now dead — every request 403s through Cloudflare. ALL site requests
+//     were routed through it, so the provider returned nothing anywhere.
+//     Now: DIRECT fetch first (animepahe.pw is reachable from residential
+//     devices), proxy only as fallback.
+//  2. The MAL id-mapping API (id-mapping-api-malid.hf.space) returns
+//     "Meta not found" for many valid IMDb ids. Fallback: resolve the MAL id
+//     via a Jikan title search using the TMDB title.
+var MAIN_URL = "https://animepahe.pw";
+var PROXY_URL = "https://animepaheproxy.phisheranimepahe.workers.dev/?url=";
+var HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
+  "Cookie": "__ddg2_=1234567890",
+  "Referer": "https://animepahe.pw/"
+};
+var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+
+function fetchText(url, options) {
+  options = options || {};
+  var finalUrl = url.indexOf("http") === 0 ? url : MAIN_URL + url;
+  var fetchOpts = {
+    headers: options.headers || HEADERS,
+    skipSizeCheck: true
   };
-})();
-/* fail-soft require: node-core modules (net/http/assert/...) never crash the provider */
-var __nvRequire = (function () {
-  var _rq = null;
-  try { _rq = (typeof require === "function") ? require : null; } catch (e) { _rq = null; }
-  return function (name) {
-    if (_rq) { try { return _rq(name); } catch (e) { } }
-    return {};
+
+  var direct = function () {
+    return fetch(finalUrl, fetchOpts).then(function (response) {
+      if (!response.ok) throw new Error("HTTP " + response.status + " on " + finalUrl);
+      return response.text();
+    });
   };
-})();
-/* QuickJS-safe global aliases: embedded polyfills (forge/uuid/whatwg) reference
-   window/self/document unguarded - in Nuvio's QuickJS those would throw
-   ReferenceError at module load and kill the provider. */
-var window = (typeof window !== "undefined" && window) ? window
-  : (typeof globalThis !== "undefined" ? globalThis : (typeof global !== "undefined" ? global : {}));
-var self = (typeof self !== "undefined" && self) ? self : window;
-var document = (typeof document !== "undefined" && document) ? document : { createElement: function () { return { style: {}, setAttribute: function () { }, getElementsByTagName: function () { return []; } }; }, getElementsByTagName: function () { return []; }, addEventListener: function () { } };
-var navigator = (typeof navigator !== "undefined" && navigator) ? navigator : { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" };
-var _0x3e95=function(){return "";};const _0x1d73f4=_0x3e95;/*rotation removed*/;var __create=Object["create"],__defProp=Object["defineProperty"],__defProps=Object["defineProperties"],__getOwnPropDesc=Object['getOwnPropertyDescriptor'],__getOwnPropDescs=Object["getOwnPropertyDescriptors"],__getOwnPropNames=Object["getOwnPropertyNames"],__getOwnPropSymbols=Object["getOwnPropertySymbols"],__getProtoOf=Object["getPrototypeOf"],__hasOwnProp=Object["prototype"]['hasOwnProperty'],__propIsEnum=Object['prototype']['propertyIsEnumerable'],__defNormalProp=(_0x537b5d,_0x312257,_0x145bab)=>_0x312257 in _0x537b5d?__defProp(_0x537b5d,_0x312257,{'enumerable':!![],'configurable':!![],'writable':!![],'value':_0x145bab}):_0x537b5d[_0x312257]=_0x145bab,__spreadValues=(_0x454d4c,_0x10c821)=>{const _0x1d55b3=_0x1d73f4;for(var _0x5ca226 in _0x10c821||(_0x10c821={}))if(__hasOwnProp["call"](_0x10c821,_0x5ca226))__defNormalProp(_0x454d4c,_0x5ca226,_0x10c821[_0x5ca226]);if(__getOwnPropSymbols)for(var _0x5ca226 of __getOwnPropSymbols(_0x10c821)){if(__propIsEnum['call'](_0x10c821,_0x5ca226))__defNormalProp(_0x454d4c,_0x5ca226,_0x10c821[_0x5ca226]);}return _0x454d4c;},__spreadProps=(_0x3a8cb0,_0x2a9c46)=>__defProps(_0x3a8cb0,__getOwnPropDescs(_0x2a9c46)),__objRest=(_0x267409,_0x2a986e)=>{const _0x1f55b1=_0x1d73f4;var _0x4078ae={};for(var _0x37e51c in _0x267409)if(__hasOwnProp["call"](_0x267409,_0x37e51c)&&_0x2a986e["indexOf"](_0x37e51c)<0x0)_0x4078ae[_0x37e51c]=_0x267409[_0x37e51c];if(_0x267409!=null&&__getOwnPropSymbols)for(var _0x37e51c of __getOwnPropSymbols(_0x267409)){if(_0x2a986e["indexOf"](_0x37e51c)<0x0&&__propIsEnum["call"](_0x267409,_0x37e51c))_0x4078ae[_0x37e51c]=_0x267409[_0x37e51c];}return _0x4078ae;},__copyProps=(_0x257f25,_0x2649d8,_0xdbf521,_0x41706a)=>{const _0x4bd517=_0x1d73f4;if(_0x2649d8&&typeof _0x2649d8==="object"||typeof _0x2649d8==="function"){for(let _0x5e4956 of __getOwnPropNames(_0x2649d8))if(!__hasOwnProp["call"](_0x257f25,_0x5e4956)&&_0x5e4956!==_0xdbf521)__defProp(_0x257f25,_0x5e4956,{'get':()=>_0x2649d8[_0x5e4956],'enumerable':!(_0x41706a=__getOwnPropDesc(_0x2649d8,_0x5e4956))||_0x41706a["enumerable"]});}return _0x257f25;},__toESM=(_0x55ba45,_0x23f426,_0x31a83c)=>(_0x31a83c=_0x55ba45!=null?__create(__getProtoOf(_0x55ba45)):{},__copyProps(_0x23f426||!_0x55ba45||!_0x55ba45['__esModule']?__defProp(_0x31a83c,"default",{'value':_0x55ba45,'enumerable':!![]}):_0x31a83c,_0x55ba45)),__async=(_0x1abd7c,_0x51d469,_0x4db3b0)=>{return new Promise((_0x1cb0f7,_0x58ba9a)=>{const _0x5006dd=_0x3e95;var _0x16f488=_0x2becae=>{const _0x4f80c0=_0x3e95;try{_0x3ddc4b(_0x4db3b0["next"](_0x2becae));}catch(_0x4fff13){_0x58ba9a(_0x4fff13);}},_0x446bda=_0x2a96d8=>{try{_0x3ddc4b(_0x4db3b0['throw'](_0x2a96d8));}catch(_0x4ee400){_0x58ba9a(_0x4ee400);}},_0x3ddc4b=_0x28cd85=>_0x28cd85['done']?_0x1cb0f7(_0x28cd85["value"]):Promise["resolve"](_0x28cd85["value"])["then"](_0x16f488,_0x446bda);_0x3ddc4b((_0x4db3b0=_0x4db3b0["apply"](_0x1abd7c,_0x51d469))["next"]());});},import_cheerio_without_node_native=__toESM(__nvRequire("cheerio-without-node-native")),MAIN_URL="https://animepahe.com",PROXY_URL="https://animepaheproxy.phisheranimepahe.workers.dev/?url=",HEADERS={'User-Agent':'Mozilla/5.0\x20(Windows\x20NT\x2010.0;\x20Win64;\x20x64)\x20Chrome/120.0.0.0\x20Safari/537.36','Cookie':"__ddg2_=1234567890",'Referer':"https://animepahe.com/"};function fetchText(_0x53d5e8){return __async(this,arguments,function*(_0x3a9d6b,_0x3f7815={}){const _0x22182a=_0x3e95,_0x263547=_0x3f7815,{useProxy:useProxy=!![]}=_0x263547,_0x5368ce=__objRest(_0x263547,["useProxy"]),_0x3553fa=_0x3a9d6b["startsWith"]("http")?_0x3a9d6b:''+MAIN_URL+_0x3a9d6b,_0x23e259=useProxy?''+PROXY_URL+encodeURIComponent(_0x3553fa):_0x3553fa,_0x53e991=yield __nvFetch(_0x23e259,__spreadValues({'headers':HEADERS},_0x5368ce));if(!_0x53e991['ok'])throw new Error('HTTP\x20'+_0x53e991["status"]+" on "+_0x3553fa);return yield _0x53e991["text"]();});}function fetchJson(_0xbe08be){return __async(this,arguments,function*(_0x290be1,_0x1fec65={}){const _0x6a80f1=_0x3e95,_0x562e16=yield fetchText(_0x290be1,_0x1fec65);return JSON["parse"](_0x562e16);});}function getImdbId(_0x34ed2f,_0x226466){return __async(this,null,function*(){const _0x404dbd=_0x3e95;try{const _0x42212d="https://api.themoviedb.org/3/"+(_0x226466==='tv'?'tv':'movie')+'/'+_0x34ed2f+"/external_ids?api_key=1865f43a0549ca50d341dd9ab8b29f49",_0x49d3ef=yield __nvFetch(_0x42212d),_0x28a7ea=yield _0x49d3ef["json"]();return _0x28a7ea["imdb_id"];}catch(_0x4cf7e7){return null;}});}function resolveMapping(_0x459472,_0x2cc631,_0x460b16){return __async(this,null,function*(){const _0x13788c=_0x3e95;try{const _0x130392="https://id-mapping-api-malid.hf.space/api/resolve?id="+_0x459472+"&s="+_0x2cc631+"&e="+_0x460b16,_0x21e924=yield __nvFetch(_0x130392);if(!_0x21e924['ok'])return null;return yield _0x21e924["json"]();}catch(_0x2c2385){return null;}});}function getMalTitle(_0x30d391){return __async(this,null,function*(){const _0x15e96f=_0x3e95;try{const _0x4abe52=yield __nvFetch("https://api.jikan.moe/v4/anime/"+_0x30d391);if(!_0x4abe52['ok'])return null;const _0x238ad3=yield _0x4abe52['json']();return _0x238ad3["data"]["title"];}catch(_0x263c9e){return null;}});}function searchAnime(_0x3fa230){return __async(this,null,function*(){const _0x346695='/api?m=search&l=8&q='+encodeURIComponent(_0x3fa230);return yield fetchJson(_0x346695);});}/*string-table removed*//*decoder removed*/function extractQuality(_0x334f2a){const _0x382715=_0x1d73f4,_0x39fb17=_0x334f2a["match"](/(\d{3,4}p)/);return _0x39fb17?_0x39fb17[0x1]:"720p";}function unpack(_0xe31c41){const _0xdd0574=_0x1d73f4;try{const _0xb76ad=_0xe31c41["match"](/}\((['"])([\s\S]*?)\1,\s*(\d+),\s*(\d+),\s*(['"])([\s\S]*?)\5\.split\((['"])\|\7\)/);if(_0xb76ad){let [_0x5456ad,_0x1c0673,_0x51199a,_0x2f53c4,_0x8c4f7d,_0x2f8bea,_0x357743]=_0xb76ad;_0x51199a=_0x51199a['replace'](/\\'/g,'\x27')["replace"](/\\"/g,'\x22')['replace'](/\\\\/g,'\x5c'),_0x2f53c4=parseInt(_0x2f53c4),_0x8c4f7d=parseInt(_0x8c4f7d);const _0x354b84=_0x357743["split"]('|'),_0x530bd9=_0x1ec9b0=>(_0x1ec9b0<_0x2f53c4?'':_0x530bd9(parseInt(_0x1ec9b0/_0x2f53c4)))+((_0x1ec9b0=_0x1ec9b0%_0x2f53c4)>0x23?String["fromCharCode"](_0x1ec9b0+0x1d):_0x1ec9b0["toString"](0x24)),_0x4b988a={};while(_0x8c4f7d--)_0x4b988a[_0x530bd9(_0x8c4f7d)]=_0x354b84[_0x8c4f7d]||_0x530bd9(_0x8c4f7d);return _0x51199a["replace"](/\b\w+\b/g,_0x574c2b=>_0x4b988a[_0x574c2b]);}}catch(_0x2f2b57){console['error']("[AnimePahe] Unpack error:",_0x2f2b57["message"]);}return _0xe31c41;}function extractKwik(_0x3437f3){return __async(this,null,function*(){const _0x28243d=_0x3e95;try{const _0x495ea4=globalThis['SCRAPER_SETTINGS']||{},_0x3cd98e=_0x495ea4['domain']||"https://animepahe.com",_0x24d558=yield fetchText(_0x3437f3,{'headers':__spreadProps(__spreadValues({},HEADERS),{'Referer':_0x3cd98e+'/','User-Agent':"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}),'useProxy':![]}),_0x1c346c=_0x24d558['match'](/<script.*?>([\s\S]*?)<\/script>/g)||[],_0x12465c=[];for(const _0x15ba09 of _0x1c346c){if(_0x15ba09["includes"]("eval(function(p,a,c,k,e,d)")){let _0x21942c=0x0;while(!![]){const _0x34bf2f=_0x15ba09['indexOf']("eval(function(p,a,c,k,e,d)",_0x21942c);if(_0x34bf2f===-0x1)break;const _0x338b30=_0x15ba09["indexOf"]('.split(\x27|\x27)',_0x34bf2f);if(_0x338b30===-0x1)break;const _0x3ddf3c=_0x15ba09['indexOf']('))',_0x338b30);if(_0x3ddf3c===-0x1)break;_0x12465c["push"](_0x15ba09["substring"](_0x34bf2f,_0x3ddf3c+0x2)),_0x21942c=_0x3ddf3c+0x2;}}}for(const _0x14c3ab of _0x12465c){const _0x235e1d=unpack(_0x14c3ab),_0x42fe27=_0x235e1d["match"](/source\s*=\s*'([^']+m3u8[^']*)'/)||_0x235e1d["match"](/source\s*=\s*"([^"]+m3u8[^"]*)"/);if(_0x42fe27)return{'url':_0x42fe27[0x1],'headers':{'Referer':"https://kwik.cx/",'Origin':'https://kwik.cx','User-Agent':'Mozilla/5.0\x20(Windows\x20NT\x2010.0;\x20Win64;\x20x64)\x20AppleWebKit/537.36\x20(KHTML,\x20like\x20Gecko)\x20Chrome/120.0.0.0\x20Safari/537.36'}};}}catch(_0x2c7b87){console["error"]("[AnimePahe] Kwik extraction failed:",_0x2c7b87["message"]);}return null;});}function getStreams(_0x1a69bb,_0x2befb3,_0x52fcf8,_0xfc825d){return __async(this,null,function*(){const _0x205542=_0x3e95;try{let _0x5e5e45=null,_0x581fa6='',_0x2c186e=_0xfc825d,_0x18bb35=null;if(_0x2befb3==='tv'){const _0x324a65=yield getImdbId(_0x1a69bb,_0x2befb3);if(!_0x324a65)return[];const _0xd31fc=yield resolveMapping(_0x324a65,_0x52fcf8,_0xfc825d);if(!_0xd31fc||!_0xd31fc['mal_id'])return[];_0x18bb35=_0xd31fc['mal_id'],_0x2c186e=_0xd31fc["mal_episode"]||_0xfc825d,_0x581fa6=yield getMalTitle(_0x18bb35);if(!_0x581fa6)return[];const _0x4cf3da=yield searchAnime(_0x581fa6);if(_0x4cf3da["data"]&&_0x4cf3da["data"]["length"]>0x0)for(let _0x22ea5c=0x0;_0x22ea5c<Math["min"](_0x4cf3da["data"]["length"],0x3);_0x22ea5c++){const _0x481763=_0x4cf3da["data"][_0x22ea5c],_0x1a4687=yield fetchText("/anime/"+_0x481763["session"]);if(_0x1a4687["includes"]("myanimelist.net/anime/"+_0x18bb35)){_0x5e5e45=_0x481763["session"];break;}}}else{const _0x426da0="https://api.themoviedb.org/3/movie/"+_0x1a69bb+"?api_key=1865f43a0549ca50d341dd9ab8b29f49",_0x51feb2=yield __nvFetch(_0x426da0),_0xc37f69=yield _0x51feb2["json"]();_0x581fa6=_0xc37f69["title"]||_0xc37f69["original_title"],_0x2c186e=0x1;if(!_0x581fa6)return[];const _0x1201c6=yield searchAnime(_0x581fa6);if(_0x1201c6["data"]&&_0x1201c6["data"]['length']>0x0){const _0xbe3fcd=_0x1201c6['data'][0x0];_0xbe3fcd['title']["toLowerCase"]()===_0x581fa6["toLowerCase"]()&&(_0x5e5e45=_0xbe3fcd['session']);}}if(!_0x5e5e45)return[];const _0xf57a00="/api?m=release&id="+_0x5e5e45+"&sort=episode_asc&page=1",_0x2f7c8a=yield fetchJson(_0xf57a00);if(!_0x2f7c8a["data"]||_0x2f7c8a["data"]["length"]===0x0)return[];const _0x38a1e6=Math["floor"](_0x2f7c8a['data'][0x0]["episode"]),_0x1712c9=_0x2f7c8a['per_page']||0x1e,_0x203dac=_0x38a1e6-0x1+_0x2c186e,_0x341dc5=Math["ceil"](_0x2c186e/_0x1712c9)||0x1,_0x2b765d="/api?m=release&id="+_0x5e5e45+"&sort=episode_asc&page="+_0x341dc5,_0x2a1326=yield fetchJson(_0x2b765d);let _0x55ba83=null;if(_0x2a1326&&_0x2a1326["data"]){const _0x34b42a=_0x2a1326['data']['find'](_0x1c811c=>Math["floor"](_0x1c811c["episode"])==_0x203dac);if(_0x34b42a)_0x55ba83=_0x34b42a["session"];}if(!_0x55ba83&&_0x341dc5!==0x1){const _0x2d7354=_0x2f7c8a["data"]["find"](_0x213fbf=>Math["floor"](_0x213fbf['episode'])==_0x203dac);if(_0x2d7354)_0x55ba83=_0x2d7354["session"];}if(!_0x55ba83)return[];const _0x418b69='/play/'+_0x5e5e45+'/'+_0x55ba83,_0x1219db=yield fetchText(_0x418b69),_0x50d5e1=import_cheerio_without_node_native['default']['load'](_0x1219db),_0xf83878=[],_0x3369fd=[];_0x50d5e1("#resolutionMenu button")["each"]((_0x48d682,_0x3a3741)=>{const _0x32e31e=_0x205542,_0xe51f28=_0x50d5e1(_0x3a3741),_0x4d5d8e=_0xe51f28["attr"]('data-src'),_0x22e454=_0xe51f28["text"](),_0x22d1e4=extractQuality(_0x22e454),_0x1e1048=_0x22e454["toLowerCase"]()["includes"]("eng")?"Dub":'Sub';_0x4d5d8e&&_0x4d5d8e["includes"]("kwik")&&_0x3369fd["push"](extractKwik(_0x4d5d8e)["then"](_0x126da6=>{const _0x41c033=_0x32e31e;_0x126da6&&_0xf83878['push']({'name':"AnimePahe ("+_0x22d1e4+'\x20'+_0x1e1048+')','title':_0x581fa6+" - Episode "+_0x2c186e,'url':_0x126da6["url"],'quality':_0x22d1e4,'headers':_0x126da6['headers']});}));}),yield Promise["all"](_0x3369fd);const _0x33e14a={'1080p':0x3,'720p':0x2,'360p':0x1};return _0xf83878['sort']((_0x45ffbb,_0x54b2c9)=>(_0x33e14a[_0x54b2c9["quality"]]||0x0)-(_0x33e14a[_0x45ffbb['quality']]||0x0));}catch(_0x18cd2a){return[];}});}function onSettings(){return __async(this,null,function*(){const _0x5ece5c=_0x3e95;return[{'type':'header','label':"Domain Selection"},{'type':"select",'key':"domain",'label':"Preferred Domain",'description':"AnimePahe frequently rotates domains. Choose the one currently working for you.",'options':[{'label':'animepahe.com','value':'https://animepahe.com'},{'label':"animepahe.org",'value':"https://animepahe.org"},{'label':"animepahe.pw",'value':"https://animepahe.pw"}],'defaultValue':'https://animepahe.com'}];});}typeof module!=="undefined"&&module["exports"]?module["exports"]={'getStreams':getStreams,'onSettings':onSettings}:(global["getStreams"]=getStreams,global["onSettings"]=onSettings);
+  var viaProxy = function () {
+    var targetUrl = PROXY_URL + encodeURIComponent(finalUrl);
+    return fetch(targetUrl, fetchOpts).then(function (response) {
+      if (!response.ok) throw new Error("HTTP " + response.status + " (proxy) on " + finalUrl);
+      return response.text();
+    });
+  };
+
+  // useProxy === false means direct-only (kwik pages must be fetched from the
+  // device itself so the CDN sees a consistent client)
+  if (options.useProxy === false) return direct();
+
+  return direct().catch(function (err) {
+    console.log("[AnimePahe] direct failed (" + err.message + "), trying proxy fallback");
+    return viaProxy();
+  });
+}
+
+function fetchJson(url, options) {
+  return fetchText(url, options).then(function(text) {
+    return JSON.parse(text);
+  });
+}
+
+function getImdbId(tmdbId, mediaType) {
+  var url = "https://api.themoviedb.org/3/" + (mediaType === "tv" ? "tv" : "movie") + "/" + tmdbId + "/external_ids?api_key=" + TMDB_API_KEY;
+  return fetch(url, { skipSizeCheck: true })
+    .then(function(res) { return res.json(); })
+    .then(function(data) { return data.imdb_id; })
+    .catch(function() { return null; });
+}
+
+function resolveMapping(imdbId, season, episode) {
+  var url = "https://id-mapping-api-malid.hf.space/api/resolve?id=" + imdbId + "&s=" + season + "&e=" + episode;
+  return fetch(url, { skipSizeCheck: true })
+    .then(function(res) {
+      if (!res.ok) return null;
+      return res.json();
+    })
+    .catch(function() { return null; });
+}
+
+function getMalTitle(malId) {
+  return fetch("https://api.jikan.moe/v4/anime/" + malId, { skipSizeCheck: true })
+    .then(function(res) {
+      if (!res.ok) return null;
+      return res.json();
+    })
+    .then(function(data) {
+      return data.data ? data.data.title : null;
+    })
+    .catch(function() { return null; });
+}
+
+function normalizeTitle(t) {
+  return String(t || "")
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function fetchTmdbTvTitle(tmdbId) {
+  var url = "https://api.themoviedb.org/3/tv/" + tmdbId + "?api_key=" + TMDB_API_KEY;
+  return fetch(url, { skipSizeCheck: true })
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(d) { return d ? (d.name || d.original_name) : null; })
+    .catch(function() { return null; });
+}
+
+// The id-mapping API misses many ids — resolve the MAL entry by searching
+// Jikan with the TMDB title instead. Episode numbers align when the TMDB
+// entry and MAL entry describe the same show (the common case).
+function getMalInfoFallback(title) {
+  var url = "https://api.jikan.moe/v4/anime?q=" + encodeURIComponent(title) + "&limit=5";
+  return fetch(url, { skipSizeCheck: true })
+    .then(function(res) { return res.ok ? res.json() : null; })
+    .then(function(data) {
+      var list = (data && data.data) || [];
+      if (!list.length) return null;
+      var nq = normalizeTitle(title);
+      var best = null;
+      for (var i = 0; i < list.length; i++) {
+        var cand = list[i];
+        var names = [cand.title, cand.title_english].filter(Boolean);
+        var matched = false;
+        for (var j = 0; j < names.length; j++) {
+          var nt = normalizeTitle(names[j]);
+          if (nt === nq || (nt.indexOf(nq) !== -1) || (nq.indexOf(nt) !== -1)) {
+            matched = true;
+            break;
+          }
+        }
+        if (matched) { best = cand; break; }
+      }
+      return best ? { mal_id: best.mal_id, title: best.title } : null;
+    })
+    .catch(function() { return null; });
+}
+
+function searchAnime(query) {
+  var url = "/api?m=search&l=8&q=" + encodeURIComponent(query);
+  return fetchJson(url);
+}
+
+function extractQuality(text) {
+  var match = text.match(/(\d{3,4}p)/);
+  return match ? match[1] : "720p";
+}
+
+function unpack(code) {
+  try {
+    var match = code.match(/}\((['"])([\s\S]*?)\1,\s*(\d+),\s*(\d+),\s*(['"])([\s\S]*?)\5\.split\((['"])\|\7\)/);
+    if (match) {
+      var p = match[2];
+      var a = parseInt(match[3]);
+      var c = parseInt(match[4]);
+      var kStr = match[6];
+      p = p.replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+      var k = kStr.split("|");
+      var e = function(c2) {
+        return (c2 < a ? "" : e(parseInt(c2 / a))) + ((c2 = c2 % a) > 35 ? String.fromCharCode(c2 + 29) : c2.toString(36));
+      };
+      var d = {};
+      while (c--) {
+        d[e(c)] = k[c] || e(c);
+      }
+      return p.replace(/\b\w+\b/g, function(w) {
+        return d[w];
+      });
+    }
+  } catch (e) {
+    console.error("[AnimePahe] Unpack error:", e.message);
+  }
+  return code;
+}
+
+function extractKwik(url) {
+  return fetchText(url, {
+    headers: Object.assign({}, HEADERS, {
+      "Referer": url,
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }),
+    useProxy: false
+  }).then(function(html) {
+    var scripts = html.match(/<script[^>]*>([\s\S]*?)<\/script>/g) || [];
+    var matches = [];
+    for (var i = 0; i < scripts.length; i++) {
+      var script = scripts[i];
+      if (script.indexOf("eval(function(p,a,c,k,e,d)") !== -1) {
+        var pos = 0;
+        while (true) {
+          var start = script.indexOf("eval(function(p,a,c,k,e,d)", pos);
+          if (start === -1) break;
+          var end = script.indexOf(".split('|')", start);
+          if (end === -1) break;
+          var closeParen = script.indexOf("))", end);
+          if (closeParen === -1) break;
+          matches.push(script.substring(start, closeParen + 2));
+          pos = closeParen + 2;
+        }
+      }
+    }
+    for (var j = 0; j < matches.length; j++) {
+      var unpacked = unpack(matches[j]);
+      var urlMatch = unpacked.match(/source\s*=\s*["'](https?:\/\/.*?)["']/) ||
+                     unpacked.match(/const\s+source\s*=\s*["'](https?:\/\/.*?)["']/) ||
+                     unpacked.match(/var\s+source\s*=\s*["'](https?:\/\/.*?)["']/) ||
+                     unpacked.match(/src\s*:\s*["'](https?:\/\/.*?)["']/);
+      if (urlMatch) {
+        return {
+          url: urlMatch[1],
+          headers: {
+            "Referer": "https://kwik.cx/",
+            "Origin": "https://kwik.cx",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        };
+      }
+    }
+    return null;
+  }).catch(function(e) {
+    console.error("[AnimePahe] Kwik extraction failed:", e.message);
+    return null;
+  });
+}
+
+function parseResolutionButtons(html) {
+  var streams = [];
+  var regex = /<button[^>]*data-src=["']([^"']+)["'][^>]*>([\s\S]*?)<\/button>/gi;
+  var match;
+  while ((match = regex.exec(html)) !== null) {
+    var kwikUrl = match[1];
+    var btnText = match[2].replace(/<[^>]*>/g, "").trim();
+    if (kwikUrl && kwikUrl.indexOf("kwik") !== -1) {
+      var quality = extractQuality(btnText);
+      var type = btnText.toLowerCase().indexOf("eng") !== -1 ? "Dub" : "Sub";
+      streams.push({
+        kwikUrl: kwikUrl,
+        quality: quality,
+        type: type,
+        name: "AnimePahe (" + quality + " " + type + ")"
+      });
+    }
+  }
+  return streams;
+}
+
+function getStreams(tmdbId, mediaType, season, episode) {
+  console.log("[AnimePahe] Starting for TMDB ID:", tmdbId, "Type:", mediaType);
+  return new Promise(function(resolve, reject) {
+    var animeSession = null;
+    var animeTitle = "";
+    var mappedEp = episode;
+    var targetMalId = null;
+
+    if (mediaType === "tv") {
+      getImdbId(tmdbId, mediaType)
+        .then(function(imdbId) {
+          console.log("[AnimePahe] IMDB ID:", imdbId);
+          if (!imdbId) {
+            resolve([]);
+            return Promise.reject("No IMDB");
+          }
+          return resolveMapping(imdbId, season, episode);
+        })
+        .then(function(mapping) {
+          console.log("[AnimePahe] MAL mapping:", mapping);
+          if (mapping && mapping.mal_id) {
+            targetMalId = mapping.mal_id;
+            mappedEp = mapping.mal_episode || episode;
+            return getMalTitle(targetMalId);
+          }
+          // Fallback: mapping API misses many IMDb ids — resolve via Jikan
+          // title search using the TMDB title.
+          console.log("[AnimePahe] Mapping failed, using Jikan title-search fallback");
+          return fetchTmdbTvTitle(tmdbId).then(function(tvTitle) {
+            if (!tvTitle) return null;
+            return getMalInfoFallback(tvTitle).then(function(info) {
+              if (info) {
+                targetMalId = info.mal_id;
+                mappedEp = episode; // same show -> episode numbers align
+                console.log("[AnimePahe] Jikan fallback MAL:", targetMalId, info.title);
+                return info.title;
+              }
+              return null;
+            });
+          });
+        })
+        .then(function(title) {
+          animeTitle = title;
+          console.log("[AnimePahe] MAL title:", animeTitle);
+          if (!animeTitle) {
+            resolve([]);
+            return Promise.reject("No MAL title");
+          }
+          return searchAnime(animeTitle);
+        })
+        .then(function(searchResults) {
+          console.log("[AnimePahe] Search results:", searchResults.data ? searchResults.data.length : 0);
+          if (searchResults.data && searchResults.data.length > 0) {
+            var checkNext = function(idx) {
+              if (idx >= Math.min(searchResults.data.length, 3)) {
+                return Promise.resolve();
+              }
+              var item = searchResults.data[idx];
+              return fetchText("/anime/" + item.session).then(function(pageHtml) {
+                if (pageHtml.indexOf("myanimelist.net/anime/" + targetMalId) !== -1) {
+                  animeSession = item.session;
+                  console.log("[AnimePahe] Found session:", animeSession);
+                  return Promise.resolve();
+                }
+                return checkNext(idx + 1);
+              });
+            };
+            return checkNext(0);
+          }
+          return Promise.resolve();
+        })
+        .then(function() {
+          return proceedToEpisodes();
+        })
+        .catch(function(err) {
+          console.error("[AnimePahe] TV error:", err);
+          resolve([]);
+        });
+    } else {
+      var tmdbUrl = "https://api.themoviedb.org/3/movie/" + tmdbId + "?api_key=" + TMDB_API_KEY;
+      fetch(tmdbUrl, { skipSizeCheck: true })
+        .then(function(res) { return res.json(); })
+        .then(function(tmdbData) {
+          animeTitle = tmdbData.title || tmdbData.original_title;
+          mappedEp = 1;
+          console.log("[AnimePahe] Movie title:", animeTitle);
+          if (!animeTitle) {
+            resolve([]);
+            return Promise.reject("No title");
+          }
+          return searchAnime(animeTitle);
+        })
+        .then(function(searchResults) {
+          console.log("[AnimePahe] Search results:", searchResults.data ? searchResults.data.length : 0);
+          if (searchResults.data && searchResults.data.length > 0) {
+            var firstResult = searchResults.data[0];
+            if (firstResult.title.toLowerCase() === animeTitle.toLowerCase()) {
+              animeSession = firstResult.session;
+              console.log("[AnimePahe] Found session:", animeSession);
+            }
+          }
+          return proceedToEpisodes();
+        })
+        .catch(function(err) {
+          console.error("[AnimePahe] Movie error:", err);
+          resolve([]);
+        });
+    }
+
+    function proceedToEpisodes() {
+      if (!animeSession) {
+        console.log("[AnimePahe] No anime session found");
+        resolve([]);
+        return Promise.resolve();
+      }
+
+      var firstPageUrl = "/api?m=release&id=" + animeSession + "&sort=episode_asc&page=1";
+      return fetchJson(firstPageUrl)
+        .then(function(firstPageData) {
+          console.log("[AnimePahe] First page episodes:", firstPageData.data ? firstPageData.data.length : 0);
+          if (!firstPageData.data || firstPageData.data.length === 0) {
+            resolve([]);
+            return Promise.reject("No episodes");
+          }
+          var paheEpStart = Math.floor(firstPageData.data[0].episode);
+          var perPage = firstPageData.per_page || 30;
+          var targetPaheEp = paheEpStart - 1 + mappedEp;
+          var targetPage = Math.ceil(mappedEp / perPage) || 1;
+          var targetPageUrl = "/api?m=release&id=" + animeSession + "&sort=episode_asc&page=" + targetPage;
+
+          return fetchJson(targetPageUrl).then(function(targetPageData) {
+            var episodeSession = null;
+            if (targetPageData && targetPageData.data) {
+              for (var i = 0; i < targetPageData.data.length; i++) {
+                if (Math.floor(targetPageData.data[i].episode) == targetPaheEp) {
+                  episodeSession = targetPageData.data[i].session;
+                  break;
+                }
+              }
+            }
+            if (!episodeSession && targetPage !== 1) {
+              for (var j = 0; j < firstPageData.data.length; j++) {
+                if (Math.floor(firstPageData.data[j].episode) == targetPaheEp) {
+                  episodeSession = firstPageData.data[j].session;
+                  break;
+                }
+              }
+            }
+            if (!episodeSession) {
+              console.log("[AnimePahe] No episode session found");
+              resolve([]);
+              return Promise.reject("No episode");
+            }
+
+            var playUrl = "/play/" + animeSession + "/" + episodeSession;
+            return fetchText(playUrl).then(function(playHtml) {
+              var buttons = parseResolutionButtons(playHtml);
+              console.log("[AnimePahe] Found", buttons.length, "resolution buttons");
+
+              if (buttons.length === 0) {
+                resolve([]);
+                return;
+              }
+
+              var promises = [];
+              var streams = [];
+              for (var k = 0; k < buttons.length; k++) {
+                (function(btn) {
+                  promises.push(
+                    extractKwik(btn.kwikUrl).then(function(res) {
+                      if (res) {
+                        streams.push({
+                          name: btn.name,
+                          title: animeTitle + " - Episode " + mappedEp,
+                          url: res.url,
+                          quality: btn.quality,
+                          headers: res.headers
+                        });
+                      }
+                    })
+                  );
+                })(buttons[k]);
+              }
+
+              Promise.all(promises).then(function() {
+                var qualityOrder = { "1080p": 3, "720p": 2, "360p": 1 };
+                streams.sort(function(a, b) {
+                  return (qualityOrder[b.quality] || 0) - (qualityOrder[a.quality] || 0);
+                });
+                console.log("[AnimePahe] Returning", streams.length, "streams");
+                resolve(streams);
+              });
+            });
+          });
+        })
+        .catch(function(err) {
+          console.error("[AnimePahe] Episode error:", err);
+          resolve([]);
+        });
+    }
+  });
+}
+
+module.exports = { getStreams };
 
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
    Rules (per user request 2026-09):
@@ -103,7 +507,7 @@ var _0x3e95=function(){return "";};const _0x1d73f4=_0x3e95;/*rotation removed*/;
       return Promise.resolve(c.q);
     }
     var opts = { headers: Object.assign({}, headers || {}) };
-    var p = __nvFetch(url, opts).then(function (r) {
+    var p = fetch(url, opts).then(function (r) {
       return r.ok ? r.text() : "";
     }).then(function (t) {
       var q = "";
@@ -240,13 +644,6 @@ var _0x3e95=function(){return "";};const _0x1d73f4=_0x3e95;/*rotation removed*/;
       try {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
-          if (typeof setTimeout === "function") {
-            // nv best-settings 4.23.0: hard 8s cap on the whole provider run
-            r = Promise.race([r, new Promise(function (res) {
-              var dl = setTimeout(function () { res([]); }, 8000);
-              if (dl && typeof dl.unref === "function") dl.unref();
-            })]);
-          }
           return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);

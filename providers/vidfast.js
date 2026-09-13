@@ -104,7 +104,7 @@ function fetchWithTimeout(url, options, timeoutMs) {
     if (!hasTimers()) {
       return fetch(url, options || {});
     }
-    const timeout = timeoutMs || 8000;
+    const timeout = timeoutMs || 2e4;
     let timer = null;
     try {
       const fetchPromise = fetch(url, options || {});
@@ -210,7 +210,7 @@ function makeStream(source, title, url, quality, headers, subtitles, extra) {
 function withTimeout(promise, ms, label) {
   if (!hasTimers())
     return promise;
-  const timeout = ms || 8e3;
+  const timeout = ms || 25e3;
   return Promise.race([
     promise,
     new Promise(function(resolve) {
@@ -523,7 +523,7 @@ function scrapeGeneric(opts, ctx) {
       "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
       Referer: base + "/"
     };
-    const page = yield fetchText(pageUrl, headers, 8e3);
+    const page = yield fetchText(pageUrl, headers, 2e4);
     const tokenText = extractToken(page);
     if (!tokenText)
       return [];
@@ -625,7 +625,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     try {
       const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
-      const out = yield withTimeout(scrapeVidfast(ctx), 8e3, "vidfast");
+      const out = yield withTimeout(scrapeVidfast(ctx), 2e4, "vidfast");
       return presentStreams(dedupe(out), ctx);
     } catch (e) {
       console.log("[Streamline][vidfast] " + (e && e.message));
@@ -835,13 +835,6 @@ module.exports = { getStreams };
       try {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
-          if (typeof setTimeout === "function") {
-            // nv best-settings 4.23.0: hard 8s cap on the whole provider run
-            r = Promise.race([r, new Promise(function (res) {
-              var dl = setTimeout(function () { res([]); }, 8000);
-              if (dl && typeof dl.unref === "function") dl.unref();
-            })]);
-          }
           return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);

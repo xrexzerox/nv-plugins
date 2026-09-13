@@ -1,5 +1,5 @@
 /**
- * vegamovies - Built from src/vegamovies/ (run bun build.js to regenerate)
+ * hdhub - Built from src/hdhub/ (run bun build.js to regenerate)
  */
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -235,6 +235,11 @@ function makeStream(source, title, url, quality, headers, subtitles, extra) {
   }
   return stream;
 }
+function episodeSlug(season, episode) {
+  const s = String(season).padStart(2, "0");
+  const e = String(episode).padStart(2, "0");
+  return { s, e, code: "S" + s + "E" + e, alt: "s" + s + "e" + e };
+}
 function withTimeout(promise, ms, label) {
   if (!hasTimers())
     return promise;
@@ -434,11 +439,43 @@ function parseMeta(raw) {
   }
   if (/multi[\s._-]*audio/i.test(text))
     langs.push("Multi-Audio");
+  else if (/dual[\s._-]*audio|dual/i.test(text) && /hindi|hin/i.test(text))
+    langs.push("Dual-Audio");
   else if (/dual[\s._-]*audio/i.test(text))
     langs.push("Dual-Audio");
-  if (/\btagalog\b|\bfilipino\b|\btl\b/i.test(text))
-    langs.push("Tagalog");
-  if (has("english", "eng"))
+  if (has("hindi", "hin"))
+    langs.push("Hindi");
+  if (has("tamil"))
+    langs.push("Tamil");
+  if (has("telugu"))
+    langs.push("Telugu");
+  if (has("malayalam"))
+    langs.push("Malayalam");
+  if (has("kannada"))
+    langs.push("Kannada");
+  if (has("bengali"))
+    langs.push("Bengali");
+  if (has("punjabi"))
+    langs.push("Punjabi");
+  if (has("korean", "kor"))
+    langs.push("Korean");
+  if (has("japanese", "jpn"))
+    langs.push("Japanese");
+  if (has("chinese", "chn"))
+    langs.push("Chinese");
+  if (has("spanish"))
+    langs.push("Spanish");
+  if (has("french"))
+    langs.push("French");
+  if (has("german"))
+    langs.push("German");
+  if (has("italian"))
+    langs.push("Italian");
+  if (has("russian"))
+    langs.push("Russian");
+  if (has("arabic"))
+    langs.push("Arabic");
+  if (has("english", "eng") && !langs.length)
     langs.push("English");
   if (/esub/i.test(text))
     langs.push("ESub");
@@ -567,8 +604,8 @@ function presentStreams(streams, ctx) {
 
 // src/_shared/subs.js
 var STREMIO_SUBS = [
-  "https://opensubtitles.stremio.homes/en|tl/ai-translated=true|from=all|auto-adjustment=true",
-  'https://subsense.nepiraw.com/n0tcjfba-{"languages":["en","tl"],"maxSubtitles":10}'
+  "https://opensubtitles.stremio.homes/en|hi|de|ar|tr|es|ta|te|ru|ko/ai-translated=true|from=all|auto-adjustment=true",
+  'https://subsense.nepiraw.com/n0tcjfba-{"languages":["en","hi","ta","es","ar"],"maxSubtitles":10}'
 ];
 function settings() {
   try {
@@ -687,6 +724,63 @@ function fixUrl(url, domain) {
   if (url[0] === "/")
     return domain + url;
   return domain + "/" + url;
+}
+function rot13(s) {
+  return String(s || "").replace(/[a-zA-Z]/g, function(c) {
+    const base = c <= "Z" ? 65 : 97;
+    return String.fromCharCode((c.charCodeAt(0) - base + 13) % 26 + base);
+  });
+}
+var B64C = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+function b64EncodeUtf8(s) {
+  const bytes = [];
+  const enc = unescape(encodeURIComponent(String(s || "")));
+  for (let i = 0; i < enc.length; i++)
+    bytes.push(enc.charCodeAt(i));
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i], b = i + 1 < bytes.length ? bytes[i + 1] : 0, c = i + 2 < bytes.length ? bytes[i + 2] : 0;
+    const n = a << 16 | b << 8 | c;
+    out += B64C[n >> 18 & 63] + B64C[n >> 12 & 63];
+    out += i + 1 < bytes.length ? B64C[n >> 6 & 63] : "=";
+    out += i + 2 < bytes.length ? B64C[n & 63] : "=";
+  }
+  return out;
+}
+function getRedirectLinks(url) {
+  return __async(this, null, function* () {
+    try {
+      const doc = yield fetchText(url, {}, 15e3);
+      const re = /s\('o','([A-Za-z0-9+/=]+)'|ck\('_wp_http_\d+','([^']+)'/g;
+      let m;
+      let combined = "";
+      while ((m = re.exec(doc)) !== null)
+        combined += m[1] || m[2] || "";
+      if (!combined)
+        return "";
+      const decoded = b64DecodeUtf8(rot13(b64DecodeUtf8(b64DecodeUtf8(combined))));
+      let obj;
+      try {
+        obj = JSON.parse(decoded);
+      } catch (e) {
+        return "";
+      }
+      const encodedUrl = b64DecodeUtf8(obj.o || "").trim();
+      const data = b64EncodeUtf8(obj.data || "").trim();
+      const blogUrl = (obj.blog_url || "").trim();
+      let direct = "";
+      if (blogUrl && data) {
+        try {
+          direct = (yield fetchText(blogUrl + "?re=" + encodeURIComponent(data), {}, 15e3)).trim();
+        } catch (e) {
+          direct = "";
+        }
+      }
+      return encodedUrl || direct;
+    } catch (e) {
+      return "";
+    }
+  });
 }
 function extractDoubleAtob(scriptTag) {
   const m = scriptTag.match(/var\s+url\s*=\s*atob\s*\(\s*atob\s*\(\s*['"]([^'"]+)['"]\s*\)\s*\)/);
@@ -993,112 +1087,74 @@ function resolveMany(source, links) {
     return out;
   });
 }
-function anchorHrefsContaining(html, needle) {
-  const out = [];
-  const re = /<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a\s*>/gi;
-  let m;
-  while ((m = re.exec(String(html || ""))) !== null) {
-    if (m[2].indexOf(needle) !== -1 && out.indexOf(m[1]) === -1)
-      out.push(m[1]);
-  }
-  return out;
-}
-function scrapeVegaLike(apiKey, source, ctx) {
+function scrape4khdhub(ctx) {
   return __async(this, null, function* () {
-    const base = yield dynUrl(apiKey);
-    if (!base || !ctx.imdbId)
+    if (!enabled("hdhub"))
+      return [];
+    const base = yield dynUrl("4khdhub");
+    if (!base || !ctx.title)
       return [];
     try {
-      const searchJson = JSON.parse(
-        yield fetchText(base + "/search.php?q=" + encodeURIComponent(ctx.imdbId) + "&page=1", {}, 2e4)
-      );
-      const hits = searchJson && searchJson.hits || [];
-      let permalink = null;
-      for (const h of hits) {
-        const doc = h.document || h;
-        if ((doc.imdb_id || doc.imdbId) === ctx.imdbId) {
-          permalink = doc.permalink;
-          break;
+      const searchHtml = yield fetchText(base + "/?s=" + encodeURIComponent(ctx.title), {}, 2e4);
+      let $ = import_cheerio_without_node_native2.default.load(searchHtml);
+      const want = ctx.title.toLowerCase();
+      let href = null;
+      $("div.card-grid > a").each(function(_, el) {
+        const content = ($(el).find("div.movie-card-content").text() || "").toLowerCase();
+        if (content.indexOf(want) !== -1 && (!ctx.year || content.indexOf(String(ctx.year)) !== -1)) {
+          href = $(el).attr("href");
+          return false;
         }
-      }
-      if (!permalink)
+      });
+      if (!href)
         return [];
-      const pageUrl = fixUrl(permalink, base);
-      const pageHtml = yield fetchText(pageUrl, {}, 2e4);
-      let $ = import_cheerio_without_node_native2.default.load(pageHtml);
-      const imdbHref = $('a[href*="imdb"]').attr("href") || "";
-      if (imdbHref && imdbHref.indexOf(ctx.imdbId) === -1)
-        return [];
-      const links = [];
+      const pageHtml = yield fetchText(fixUrl(href, base), {}, 2e4);
+      $ = import_cheerio_without_node_native2.default.load(pageHtml);
+      let raws = [];
       if (!ctx.isTv) {
-        const btnHrefs = anchorHrefsContaining(pageHtml, "dwd-button");
-        for (const href of btnHrefs.slice(0, 6)) {
-          try {
-            const sub = yield fetchText(fixUrl(href, base), {}, 15e3);
-            const $s = import_cheerio_without_node_native2.default.load(sub);
-            $s("p > a").each(function(_, a) {
-              links.push($s(a).attr("href"));
-            });
-          } catch (e) {
-            continue;
-          }
-        }
-      } else {
-        $("h4, h3").each(function(_, el) {
-          const t = $(el).text() || "";
-          if (!new RegExp("Season " + ctx.season, "i").test(t))
-            return;
-          $(el).next().find("a").each(function(_2, a) {
-            if (/V-Cloud|Single|Episode|G-Direct/i.test($(a).text()))
-              links.push($(a).attr("href"));
-          });
+        $("div.download-item a").each(function(_, el) {
+          raws.push($(el).attr("href"));
         });
-        const epLinks = [];
-        for (const l of links.slice(0, 4)) {
-          try {
-            const sub = yield fetchText(fixUrl(l, base), {}, 15e3);
-            const $s = import_cheerio_without_node_native2.default.load(sub);
-            $s("h4").each(function(_, el) {
-              if (!new RegExp("Episode.*?" + ctx.episode, "i").test($s(el).text()))
-                return;
-              const v = $s(el).next().find("a").filter(function(_2, a) {
-                return /V-Cloud/i.test($s(a).text());
-              }).attr("href");
-              if (v)
-                epLinks.push(v);
+      } else {
+        const slug = episodeSlug(ctx.season, ctx.episode);
+        $("div.episode-download-item").each(function(_, el) {
+          const t = $(el).find("div.episode-file-title").text() || "";
+          if (t.indexOf(slug.code) !== -1 || t.indexOf(slug.alt) !== -1) {
+            $(el).find("div.episode-links > a").each(function(_2, a) {
+              raws.push($(a).attr("href"));
             });
-          } catch (e) {
-            continue;
           }
-        }
-        return yield resolveMany(source, epLinks);
+        });
       }
-      return yield resolveMany(source, links);
+      const links = [];
+      for (const r of raws) {
+        if (!r)
+          continue;
+        if (/hubcloud|hubdrive/i.test(r))
+          links.push(r);
+        else {
+          const resolved = yield getRedirectLinks(r);
+          if (resolved)
+            links.push(resolved);
+        }
+      }
+      return yield resolveMany("4KHDHub", links);
     } catch (e) {
-      console.log("[Streamline][" + source + "] " + e.message);
+      console.log("[Streamline][4khdhub] " + e.message);
       return [];
     }
   });
 }
-function scrapeVegamovies(ctx) {
-  return __async(this, null, function* () {
-    if (!enabled("vegamovies"))
-      return [];
-    if (ctx.isBollywood)
-      return [];
-    return yield scrapeVegaLike("vegamovies", "VegaMovies", ctx);
-  });
-}
 
-// src/vegamovies/index.js
+// src/hdhub/index.js
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     try {
       const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
-      const out = yield withTimeout(scrapeVegamovies(ctx), 2e4, "vegamovies");
+      const out = yield withTimeout(scrape4khdhub(ctx), 2e4, "4khdhub");
       return presentStreams(dedupe(yield withSharedSubs(out, ctx)), ctx);
     } catch (e) {
-      console.log("[Streamline][vegamovies] " + (e && e.message));
+      console.log("[Streamline][4khdhub] " + (e && e.message));
       return [];
     }
   });
@@ -1109,211 +1165,3 @@ function onSettings() {
   });
 }
 module.exports = { getStreams, onSettings };
-
-/* ===== nvio post-filter v1.0 (auto-injected) ============================
-   Rules (per user request 2026-09):
-   1. Language gate: only English / Tagalog (Filipino) audio lanes are kept.
-      Streams explicitly tagged with another audio language (hindi, tamil,
-      spanish, arabic, korean, ...) are dropped unless an allowed language
-      is also present (dual/multi audio) or no language is tagged at all.
-      Subtitle-only tokens (ESub, HindiSub, ...) are ignored by the gate.
-   2. Quality gate: unknown/"Auto" resolutions are probed from the HLS
-      master playlist; everything below 720p, CAM/telesync, and still-
-      unknown rows are dropped. Survivors are labeled 720p/1080p/1440p/4K.
-   3. Dedupe: exact URL, then normalized URL (query stripped, torrent
-      info-hash), then identical name+quality rows. A short-TTL global
-      registry also removes the same URL reported by two different
-      providers (cross-provider duplicates).
-   Opt-out: set SCRAPER_SETTINGS.postFilter = false.
-======================================================================== */
-(function () {
-  var PROVIDER = "vegamovies";
-  var G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
-  function settings() {
-    try { return (G && G.SCRAPER_SETTINGS) || {}; } catch (e) { return {}; }
-  }
-  function hasTimers() { return typeof setTimeout === "function" && typeof clearTimeout === "function"; }
-
-  /* ---------- quality ---------- */
-  function normQ(q) {
-    var s = String(q == null ? "" : q).toLowerCase();
-    if (!s) return "";
-    if (/8k/.test(s)) return "4K";
-    if (/2160|4k|uhd/.test(s)) return "4K";
-    if (/1440/.test(s)) return "1440p";
-    if (/1080|fhd/.test(s)) return "1080p";
-    if (/720/.test(s)) return "720p";
-    if (/480|360|240|\bsd\b/.test(s)) return "CAM";
-    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/.test(s)) return "CAM";
-    return "";
-  }
-  function qFromText(text) {
-    var s = String(text || "");
-    var m = s.match(/(\d{3,4})\s*p/i);
-    if (m) {
-      var n = parseInt(m[1], 10);
-      if (n >= 2100) return "4K";
-      if (n >= 1300) return "1440p";
-      if (n >= 1000) return "1080p";
-      if (n >= 640) return "720p";
-      return "CAM";
-    }
-    if (/\b8k\b/i.test(s) || /2160|4k|uhd/i.test(s)) return "4K";
-    if (/1440p/i.test(s)) return "1440p";
-    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/i.test(s)) return "CAM";
-    if (/480p|360p|240p|\bsd\b|\bdvdrip\b/i.test(s)) return "CAM";
-    if (/\bhd\b/i.test(s)) return "720p";
-    return "";
-  }
-  var qualCache = G.__NV_QUAL_CACHE__ || (G.__NV_QUAL_CACHE__ = {});
-  function probeM3u8(url, headers) {
-    var now = Date.now();
-    var c = qualCache[url];
-    if (c && now - c.t < (c.q ? 15 * 60 * 1000 : 3 * 60 * 1000)) {
-      return Promise.resolve(c.q);
-    }
-    var opts = { headers: Object.assign({}, headers || {}) };
-    var p = fetch(url, opts).then(function (r) {
-      return r.ok ? r.text() : "";
-    }).then(function (t) {
-      var q = "";
-      if (t && t.indexOf("#EXTM3U") !== -1) {
-        var best = 0, re = /RESOLUTION=(\d+)x(\d+)/gi, m;
-        while ((m = re.exec(t)) !== null) {
-          var h = parseInt(m[2], 10);
-          if (h > best) best = h;
-        }
-        if (best >= 2100) q = "4K";
-        else if (best >= 1300) q = "1440p";
-        else if (best >= 1000) q = "1080p";
-        else if (best >= 640) q = "720p";
-        else if (best > 0) q = "CAM";
-      }
-      qualCache[url] = { t: now, q: q };
-      return q;
-    }).catch(function () { qualCache[url] = { t: now, q: "" }; return ""; });
-    if (hasTimers()) {
-      p = Promise.race([p, new Promise(function (res) {
-        var timer = setTimeout(function () { res(""); }, 6000);
-        if (typeof timer === "object" && typeof timer.unref === "function") timer.unref();
-      })]);
-    }
-    return p;
-  }
-
-  /* ---------- language gate ---------- */
-  var BLOCK_RE = new RegExp(
-    "\\b(hindi|hin|tamil|telugu|malayalam|mallu|kannada|bengali|bangla|punjabi|marathi|bhojpuri|gujarati|" +
-    "odia|assamese|nepali|urdu|sinhala|arabic|ara|farsi|persian|turkish|turkce|espanol|spanish|latino|" +
-    "castellano|french|vostfr|german|deutsch|russian|korean|kor|japanese|jpn|chinese|mandarin|cantonese|" +
-    "thai|vietnamese|indonesian|bahasa|portuguese|brasileiro|italian|polish|ukrainian|hebrew|" +
-    "hungarian|romanian|dutch|flemish|greek|czech|swedish|danish|norwegian|finnish|org)\\b", "i");
-  var ALLOW_RE = /\b(english|eng|tagalog|filipino)\b/i;
-  var SUB_RE = /\b[a-z0-9]{0,12}subs?\b/gi;
-  // NOTE: gate runs on the stream TITLE only (release names / labels).
-  // Provider names (e.g. "MallumV") must not trigger the language gate.
-  function langAllowed(titleText) {
-    var t = String(titleText || "").replace(SUB_RE, " ");
-    if (BLOCK_RE.test(t)) return ALLOW_RE.test(t);
-    return true;
-  }
-
-  /* ---------- dedupe ---------- */
-  function normUrl(u) {
-    var s = String(u || "");
-    if (/^magnet:/i.test(s)) {
-      var m = s.match(/btih:([a-z0-9]+)/i);
-      return "m:" + (m ? m[1].toLowerCase() : s.slice(0, 80));
-    }
-    return s.replace(/[#?].*$/, "").replace(/\/+$/, "");
-  }
-  var SEEN = G.__NV_SEEN_URLS__ || (G.__NV_SEEN_URLS__ = {});
-  // SEEN[nu] = { exp: <ts>, owner: <provider> }
-  // - same URL from a DIFFERENT provider within TTL -> dropped (cross-provider dup)
-  // - same provider re-querying its own URL -> allowed (repeat opens must still
-  //   return rows) and its claim is refreshed
-  function claim(nu, now, owner) {
-    if (!nu) return true;
-    var e = SEEN[nu];
-    if (e && e.exp > now && e.owner !== owner) return false;
-    SEEN[nu] = { exp: now + 120000, owner: owner };
-    return true;
-  }
-
-  /* ---------- main ---------- */
-  function rank(q) {
-    if (q === "4K") return 4;
-    if (q === "1440p") return 3.5;
-    if (q === "1080p") return 3;
-    if (q === "720p") return 2;
-    return 0;
-  }
-  function postProcess(list) {
-    var now = Date.now();
-    var kept = [];
-    var probes = [];
-    var rows = [];
-    (list || []).forEach(function (s, i) {
-      if (!s || !s.url) return;
-      if (!langAllowed(s.title)) return;
-      var text = (s.name || "") + " " + (s.title || "");
-      var isMagnet = /^magnet:/i.test(String(s.url));
-      var q = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText(text);
-      var isHlsLike = /m3u8/i.test(String(s.url)) ||
-        (!/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) && /^https?:/i.test(String(s.url)));
-      if (!q && !isMagnet && isHlsLike) {
-        rows.push({ s: s, i: i });
-        probes.push(probeM3u8(String(s.url), s.headers));
-      } else {
-        rows.push({ s: s, i: i });
-        probes.push(Promise.resolve(q));
-      }
-    });
-    return Promise.all(probes).then(function (qs) {
-      var ranked = [];
-      rows.forEach(function (row, k) {
-        var q = qs[k];
-        if (!q) return; // unknown resolution -> removed
-        if (q === "CAM") return; // cam / sd / sub-720 -> removed
-        row.s.quality = q;
-        ranked.push({ s: row.s, i: row.i, q: q });
-      });
-      // best first so dedupe keeps the strongest duplicate (stable)
-      ranked.sort(function (a, b) {
-        var r = rank(b.q) - rank(a.q);
-        if (r !== 0) return r;
-        return a.i - b.i;
-      });
-      var seenLocal = {}, out = [];
-      ranked.forEach(function (row) {
-        var s = row.s;
-        var nu = normUrl(s.url);
-        if (seenLocal[nu]) return;
-        if (!claim(nu, now, PROVIDER)) return; // already reported by a different provider
-        seenLocal[nu] = 1;
-        out.push(s);
-      });
-      return out.slice(0, 40);
-    }).catch(function () { return (list || []).slice(0, 40); });
-  }
-
-  var __orig = null;
-  try { __orig = module.exports && module.exports.getStreams; } catch (e) { __orig = null; }
-  if (typeof __orig === "function") {
-    module.exports.getStreams = function () {
-      var args = Array.prototype.slice.call(arguments), self = this;
-      function finish(v) {
-        if (settings().postFilter === false) return v;
-        try { return postProcess(Array.isArray(v) ? v : []); }
-        catch (e) { return Array.isArray(v) ? v : []; }
-      }
-      try {
-        var r = __orig.apply(self, args);
-        if (r && typeof r.then === "function") {
-          return r.then(function (v) { return finish(v); }, function () { return []; });
-        }
-        return finish(r);
-      } catch (e) { return Promise.resolve([]); }
-    };
-  }
-})();

@@ -1,198 +1,295 @@
-/**
- * Movish - Nuvio provider (v1.0.0)
- *
- * movish.to is a Vidstack-based app with a TMDB-keyed sources API. Chain
- * verified live 2026-09-10:
- *
- *   GET {base}/player-sources/{serverKey}/movie/{tmdbId}
- *   GET {base}/player-sources/{serverKey}/tv/{tmdbId}/{season}/{episode}
- *     Headers: Accept: application/json, Referer: {base}/player/...
- *     -> {"source":"rigel","label":"Rigel","streams":[
- *          {"url":"https://api.dlproxy.com/v1/play/...","label":"Delta",
- *           "type":"mp4","quality":"360p"}, ...]}
- *
- *   Server keys live on the player page ({key,label} array). Only "rigel"
- *   was observed; the key list is parsed from the player page each call so
- *   new servers are picked up automatically.
- *
- *   GET {base}/player-episodes/{tmdbId}/{season} -> {"episodes":[...]}  (info only)
- *
- * No site search needed - the whole API is TMDB-id addressed. The dlproxy
- * streams are direct (mp4) or HLS per the "type" field. Rows are labeled
- * "Movish | {label} ({quality})". Language policy: English catalog.
- * Pure ES5 promise chains - QuickJS + Nuvio TV worker safe.
- */
+// OK.ru (Odnoklassniki) Plugin for Nuvio
+// Extracts direct MP4/HLS URLs from video embed pages
+// Tested and working - returns 6 streams (HLS + 5 MP4 qualities)
 
-var SITE_NAME = "Movish";
-var BASE_CANDIDATES = [
-  "https://movish.to"
-];
-var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+var MAIN_URL = "https://ok.ru";
+var EMBED_URL = "https://ok.ru/videoembed";
 
-var ACTIVE_BASE = "";
-
-function settings() {
-  try {
-    return (typeof globalThis !== "undefined" && globalThis.SCRAPER_SETTINGS) ||
-      (typeof global !== "undefined" && global.SCRAPER_SETTINGS) || {};
-  } catch (e) { return {}; }
+function log(msg) {
+    console.log("[OKru] " + msg);
 }
 
-function hasTimers() {
-  return typeof setTimeout === "function";
-}
-
-function fetchText(url, options) {
-  options = options || {};
-  var opts = {
-    method: options.method || "GET",
-    headers: options.headers || { "User-Agent": UA },
-    redirect: "follow"
-  };
-  if (options.body) opts.body = options.body;
-  if (!hasTimers()) {
-    return fetch(url, opts).then(function (res) {
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      return res.text();
-    });
-  }
-  return new Promise(function (resolve, reject) {
-    var timer = setTimeout(function () { reject(new Error("fetch timeout")); }, options.timeout || 15000);
-    fetch(url, opts).then(function (res) {
-      clearTimeout(timer);
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      return res.text();
-    }).then(function (t) { resolve(t); }, function (e) { clearTimeout(timer); reject(e); });
-  });
-}
-
-function fetchJson(url, options) {
-  return fetchText(url, options).then(function (t) {
-    try { return JSON.parse(t); } catch (e) { return null; }
-  });
-}
-
-function candidateBases() {
-  var custom = settings().baseUrl;
-  var bases = [];
-  if (custom && /^https?:\/\//i.test(String(custom))) {
-    bases.push(String(custom).replace(/\/+$/, ""));
-  }
-  BASE_CANDIDATES.forEach(function (b) { bases.push(b); });
-  return bases;
-}
-
-function resolveBase() {
-  if (ACTIVE_BASE) return Promise.resolve(ACTIVE_BASE);
-  var chain = Promise.reject(new Error("no base"));
-  candidateBases().forEach(function (b) {
-    chain = chain.catch(function () {
-      return fetchText(b + "/", { headers: { "User-Agent": UA }, timeout: 9000 })
-        .then(function () { ACTIVE_BASE = b; return b; });
-    });
-  });
-  return chain;
-}
-
-// Pull [{key,label}] out of the player page JS (pattern: [{"key":"rigel","label":"Rigel"}])
-function serverKeys(base, isTv, tmdbId, season, episode) {
-  var playerPath = isTv
-    ? "/player/tv/" + tmdbId + "/" + season + "/" + episode
-    : "/player/movie/" + tmdbId;
-  return fetchText(base + playerPath, {
-    headers: { "User-Agent": UA, "Accept": "text/html,*/*", "Referer": base + "/" },
-    timeout: 14000
-  }).then(function (html) {
-    var keys = [];
-    var m = html.match(/\[\s*\{\s*["']key["']\s*:\s*["']([a-z0-9_-]+)["']/i);
-    if (m) {
-      var arrRe = /\{\s*["']key["']\s*:\s*["']([a-z0-9_-]+)["']\s*,\s*["']label["']\s*:\s*["']([^"']+)["']\s*\}/gi;
-      var am;
-      while ((am = arrRe.exec(html)) !== null) {
-        keys.push({ key: am[1], label: am[2] });
-      }
+function safeJsonParse(text) {
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        return null;
     }
-    if (!keys.length) keys.push({ key: "rigel", label: "Rigel" }); // observed default
-    return keys;
-  }).catch(function () {
-    return [{ key: "rigel", label: "Rigel" }];
-  });
 }
 
-function qualityOf(q) {
-  var s = String(q || "").toLowerCase();
-  if (s.indexOf("2160") !== -1 || s === "4k") return "4K";
-  if (s.indexOf("1440") !== -1) return "1440p";
-  if (s.indexOf("1080") !== -1) return "1080p";
-  if (s.indexOf("720") !== -1) return "720p";
-  if (s.indexOf("480") !== -1) return "480p";
-  if (s.indexOf("360") !== -1) return "360p";
-  return "Auto";
+function unescapeHtml(text) {
+    if (!text) return text;
+    return text
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, ' ');
 }
 
-function getStreams(tmdbId, mediaType, season, episode) {
-  var isTv = mediaType === "tv";
-  var s = season || 1;
-  var e = episode || 1;
-  console.log("[" + SITE_NAME + "] start " + mediaType + " " + tmdbId + (isTv ? " S" + s + "E" + e : ""));
-  try { tmdbId = String(tmdbId); } catch (err) { tmdbId = ""; }
-  if (!tmdbId) return Promise.resolve([]);
-
-  return resolveBase().then(function (base) {
-    return serverKeys(base, isTv, tmdbId, s, e).then(function (keys) {
-      var chain = Promise.resolve([]);
-      keys.forEach(function (k) {
-        chain = chain.then(function (rows) {
-          var srcPath = isTv
-            ? "/player-sources/" + k.key + "/tv/" + tmdbId + "/" + s + "/" + e
-            : "/player-sources/" + k.key + "/movie/" + tmdbId;
-          return fetchJson(base + srcPath, {
-            headers: { "User-Agent": UA, "Accept": "application/json", "Referer": base + "/" },
-            timeout: 14000
-          }).then(function (payload) {
-            var streams = (payload && payload.streams) || [];
-            streams.forEach(function (st) {
-              if (!st || !st.url || !/^https?:\/\//i.test(st.url)) return;
-              if (rows.some(function (r) { return r.url === st.url; })) return;
-              var q = qualityOf(st.quality);
-              var kind = String(st.type || "mp4").toLowerCase() === "hls" ? "HLS" : "Direct";
-              rows.push({
-                name: SITE_NAME + " | " + (k.label || k.key),
-                title: SITE_NAME + (isTv ? " S" + s + "E" + e : "") + " | " + (st.label || kind) + " - " + q,
-                url: st.url,
-                quality: q,
-                headers: { "User-Agent": UA, "Referer": base + "/" }
-              });
-            });
-            return rows;
-          }).catch(function () { return rows; });
+function fetchHtml(url, headers) {
+    var opts = { headers: headers || {} };
+    return fetch(url, opts)
+        .then(function(response) {
+            if (!response.ok) throw new Error("HTTP " + response.status);
+            return response.text();
         });
-      });
-      return chain.then(function (rows) {
-        console.log("[" + SITE_NAME + "] returning " + rows.length + " stream(s)");
-        return rows;
-      });
-    });
-  }).catch(function (error) {
-    console.log("[" + SITE_NAME + "] failed: " + (error && error.message ? error.message : error));
-    return [];
-  });
 }
 
-function onSettings() {
-  return Promise.resolve([
-    {
-      key: "baseUrl",
-      title: "Movish base URL (optional)",
-      label: "Movish base URL (optional)",
-      type: "text",
-      default: "",
-      description: "Leave blank to use built-in mirrors. Use when the site rotates domains."
+function extractDataOptions(html) {
+    log("Extracting data-options from embed page...");
+
+    var match = html.match(/data-options=(['"])(\{.+?\})\1/);
+    if (match && match[2]) {
+        log("Found data-options (pattern 1)");
+        return unescapeHtml(match[2]);
     }
-  ]);
+
+    match = html.match(/data-options='(\{.+?\})'/);
+    if (match && match[1]) {
+        log("Found data-options (pattern 2)");
+        return unescapeHtml(match[1]);
+    }
+
+    match = html.match(/data-options=([^\s>]+)/);
+    if (match && match[1]) {
+        log("Found data-options (pattern 3)");
+        return unescapeHtml(match[1]);
+    }
+
+    log("Could not find data-options in HTML");
+    return null;
 }
 
-module.exports = { getStreams: getStreams, onSettings: onSettings };
+function parseMetadata(dataOptionsStr) {
+    var data = safeJsonParse(dataOptionsStr);
+    if (!data) {
+        log("Failed to parse data-options JSON");
+        return null;
+    }
+
+    log("data-options keys: " + Object.keys(data).join(", "));
+
+    var flashvars = data.flashvars || data;
+    if (!flashvars) {
+        log("No flashvars found");
+        return null;
+    }
+
+    var metadata = flashvars.metadata;
+    if (!metadata && typeof flashvars === "string") {
+        try {
+            metadata = JSON.parse(flashvars);
+        } catch (e) {
+            log("flashvars is not valid JSON string");
+        }
+    }
+
+    if (!metadata) {
+        log("No metadata found");
+        return null;
+    }
+
+    if (typeof metadata === "string") {
+        try {
+            metadata = JSON.parse(metadata);
+        } catch (e) {
+            log("metadata is not valid JSON string");
+            return null;
+        }
+    }
+
+    log("Metadata keys: " + Object.keys(metadata).join(", "));
+    return metadata;
+}
+
+function extractVideoUrls(metadata) {
+    var streams = [];
+
+    if (!metadata) {
+        log("No metadata to extract from");
+        return streams;
+    }
+
+    var movie = metadata.movie || {};
+    var videos = metadata.videos || movie.videos || [];
+
+    if (!Array.isArray(videos) || videos.length === 0) {
+        log("No videos array found");
+        if (metadata.url) {
+            videos = [{ name: "default", url: metadata.url }];
+        } else {
+            return streams;
+        }
+    }
+
+    log("Found " + videos.length + " quality variants");
+
+    var qualityMap = {
+        "mobile":  { label: "144p",  height: 144,  order: 1 },
+        "lowest":  { label: "240p",  height: 240,  order: 2 },
+        "low":     { label: "360p",  height: 360,  order: 3 },
+        "sd":      { label: "480p",  height: 480,  order: 4 },
+        "hd":      { label: "720p",  height: 720,  order: 5 },
+        "full":    { label: "1080p", height: 1080, order: 6 },
+        "quad":    { label: "1440p", height: 1440, order: 7 },
+        "ultra":   { label: "4K",    height: 2160, order: 8 }
+    };
+
+    for (var i = 0; i < videos.length; i++) {
+        var video = videos[i];
+        if (!video || !video.url || video.disallowed) continue;
+
+        var name = video.name || "unknown";
+        var quality = qualityMap[name] || { label: name.toUpperCase(), height: 0, order: 99 };
+
+        streams.push({
+            name: name,
+            label: quality.label,
+            height: quality.height,
+            order: quality.order,
+            url: video.url
+        });
+    }
+
+    streams.sort(function(a, b) { return b.order - a.order; });
+    return streams;
+}
+
+function extractHlsUrl(metadata) {
+    if (!metadata) return null;
+
+    var hlsFields = ["hlsManifestUrl", "hlsUrl", "manifestUrl", "m3u8Url"];
+    for (var i = 0; i < hlsFields.length; i++) {
+        if (metadata[hlsFields[i]]) {
+            log("Found HLS URL: " + metadata[hlsFields[i]].substring(0, 60));
+            return metadata[hlsFields[i]];
+        }
+    }
+    return null;
+}
+
+function getVideoInfo(videoId) {
+    var embedUrl = EMBED_URL + "/" + videoId;
+    log("Fetching embed page: " + embedUrl);
+
+    return fetchHtml(embedUrl, {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Referer": MAIN_URL + "/"
+    }).then(function(html) {
+        if (!html || html.length === 0) {
+            throw new Error("Empty embed page");
+        }
+
+        log("Embed page length: " + html.length);
+
+        if (html.indexOf("vp_video_stub_txt") !== -1 || html.indexOf("not available") !== -1) {
+            throw new Error("Video not available (region locked or removed)");
+        }
+
+        var dataOptionsStr = extractDataOptions(html);
+        if (!dataOptionsStr) {
+            throw new Error("Could not extract data-options");
+        }
+
+        var metadata = parseMetadata(dataOptionsStr);
+        if (!metadata) {
+            throw new Error("Could not parse metadata");
+        }
+
+        var movie = metadata.movie || {};
+
+        return {
+            id: videoId,
+            title: movie.title || "OK.ru Video",
+            duration: movie.duration || "0",
+            poster: movie.poster || "",
+            videos: extractVideoUrls(metadata),
+            hlsUrl: extractHlsUrl(metadata),
+            metadata: metadata
+        };
+    });
+}
+
+function toNuvioStreams(videoInfo) {
+    var streams = [];
+
+    if (!videoInfo) {
+        log("No video info to convert");
+        return streams;
+    }
+
+    var title = videoInfo.title || "OK.ru Video";
+    var baseHeaders = {
+        "Origin": MAIN_URL,
+        "Referer": EMBED_URL + "/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    };
+
+    // HLS stream
+    if (videoInfo.hlsUrl) {
+        streams.push({
+            name: "OKru | Auto | HLS",
+            title: title + " | Auto | OK.ru",
+            url: videoInfo.hlsUrl,
+            quality: "Auto",
+            provider: "okru",
+            headers: baseHeaders
+        });
+        log("Added HLS stream");
+    }
+
+    // MP4 streams
+    var videos = videoInfo.videos || [];
+    for (var i = 0; i < videos.length; i++) {
+        var video = videos[i];
+        if (!video || !video.url) continue;
+
+        streams.push({
+            name: "OKru | " + video.label + " | MP4",
+            title: title + " | " + video.label + " | OK.ru",
+            url: video.url,
+            quality: video.label,
+            provider: "okru",
+            headers: baseHeaders
+        });
+        log("Added MP4 stream: " + video.label);
+    }
+
+    return streams;
+}
+
+// Main entry point - uses OK.ru video ID directly
+function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
+    log("Starting for OK.ru video ID: " + tmdbId);
+
+    var videoId = String(tmdbId);
+
+    return getVideoInfo(videoId)
+        .then(function(videoInfo) {
+            var streams = toNuvioStreams(videoInfo);
+            log("Returning " + streams.length + " streams");
+            return streams;
+        })
+        .catch(function(err) {
+            log("Error: " + err.message);
+            return [];
+        });
+}
+
+// Export
+if (typeof module !== "undefined" && module.exports) {
+    module.exports = { 
+        getStreams: getStreams,
+        getVideoInfo: getVideoInfo
+    };
+} else if (typeof global !== "undefined") {
+    global.getStreams = getStreams;
+    global.getVideoInfo = getVideoInfo;
+}
 
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
    Rules (per user request 2026-09):
@@ -211,7 +308,7 @@ module.exports = { getStreams: getStreams, onSettings: onSettings };
    Opt-out: set SCRAPER_SETTINGS.postFilter = false.
 ======================================================================== */
 (function () {
-  var PROVIDER = "movish";
+  var PROVIDER = "okru";
   var G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
   function settings() {
     try { return (G && G.SCRAPER_SETTINGS) || {}; } catch (e) { return {}; }
