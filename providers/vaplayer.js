@@ -103,7 +103,7 @@ function fetchWithTimeout(url, options, timeoutMs) {
     if (!hasTimers()) {
       return fetch(url, options || {});
     }
-    const timeout = timeoutMs || 2e4;
+    const timeout = timeoutMs || 8e3;
     let timer = null;
     try {
       const fetchPromise = fetch(url, options || {});
@@ -186,7 +186,7 @@ function makeStream(source, title, url, quality, headers, subtitles, extra) {
 function withTimeout(promise, ms, label) {
   if (!hasTimers())
     return promise;
-  const timeout = ms || 25e3;
+  const timeout = ms || 8e3;
   return Promise.race([
     promise,
     new Promise(function(resolve) {
@@ -493,7 +493,7 @@ function scrapeVaplayer(ctx) {
     const url = !ctx.isTv ? VAPLAYER_API + "/api.php?imdb=" + ctx.imdbId + "&type=movie" : VAPLAYER_API + "/api.php?imdb=" + ctx.imdbId + "&type=tv&season=" + ctx.season + "&episode=" + ctx.episode;
     try {
       const json = JSON.parse(
-        yield fetchText(url, { Referer: "https://nextgencloudfabric.com/" }, 2e4)
+        yield fetchText(url, { Referer: "https://nextgencloudfabric.com/" }, 8e3)
       );
       const data = json && json.data || {};
       const urls = data.stream_urls || [];
@@ -528,7 +528,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     try {
       const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
-      const out = yield withTimeout(scrapeVaplayer(ctx), 2e4, "vaplayer");
+      const out = yield withTimeout(scrapeVaplayer(ctx), 8e3, "vaplayer");
       return presentStreams(dedupe(out), ctx);
     } catch (e) {
       console.log("[Streamline][vaplayer] " + (e && e.message));
@@ -622,7 +622,7 @@ module.exports = { getStreams };
     }).catch(function () { qualCache[url] = { t: now, q: "" }; return ""; });
     if (hasTimers()) {
       p = Promise.race([p, new Promise(function (res) {
-        var timer = setTimeout(function () { res(""); }, 2000);
+        var timer = setTimeout(function () { res(""); }, 6000);
         if (typeof timer === "object" && typeof timer.unref === "function") timer.unref();
       })]);
     }
@@ -678,6 +678,7 @@ module.exports = { getStreams };
   }
   function postProcess(list) {
     var now = Date.now();
+    var kept = [];
     var probes = [];
     var rows = [];
     (list || []).forEach(function (s, i) {
@@ -699,17 +700,11 @@ module.exports = { getStreams };
     return Promise.all(probes).then(function (qs) {
       var ranked = [];
       rows.forEach(function (row, k) {
-        var s = row.s;
-        var tq = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText((s.name || "") + " " + (s.title || ""));
-        // nv best-settings 4.26.0: FAIL-OPEN quality gate (AIO parity)
-        // - a successful HLS probe result wins
-        // - otherwise the title-derived quality is kept, else "Auto"
-        // - unknown-resolution rows are NO LONGER dropped; only rows whose
-        //   title explicitly tags CAM/telesync/sub-720p are removed
-        var q = qs[k] || tq || "Auto";
-        if (q === "CAM") return; // explicit cam / sd / sub-720 tag -> removed
-        s.quality = q;
-        ranked.push({ s: s, i: row.i, q: q });
+        var q = qs[k];
+        if (!q) return; // unknown resolution -> removed
+        if (q === "CAM") return; // cam / sd / sub-720 -> removed
+        row.s.quality = q;
+        ranked.push({ s: row.s, i: row.i, q: q });
       });
       // best first so dedupe keeps the strongest duplicate (stable)
       ranked.sort(function (a, b) {

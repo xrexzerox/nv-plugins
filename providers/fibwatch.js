@@ -6,444 +6,40 @@
  * identical to the AIO original.
  */
 /* nv-plugins best-settings pass 4.24.0: hard 8s deadline on every network call */
-var __nvFetch = function () {
+var __nvFetch = (function () {
   var _f = null;
-  try {
-    _f = typeof fetch === "function" ? fetch : null;
-  } catch (e) {
-    _f = null;
-  }
-  if (!_f) {
-    return function () {
-      return Promise.reject(new Error("no fetch"));
-    };
-  }
+  try { _f = (typeof fetch === "function") ? fetch : null; } catch (e) { _f = null; }
+  if (!_f) return function () { return Promise.reject(new Error("no fetch")); };
   var hasT = typeof setTimeout === "function";
   return function (input, init) {
     var p;
-    try {
-      p = _f.apply(this, arguments);
-    } catch (e) {
-      return Promise.reject(e);
-    }
-    if (!hasT || !p || typeof p.then !== "function") {
-      return p;
-    }
+    try { p = _f.apply(this, arguments); } catch (e) { return Promise.reject(e); }
+    if (!hasT || !p || typeof p.then !== "function") return p;
     return Promise.race([p, new Promise(function (_res, rej) {
-      var t = setTimeout(function () {
-        rej(new Error("nv deadline 8s"));
-      }, 8000);
-      if (t && typeof t.unref === "function") {
-        t.unref();
-      }
+      var t = setTimeout(function () { rej(new Error("nv deadline 8s")); }, 8000);
+      if (t && typeof t.unref === "function") t.unref();
     })]);
   };
-}();
+})();
 /* fail-soft require: node-core modules (net/http/assert/...) never crash the provider */
-var __nvRequire = function () {
+var __nvRequire = (function () {
   var _rq = null;
-  try {
-    _rq = typeof require === "function" ? require : null;
-  } catch (e) {
-    _rq = null;
-  }
+  try { _rq = (typeof require === "function") ? require : null; } catch (e) { _rq = null; }
   return function (name) {
-    if (_rq) {
-      try {
-        return _rq(name);
-      } catch (e) {}
-    }
+    if (_rq) { try { return _rq(name); } catch (e) { } }
     return {};
   };
-}();
+})();
 /* QuickJS-safe global aliases: embedded polyfills (forge/uuid/whatwg) reference
    window/self/document unguarded - in Nuvio's QuickJS those would throw
    ReferenceError at module load and kill the provider. */
-var window = typeof window !== "undefined" && window ? window : typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : {};
-var self = typeof self !== "undefined" && self ? self : window;
-var document = typeof document !== "undefined" && document ? document : {
-  createElement: function () {
-    return {
-      style: {},
-      setAttribute: function () {},
-      getElementsByTagName: function () {
-        return [];
-      }
-    };
-  },
-  getElementsByTagName: function () {
-    return [];
-  },
-  addEventListener: function () {}
-};
-var navigator = typeof navigator !== "undefined" && navigator ? navigator : {
-  userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
-};
-function v1() {
-  return "";
-}
-const v2 = v1; /*rotation removed*/
-;
-var __async = (v3, v4, v5) => {
-  return new Promise((v6, v7) => {
-    const v8 = v1;
-    var v9 = v10 => {
-      try {
-        v11(v5.next(v10));
-      } catch (v12) {
-        v7(v12);
-      }
-    };
-    var v13 = v14 => {
-      try {
-        v11(v5.throw(v14));
-      } catch (v15) {
-        v7(v15);
-      }
-    };
-    var v11 = v16 => v16.done ? v6(v16.value) : Promise.resolve(v16.value).then(v9, v13);
-    v11((v5 = v5.apply(v3, v4)).next());
-  });
-};
-var cheerio = __nvRequire("cheerio-without-node-native");
-var BASE_URL = "https://fibwatch.art";
-var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
-var BROWSER_UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36";
-var HEADERS = {
-  "User-Agent": BROWSER_UA,
-  Referer: BASE_URL + "/"
-};
-var PLAYBACK_HEADERS = {
-  "User-Agent": BROWSER_UA,
-  Referer: "https://urlshortlink.top/",
-  Origin: "https://urlshortlink.top"
-};
-/*string-table removed*/
-function extractQuality(v17) {
-  const v18 = {
-    dh1: 521,
-    dh2: 521,
-    dh3: 464,
-    dh4: 505,
-    dh5: 535,
-    dh6: 536
-  };
-  const v19 = v2;
-  const v20 = (v17 || "").toLowerCase();
-  if (v20.includes("2160") || v20.includes("4k")) {
-    return "4K";
-  }
-  if (v20.includes("1080")) {
-    return "1080p";
-  }
-  if (v20.includes("720")) {
-    return "720p";
-  }
-  if (v20.includes("480")) {
-    return "480p";
-  }
-  if (v20.includes("360")) {
-    return "360p";
-  }
-  return "Unknown";
-}
-function parseStreamFromShortenerHtml(v21) {
-  const v22 = {
-    dh7: 491
-  };
-  const v23 = {
-    dh8: 512
-  };
-  const v24 = v2;
-  if (!v21) {
-    return null;
-  }
-  const v25 = cheerio.load(v21);
-  let v26 = v25("a.hidden-button.buttonDownloadnew").attr("href");
-  if (!v26) {
-    v25("a").each((v27, v28) => {
-      const v29 = v24;
-      const v30 = v25(v28).attr("href") || "";
-      if (v30.includes("url=http")) {
-        v26 = v30;
-        return false;
-      }
-    });
-  }
-  if (!v26) {
-    const v31 = /https?:\/\/[^\s"'`<>]+?\.b-cdn\.net\/[^\s"'`<>]+\.(?:mkv|mp4|m3u8)/i;
-    const v32 = v21.match(v31);
-    if (v32) {
-      return v32[0];
-    }
-  }
-  if (v26) {
-    let v33 = v26.replace(/.*url=/, "").trim();
-    return decodeURIComponent(v33);
-  }
-  return null;
-} /*decoder removed*/
-function generateStreamLayout(v34, v35, v36, v37, v38, v39, v40) {
-  const v41 = {
-    dh9: 498,
-    dh10: 490,
-    dh11: 496,
-    dh12: 523,
-    dh13: 493,
-    dh14: 521,
-    dh15: 508,
-    dh16: 486,
-    dh17: 527,
-    dh18: 519,
-    dh19: 511,
-    dh20: 533,
-    dh21: 488,
-    dh22: 474
-  };
-  const v42 = v2;
-  var v43;
-  const v44 = v37.title || v37.name || "Unknown Title";
-  const v45 = v37.release_date || v37.first_air_date || "";
-  const v46 = v45 ? v45.split("-")[0] : "N/A";
-  const v47 = v34.toLowerCase();
-  let v48 = "Single-Audio";
-  let v49 = "Hindi";
-  if (v47.includes("dual") || v47.includes("hindi") && v47.includes("english")) {
-    v48 = "Dual-Audio";
-    v49 = "English • Hindi";
-  } else if (v47.includes("multi")) {
-    v48 = "Multi-Audio";
-    v49 = "Multilingual";
-  } else if (v47.includes("bangla")) {
-    v49 = "Bangla";
-  } else if (v47.includes("tamil")) {
-    v49 = "Tamil";
-  } else if (v47.includes("telugu")) {
-    v49 = "Telugu";
-  } else if (v47.includes("english")) {
-    v48 = "Single-Audio";
-    v49 = "English";
-  }
-  let v50 = "MKV";
-  if (v47.includes(".mp4")) {
-    v50 = "MP4";
-  }
-  if (v47.includes(".m3u8")) {
-    v50 = "M3U8 / HLS";
-  }
-  let v51 = "N/A";
-  if (v38) {
-    v51 = ((v43 = v37.episode_run_time) == null ? undefined : v43[0]) ? v37.episode_run_time[0] + " min" : "45 min";
-  } else {
-    v51 = v37.runtime ? v37.runtime + " min" : "N/A";
-  }
-  const v52 = v36.includes("4K") || v36.includes("2160") ? "🌟" : "💎";
-  const v53 = "⚫ FibWatch | " + v36 + " | " + v48;
-  const v54 = v38 ? "🎬 " + v44 + " - S" + v39 + "E" + v40 + " (" + v46 + ")" : "🎬 " + v44 + " - " + v46;
-  const v55 = v52 + " " + v36 + " | 🌍 " + v49;
-  const v56 = "🎞️ " + v50 + " | ⏱️ " + v51 + " | 📌 WEB-DL";
-  const v57 = v54 + "\n" + v55 + "\n" + v56;
-  return {
-    name: v53,
-    title: v57,
-    url: v34,
-    quality: v36,
-    behaviorHints: {
-      notWebReady: false
-    },
-    headers: PLAYBACK_HEADERS
-  };
-}
-function getStreams(v58, v59, v60, v61) {
-  const v62 = {
-    dh23: 479,
-    dh24: 518,
-    dh25: 520,
-    dh26: 531,
-    dh27: 462,
-    dh28: 492,
-    dh29: 526,
-    dh30: 489,
-    dh31: 506,
-    dh32: 520,
-    dh33: 500,
-    dh34: 462,
-    dh35: 495,
-    dh36: 462,
-    dh37: 528,
-    dh38: 468,
-    dh39: 480
-  };
-  const v63 = {
-    dh40: 475,
-    dh41: 506,
-    dh42: 522
-  };
-  const v64 = {
-    dh43: 477,
-    dh44: 461
-  };
-  return __async(this, null, function* () {
-    const v65 = v1;
-    try {
-      const v66 = "https://api.themoviedb.org/3/" + v59 + "/" + v58 + "?api_key=" + TMDB_API_KEY;
-      const v67 = yield (yield __nvFetch(v66)).json();
-      const v68 = v67.title || v67.name;
-      if (!v68) {
-        return [];
-      }
-      const v69 = BASE_URL + "/search?keyword=" + encodeURIComponent(v68) + "&page_id=1";
-      const v70 = yield (yield __nvFetch(v69, {
-        headers: HEADERS
-      })).text();
-      const v71 = cheerio.load(v70);
-      const v72 = [];
-      v71("div.video-thumb").each((v73, v74) => {
-        const v75 = v65;
-        const v76 = v71("a", v74).attr("href");
-        const v77 = v71("p.hptag", v74).text().trim() || v71("div.video-thumb img", v74).attr("alt") || "";
-        if (v76) {
-          v72.push({
-            title: v77,
-            url: v76
-          });
-        }
-      });
-      if (!v72.length) {
-        return [];
-      }
-      const v78 = v59 === "tv";
-      const v79 = v68.toLowerCase();
-      let v80 = v72.find(v81 => v81.title.toLowerCase().includes(v79));
-      if (!v80) {
-        v80 = v72[0];
-      }
-      const v82 = v80.url.startsWith("http") ? v80.url : "" + BASE_URL + v80.url;
-      const v83 = yield (yield __nvFetch(v82, {
-        headers: HEADERS
-      })).text();
-      const v84 = cheerio.load(v83);
-      const v85 = v84("input#video-id").attr("value");
-      if (!v85) {
-        return [];
-      }
-      const v86 = [];
-      const v87 = v88 => __async(this, null, function* () {
-        const v89 = v65;
-        for (const v90 of v88) {
-          let v91 = (v90.url || "").trim();
-          if (!v91) {
-            continue;
-          }
-          if (!v91.startsWith("http")) {
-            v91 = "" + BASE_URL + v91;
-          }
-          const v92 = extractQuality(v90.res || v91);
-          if (v91.match(/\.(mp4|mkv|m3u8)/i)) {
-            v86.push({
-              url: v91,
-              quality: v92
-            });
-          } else {
-            try {
-              const v93 = yield (yield __nvFetch(v91, {
-                headers: HEADERS
-              })).text();
-              const v94 = parseStreamFromShortenerHtml(v93);
-              if (v94 && v94.startsWith("http")) {
-                const v95 = extractQuality(v94) !== "Unknown" ? extractQuality(v94) : v92;
-                v86.push({
-                  url: v94,
-                  quality: v95
-                });
-              }
-            } catch (v96) {}
-          }
-        }
-      });
-      if (v78) {
-        const v97 = BASE_URL + "/ajax/episodes.php?video_id=" + v85;
-        const v98 = yield (yield __nvFetch(v97, {
-          headers: HEADERS
-        })).json();
-        const v99 = v98.episodes || [];
-        if (!v99.length) {
-          return [];
-        }
-        let v100 = "";
-        for (const v101 of v99) {
-          const v102 = (v101.title || "").toLowerCase();
-          const v103 = v102.match(/s(\d{1,2})e(\d{1,3})/);
-          if (v103) {
-            const v104 = parseInt(v103[1]);
-            const v105 = parseInt(v103[2]);
-            if (v104 === v60 && v105 === v61) {
-              v100 = v101.url ? v101.url.startsWith("http") ? v101.url : "" + BASE_URL + v101.url : "";
-              break;
-            }
-          }
-        }
-        if (!v100 && v99.length > 0) {
-          v100 = v99[0].url ? v99[0].url.startsWith("http") ? v99[0].url : "" + BASE_URL + v99[0].url : "";
-        }
-        if (!v100) {
-          return [];
-        }
-        const v106 = yield (yield __nvFetch(v100, {
-          headers: HEADERS
-        })).text();
-        const v107 = cheerio.load(v106);
-        const v108 = v107("input#video-id").attr("value");
-        if (v108) {
-          const v109 = BASE_URL + "/ajax/resolution_switcher.php?video_id=" + v108;
-          const v110 = yield (yield __nvFetch(v109, {
-            headers: HEADERS
-          })).json();
-          const v111 = [...(v110.current || []), ...(v110.popup || [])];
-          yield v87(v111);
-        }
-      } else {
-        const v112 = BASE_URL + "/ajax/resolution_switcher.php?video_id=" + v85;
-        const v113 = yield (yield __nvFetch(v112, {
-          headers: HEADERS
-        })).json();
-        const v114 = [...(v113.current || []), ...(v113.popup || [])];
-        yield v87(v114);
-      }
-      const v115 = [];
-      const v116 = new Set();
-      for (const v117 of v86) {
-        if (!v116.has(v117.url)) {
-          v116.add(v117.url);
-          const v118 = generateStreamLayout(v117.url, v68, v117.quality, v67, v78, v60, v61);
-          v115.push(v118);
-        }
-      }
-      const v119 = {
-        "4K": 5,
-        "1080p": 4,
-        "720p": 3,
-        "480p": 2,
-        "360p": 1,
-        Unknown: 0
-      };
-      v115.sort((v120, v121) => {
-        const v122 = v119[v120.quality] || 0;
-        const v123 = v119[v121.quality] || 0;
-        return v123 - v122;
-      });
-      return v115;
-    } catch (v124) {
-      console.error("[FibWatch]", v124);
-      return [];
-    }
-  });
-}
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = {
-    getStreams: getStreams
-  };
-}
+var window = (typeof window !== "undefined" && window) ? window
+  : (typeof globalThis !== "undefined" ? globalThis : (typeof global !== "undefined" ? global : {}));
+var self = (typeof self !== "undefined" && self) ? self : window;
+var document = (typeof document !== "undefined" && document) ? document : { createElement: function () { return { style: {}, setAttribute: function () { }, getElementsByTagName: function () { return []; } }; }, getElementsByTagName: function () { return []; }, addEventListener: function () { } };
+var navigator = (typeof navigator !== "undefined" && navigator) ? navigator : { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" };
+var _0x2887=function(){return "";};const _0xf741e1=_0x2887;/*rotation removed*/;var __async=(_0x2d675e,_0x60c5d2,_0x4d995e)=>{return new Promise((_0x4625d3,_0x318b22)=>{const _0x3ca796=_0x2887;var _0x2208ac=_0x3e7f5a=>{try{_0x4a8699(_0x4d995e['next'](_0x3e7f5a));}catch(_0x548bed){_0x318b22(_0x548bed);}},_0x27dcf1=_0x1e6249=>{try{_0x4a8699(_0x4d995e['throw'](_0x1e6249));}catch(_0x39c42){_0x318b22(_0x39c42);}},_0x4a8699=_0x278d21=>_0x278d21['done']?_0x4625d3(_0x278d21["value"]):Promise['resolve'](_0x278d21["value"])["then"](_0x2208ac,_0x27dcf1);_0x4a8699((_0x4d995e=_0x4d995e['apply'](_0x2d675e,_0x60c5d2))['next']());});},cheerio=__nvRequire("cheerio-without-node-native"),BASE_URL="https://fibwatch.art",TMDB_API_KEY="1865f43a0549ca50d341dd9ab8b29f49",BROWSER_UA="Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36",HEADERS={'User-Agent':BROWSER_UA,'Referer':BASE_URL+'/'},PLAYBACK_HEADERS={'User-Agent':BROWSER_UA,'Referer':'https://urlshortlink.top/','Origin':'https://urlshortlink.top'};/*string-table removed*/function extractQuality(_0x4af06e){const _0x2a1bf5={_0x1845bf:0x209,_0x287843:0x209,_0x846d66:0x1d0,_0x5618bd:0x1f9,_0x1139ad:0x217,_0x368115:0x218},_0x3d3eb7=_0xf741e1,_0x364bfd=(_0x4af06e||'')["toLowerCase"]();if(_0x364bfd['includes']("2160")||_0x364bfd["includes"]('4k'))return'4K';if(_0x364bfd['includes']("1080"))return'1080p';if(_0x364bfd["includes"]('720'))return "720p";if(_0x364bfd["includes"]("480"))return "480p";if(_0x364bfd['includes']("360"))return'360p';return'Unknown';}function parseStreamFromShortenerHtml(_0x472691){const _0x1a0a70={_0x5861aa:0x1eb},_0x17f5a5={_0x2ee33e:0x200},_0x1d6725=_0xf741e1;if(!_0x472691)return null;const _0x30fbd7=cheerio["load"](_0x472691);let _0x37aa7e=_0x30fbd7('a.hidden-button.buttonDownloadnew')['attr']("href");!_0x37aa7e&&_0x30fbd7('a')['each']((_0x439235,_0x3862d7)=>{const _0xd3d77c=_0x1d6725,_0x58c50c=_0x30fbd7(_0x3862d7)['attr']('href')||'';if(_0x58c50c["includes"]("url=http"))return _0x37aa7e=_0x58c50c,![];});if(!_0x37aa7e){const _0x34e4f4=/https?:\/\/[^\s"'`<>]+?\.b-cdn\.net\/[^\s"'`<>]+\.(?:mkv|mp4|m3u8)/i,_0x2d5b16=_0x472691['match'](_0x34e4f4);if(_0x2d5b16)return _0x2d5b16[0x0];}if(_0x37aa7e){let _0x88d123=_0x37aa7e["replace"](/.*url=/,'')["trim"]();return decodeURIComponent(_0x88d123);}return null;}/*decoder removed*/function generateStreamLayout(_0x45cde5,_0x473df8,_0x2ff13b,_0x2d85c1,_0x53b7b1,_0x1d9781,_0x17799c){const _0x29894e={_0x2fe9f9:0x1f2,_0x41c336:0x1ea,_0x196abd:0x1f0,_0x2be5bf:0x20b,_0x370a1e:0x1ed,_0x199945:0x209,_0x5a1598:0x1fc,_0x4a1384:0x1e6,_0x28a840:0x20f,_0xd2358c:0x207,_0xb3c17b:0x1ff,_0x1b61c7:0x215,_0x5a9bb5:0x1e8,_0x4cd2b3:0x1da},_0x5a8af3=_0xf741e1;var _0x35e15c;const _0x50c4cc=_0x2d85c1["title"]||_0x2d85c1["name"]||"Unknown Title",_0x4888ca=_0x2d85c1['release_date']||_0x2d85c1['first_air_date']||'',_0x10b4de=_0x4888ca?_0x4888ca['split']('-')[0x0]:"N/A",_0x1bded7=_0x45cde5['toLowerCase']();let _0x493a43="Single-Audio",_0x574513="Hindi";if(_0x1bded7['includes']("dual")||_0x1bded7["includes"]('hindi')&&_0x1bded7["includes"]('english'))_0x493a43="Dual-Audio",_0x574513="English • Hindi";else{if(_0x1bded7['includes']("multi"))_0x493a43='Multi-Audio',_0x574513='Multilingual';else{if(_0x1bded7['includes']("bangla"))_0x574513="Bangla";else{if(_0x1bded7['includes']("tamil"))_0x574513="Tamil";else{if(_0x1bded7['includes']("telugu"))_0x574513='Telugu';else _0x1bded7['includes']("english")&&(_0x493a43='Single-Audio',_0x574513='English');}}}}let _0x138764='MKV';if(_0x1bded7['includes'](".mp4"))_0x138764='MP4';if(_0x1bded7["includes"](".m3u8"))_0x138764='M3U8\x20/\x20HLS';let _0x19f49d='N/A';_0x53b7b1?_0x19f49d=((_0x35e15c=_0x2d85c1['episode_run_time'])==null?void 0x0:_0x35e15c[0x0])?_0x2d85c1["episode_run_time"][0x0]+'\x20min':'45\x20min':_0x19f49d=_0x2d85c1['runtime']?_0x2d85c1["runtime"]+'\x20min':"N/A";const _0x148fca=_0x2ff13b["includes"]('4K')||_0x2ff13b['includes']("2160")?'🌟':'💎',_0xcd946a="⚫ FibWatch | "+_0x2ff13b+'\x20|\x20'+_0x493a43,_0x164663=_0x53b7b1?"🎬 "+_0x50c4cc+" - S"+_0x1d9781+'E'+_0x17799c+'\x20('+_0x10b4de+')':'🎬\x20'+_0x50c4cc+" - "+_0x10b4de,_0x4f061e=_0x148fca+'\x20'+_0x2ff13b+'\x20|\x20🌍\x20'+_0x574513,_0x1cafb5="🎞️ "+_0x138764+" | ⏱️ "+_0x19f49d+'\x20|\x20📌\x20WEB-DL',_0x25d63e=_0x164663+'\x0a'+_0x4f061e+'\x0a'+_0x1cafb5;return{'name':_0xcd946a,'title':_0x25d63e,'url':_0x45cde5,'quality':_0x2ff13b,'behaviorHints':{'notWebReady':![]},'headers':PLAYBACK_HEADERS};}function getStreams(_0x9bd952,_0x573dbc,_0x416797,_0x4f77c3){const _0x152d3a={_0x357efe:0x1df,_0x785b2a:0x206,_0x5c6740:0x208,_0x2dd1d2:0x213,_0x145d07:0x1ce,_0x2ec064:0x1ec,_0x1b51b8:0x20e,_0x5cb22:0x1e9,_0x59e7da:0x1fa,_0x45218e:0x208,_0x56ca69:0x1f4,_0x51b616:0x1ce,_0x1fa55c:0x1ef,_0x165469:0x1ce,_0x51d278:0x210,_0x547997:0x1d4,_0x5933d7:0x1e0},_0x378f2c={_0x5930f6:0x1db,_0x3b8fb7:0x1fa,_0x881890:0x20a},_0x3b9d35={_0x14d194:0x1dd,_0x1c89f6:0x1cd};return __async(this,null,function*(){const _0x498ec3=_0x2887;try{const _0xab14ae="https://api.themoviedb.org/3/"+_0x573dbc+'/'+_0x9bd952+'?api_key='+TMDB_API_KEY,_0x5b3da3=yield(yield __nvFetch(_0xab14ae))['json'](),_0x19d996=_0x5b3da3['title']||_0x5b3da3['name'];if(!_0x19d996)return[];const _0x3b3a96=BASE_URL+'/search?keyword='+encodeURIComponent(_0x19d996)+"&page_id=1",_0x221f78=yield(yield __nvFetch(_0x3b3a96,{'headers':HEADERS}))["text"](),_0x24832c=cheerio['load'](_0x221f78),_0x3da328=[];_0x24832c('div.video-thumb')["each"]((_0x4491ab,_0x134ea3)=>{const _0x2a16cb=_0x498ec3,_0x3479ee=_0x24832c('a',_0x134ea3)["attr"]('href'),_0x5050c8=_0x24832c('p.hptag',_0x134ea3)['text']()['trim']()||_0x24832c("div.video-thumb img",_0x134ea3)["attr"]('alt')||'';if(_0x3479ee)_0x3da328["push"]({'title':_0x5050c8,'url':_0x3479ee});});if(!_0x3da328['length'])return[];const _0x240ce8=_0x573dbc==='tv',_0x5e59b5=_0x19d996['toLowerCase']();let _0x423ee6=_0x3da328["find"](_0x45e521=>_0x45e521["title"]["toLowerCase"]()["includes"](_0x5e59b5));if(!_0x423ee6)_0x423ee6=_0x3da328[0x0];const _0x2b02bd=_0x423ee6["url"]['startsWith']("http")?_0x423ee6['url']:''+BASE_URL+_0x423ee6['url'],_0x1e5c29=yield(yield __nvFetch(_0x2b02bd,{'headers':HEADERS}))["text"](),_0x154bdb=cheerio["load"](_0x1e5c29),_0x3ff341=_0x154bdb("input#video-id")['attr']('value');if(!_0x3ff341)return[];const _0x5ee2f0=[],_0x180a66=_0x4f2ccd=>__async(this,null,function*(){const _0x276398=_0x498ec3;for(const _0x5d7537 of _0x4f2ccd){let _0x3bf558=(_0x5d7537['url']||'')["trim"]();if(!_0x3bf558)continue;!_0x3bf558['startsWith']("http")&&(_0x3bf558=''+BASE_URL+_0x3bf558);const _0xad5265=extractQuality(_0x5d7537['res']||_0x3bf558);if(_0x3bf558["match"](/\.(mp4|mkv|m3u8)/i))_0x5ee2f0["push"]({'url':_0x3bf558,'quality':_0xad5265});else try{const _0x40602e=yield(yield __nvFetch(_0x3bf558,{'headers':HEADERS}))['text'](),_0x564a9f=parseStreamFromShortenerHtml(_0x40602e);if(_0x564a9f&&_0x564a9f["startsWith"]("http")){const _0xf57535=extractQuality(_0x564a9f)!=="Unknown"?extractQuality(_0x564a9f):_0xad5265;_0x5ee2f0["push"]({'url':_0x564a9f,'quality':_0xf57535});}}catch(_0x1ecc2b){}}});if(_0x240ce8){const _0x3eaa2e=BASE_URL+"/ajax/episodes.php?video_id="+_0x3ff341,_0x5cfa0e=yield(yield __nvFetch(_0x3eaa2e,{'headers':HEADERS}))['json'](),_0x4fd45b=_0x5cfa0e['episodes']||[];if(!_0x4fd45b['length'])return[];let _0x87078e='';for(const _0x2a8eef of _0x4fd45b){const _0x31f08d=(_0x2a8eef['title']||'')["toLowerCase"](),_0x2b8c5a=_0x31f08d["match"](/s(\d{1,2})e(\d{1,3})/);if(_0x2b8c5a){const _0x5419ab=parseInt(_0x2b8c5a[0x1]),_0xbc3e00=parseInt(_0x2b8c5a[0x2]);if(_0x5419ab===_0x416797&&_0xbc3e00===_0x4f77c3){_0x87078e=_0x2a8eef["url"]?_0x2a8eef["url"]["startsWith"]('http')?_0x2a8eef['url']:''+BASE_URL+_0x2a8eef["url"]:'';break;}}}!_0x87078e&&_0x4fd45b["length"]>0x0&&(_0x87078e=_0x4fd45b[0x0]['url']?_0x4fd45b[0x0]["url"]['startsWith']("http")?_0x4fd45b[0x0]['url']:''+BASE_URL+_0x4fd45b[0x0]['url']:'');if(!_0x87078e)return[];const _0x4be846=yield(yield __nvFetch(_0x87078e,{'headers':HEADERS}))["text"](),_0x259da0=cheerio["load"](_0x4be846),_0x588d93=_0x259da0('input#video-id')['attr']('value');if(_0x588d93){const _0x1a82ec=BASE_URL+'/ajax/resolution_switcher.php?video_id='+_0x588d93,_0x53c6fc=yield(yield __nvFetch(_0x1a82ec,{'headers':HEADERS}))["json"](),_0x529c64=[..._0x53c6fc['current']||[],..._0x53c6fc["popup"]||[]];yield _0x180a66(_0x529c64);}}else{const _0x439a72=BASE_URL+'/ajax/resolution_switcher.php?video_id='+_0x3ff341,_0x26760a=yield(yield __nvFetch(_0x439a72,{'headers':HEADERS}))["json"](),_0x184dd3=[..._0x26760a['current']||[],..._0x26760a['popup']||[]];yield _0x180a66(_0x184dd3);}const _0x803de4=[],_0x3dd978=new Set();for(const _0x2740e8 of _0x5ee2f0){if(!_0x3dd978['has'](_0x2740e8["url"])){_0x3dd978["add"](_0x2740e8['url']);const _0x1d86da=generateStreamLayout(_0x2740e8["url"],_0x19d996,_0x2740e8["quality"],_0x5b3da3,_0x240ce8,_0x416797,_0x4f77c3);_0x803de4["push"](_0x1d86da);}}const _0xc548d8={'4K':0x5,'1080p':0x4,'720p':0x3,'480p':0x2,'360p':0x1,'Unknown':0x0};return _0x803de4["sort"]((_0x18dc1a,_0x57bf79)=>{const _0x475003=_0xc548d8[_0x18dc1a['quality']]||0x0,_0x2c32c2=_0xc548d8[_0x57bf79['quality']]||0x0;return _0x2c32c2-_0x475003;}),_0x803de4;}catch(_0x54ae18){return console["error"]("[FibWatch]",_0x54ae18),[];}});}typeof module!=="undefined"&&module["exports"]&&(module["exports"]={'getStreams':getStreams});
+
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
    Rules (per user request 2026-09):
    1. Language gate: only English / Tagalog (Filipino) audio lanes are kept.
@@ -464,43 +60,21 @@ if (typeof module !== "undefined" && module.exports) {
   var PROVIDER = "fibwatch";
   var G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
   function settings() {
-    try {
-      return G && G.SCRAPER_SETTINGS || {};
-    } catch (e) {
-      return {};
-    }
+    try { return (G && G.SCRAPER_SETTINGS) || {}; } catch (e) { return {}; }
   }
-  function hasTimers() {
-    return typeof setTimeout === "function" && typeof clearTimeout === "function";
-  }
+  function hasTimers() { return typeof setTimeout === "function" && typeof clearTimeout === "function"; }
 
   /* ---------- quality ---------- */
   function normQ(q) {
     var s = String(q == null ? "" : q).toLowerCase();
-    if (!s) {
-      return "";
-    }
-    if (/8k/.test(s)) {
-      return "4K";
-    }
-    if (/2160|4k|uhd/.test(s)) {
-      return "4K";
-    }
-    if (/1440/.test(s)) {
-      return "1440p";
-    }
-    if (/1080|fhd/.test(s)) {
-      return "1080p";
-    }
-    if (/720/.test(s)) {
-      return "720p";
-    }
-    if (/480|360|240|\bsd\b/.test(s)) {
-      return "CAM";
-    }
-    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/.test(s)) {
-      return "CAM";
-    }
+    if (!s) return "";
+    if (/8k/.test(s)) return "4K";
+    if (/2160|4k|uhd/.test(s)) return "4K";
+    if (/1440/.test(s)) return "1440p";
+    if (/1080|fhd/.test(s)) return "1080p";
+    if (/720/.test(s)) return "720p";
+    if (/480|360|240|\bsd\b/.test(s)) return "CAM";
+    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/.test(s)) return "CAM";
     return "";
   }
   function qFromText(text) {
@@ -508,113 +82,69 @@ if (typeof module !== "undefined" && module.exports) {
     var m = s.match(/(\d{3,4})\s*p/i);
     if (m) {
       var n = parseInt(m[1], 10);
-      if (n >= 2100) {
-        return "4K";
-      }
-      if (n >= 1300) {
-        return "1440p";
-      }
-      if (n >= 1000) {
-        return "1080p";
-      }
-      if (n >= 640) {
-        return "720p";
-      }
+      if (n >= 2100) return "4K";
+      if (n >= 1300) return "1440p";
+      if (n >= 1000) return "1080p";
+      if (n >= 640) return "720p";
       return "CAM";
     }
-    if (/\b8k\b/i.test(s) || /2160|4k|uhd/i.test(s)) {
-      return "4K";
-    }
-    if (/1440p/i.test(s)) {
-      return "1440p";
-    }
-    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/i.test(s)) {
-      return "CAM";
-    }
-    if (/480p|360p|240p|\bsd\b|\bdvdrip\b/i.test(s)) {
-      return "CAM";
-    }
-    if (/\bhd\b/i.test(s)) {
-      return "720p";
-    }
+    if (/\b8k\b/i.test(s) || /2160|4k|uhd/i.test(s)) return "4K";
+    if (/1440p/i.test(s)) return "1440p";
+    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/i.test(s)) return "CAM";
+    if (/480p|360p|240p|\bsd\b|\bdvdrip\b/i.test(s)) return "CAM";
+    if (/\bhd\b/i.test(s)) return "720p";
     return "";
   }
-  var qualCache = G.__NV_QUAL_CACHE__ ||= {};
+  var qualCache = G.__NV_QUAL_CACHE__ || (G.__NV_QUAL_CACHE__ = {});
   function probeM3u8(url, headers) {
     var now = Date.now();
     var c = qualCache[url];
-    if (c && now - c.t < (c.q ? 900000 : 180000)) {
+    if (c && now - c.t < (c.q ? 15 * 60 * 1000 : 3 * 60 * 1000)) {
       return Promise.resolve(c.q);
     }
-    var opts = {
-      headers: Object.assign({}, headers || {})
-    };
+    var opts = { headers: Object.assign({}, headers || {}) };
     var p = __nvFetch(url, opts).then(function (r) {
-      if (r.ok) {
-        return r.text();
-      } else {
-        return "";
-      }
+      return r.ok ? r.text() : "";
     }).then(function (t) {
       var q = "";
       if (t && t.indexOf("#EXTM3U") !== -1) {
-        var best = 0;
-        var re = /RESOLUTION=(\d+)x(\d+)/gi;
-        var m;
+        var best = 0, re = /RESOLUTION=(\d+)x(\d+)/gi, m;
         while ((m = re.exec(t)) !== null) {
           var h = parseInt(m[2], 10);
-          if (h > best) {
-            best = h;
-          }
+          if (h > best) best = h;
         }
-        if (best >= 2100) {
-          q = "4K";
-        } else if (best >= 1300) {
-          q = "1440p";
-        } else if (best >= 1000) {
-          q = "1080p";
-        } else if (best >= 640) {
-          q = "720p";
-        } else if (best > 0) {
-          q = "CAM";
-        }
+        if (best >= 2100) q = "4K";
+        else if (best >= 1300) q = "1440p";
+        else if (best >= 1000) q = "1080p";
+        else if (best >= 640) q = "720p";
+        else if (best > 0) q = "CAM";
       }
-      qualCache[url] = {
-        t: now,
-        q: q
-      };
+      qualCache[url] = { t: now, q: q };
       return q;
-    }).catch(function () {
-      qualCache[url] = {
-        t: now,
-        q: ""
-      };
-      return "";
-    });
+    }).catch(function () { qualCache[url] = { t: now, q: "" }; return ""; });
     if (hasTimers()) {
       p = Promise.race([p, new Promise(function (res) {
-        var timer = setTimeout(function () {
-          res("");
-        }, 2000);
-        if (typeof timer === "object" && typeof timer.unref === "function") {
-          timer.unref();
-        }
+        var timer = setTimeout(function () { res(""); }, 6000);
+        if (typeof timer === "object" && typeof timer.unref === "function") timer.unref();
       })]);
     }
     return p;
   }
 
   /* ---------- language gate ---------- */
-  var BLOCK_RE = new RegExp("\\b(hindi|hin|tamil|telugu|malayalam|mallu|kannada|bengali|bangla|punjabi|marathi|bhojpuri|gujarati|odia|assamese|nepali|urdu|sinhala|arabic|ara|farsi|persian|turkish|turkce|espanol|spanish|latino|castellano|french|vostfr|german|deutsch|russian|korean|kor|japanese|jpn|chinese|mandarin|cantonese|thai|vietnamese|indonesian|bahasa|portuguese|brasileiro|italian|polish|ukrainian|hebrew|hungarian|romanian|dutch|flemish|greek|czech|swedish|danish|norwegian|finnish|org)\\b", "i");
+  var BLOCK_RE = new RegExp(
+    "\\b(hindi|hin|tamil|telugu|malayalam|mallu|kannada|bengali|bangla|punjabi|marathi|bhojpuri|gujarati|" +
+    "odia|assamese|nepali|urdu|sinhala|arabic|ara|farsi|persian|turkish|turkce|espanol|spanish|latino|" +
+    "castellano|french|vostfr|german|deutsch|russian|korean|kor|japanese|jpn|chinese|mandarin|cantonese|" +
+    "thai|vietnamese|indonesian|bahasa|portuguese|brasileiro|italian|polish|ukrainian|hebrew|" +
+    "hungarian|romanian|dutch|flemish|greek|czech|swedish|danish|norwegian|finnish|org)\\b", "i");
   var ALLOW_RE = /\b(english|eng|tagalog|filipino)\b/i;
   var SUB_RE = /\b[a-z0-9]{0,12}subs?\b/gi;
   // NOTE: gate runs on the stream TITLE only (release names / labels).
   // Provider names (e.g. "MallumV") must not trigger the language gate.
   function langAllowed(titleText) {
     var t = String(titleText || "").replace(SUB_RE, " ");
-    if (BLOCK_RE.test(t)) {
-      return ALLOW_RE.test(t);
-    }
+    if (BLOCK_RE.test(t)) return ALLOW_RE.test(t);
     return true;
   }
 
@@ -627,44 +157,30 @@ if (typeof module !== "undefined" && module.exports) {
     }
     return s.replace(/[#?].*$/, "").replace(/\/+$/, "");
   }
-  var SEEN = G.__NV_SEEN_URLS__ ||= {};
+  var SEEN = G.__NV_SEEN_URLS__ || (G.__NV_SEEN_URLS__ = {});
   // SEEN[nu] = { exp: <ts>, owner: <provider> }
   // - same URL from a DIFFERENT provider within TTL -> dropped (cross-provider dup)
   // - same provider re-querying its own URL -> allowed (repeat opens must still
   //   return rows) and its claim is refreshed
   function claim(nu, now, owner) {
-    if (!nu) {
-      return true;
-    }
+    if (!nu) return true;
     var e = SEEN[nu];
-    if (e && e.exp > now && e.owner !== owner) {
-      return false;
-    }
-    SEEN[nu] = {
-      exp: now + 120000,
-      owner: owner
-    };
+    if (e && e.exp > now && e.owner !== owner) return false;
+    SEEN[nu] = { exp: now + 120000, owner: owner };
     return true;
   }
 
   /* ---------- main ---------- */
   function rank(q) {
-    if (q === "4K") {
-      return 4;
-    }
-    if (q === "1440p") {
-      return 3.5;
-    }
-    if (q === "1080p") {
-      return 3;
-    }
-    if (q === "720p") {
-      return 2;
-    }
+    if (q === "4K") return 4;
+    if (q === "1440p") return 3.5;
+    if (q === "1080p") return 3;
+    if (q === "720p") return 2;
     return 0;
   }
   function postProcess(list) {
     var now = Date.now();
+    var kept = [];
     var probes = [];
     var rows = [];
     (list || []).forEach(function (s, i) {
@@ -686,17 +202,11 @@ if (typeof module !== "undefined" && module.exports) {
     return Promise.all(probes).then(function (qs) {
       var ranked = [];
       rows.forEach(function (row, k) {
-        var s = row.s;
-        var tq = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText((s.name || "") + " " + (s.title || ""));
-        // nv best-settings 4.26.0: FAIL-OPEN quality gate (AIO parity)
-        // - a successful HLS probe result wins
-        // - otherwise the title-derived quality is kept, else "Auto"
-        // - unknown-resolution rows are NO LONGER dropped; only rows whose
-        //   title explicitly tags CAM/telesync/sub-720p are removed
-        var q = qs[k] || tq || "Auto";
-        if (q === "CAM") return; // explicit cam / sd / sub-720 tag -> removed
-        s.quality = q;
-        ranked.push({ s: s, i: row.i, q: q });
+        var q = qs[k];
+        if (!q) return; // unknown resolution -> removed
+        if (q === "CAM") return; // cam / sd / sub-720 -> removed
+        row.s.quality = q;
+        ranked.push({ s: row.s, i: row.i, q: q });
       });
       // best first so dedupe keeps the strongest duplicate (stable)
       ranked.sort(function (a, b) {
@@ -716,29 +226,16 @@ if (typeof module !== "undefined" && module.exports) {
       return out.slice(0, 40);
     }).catch(function () { return (list || []).slice(0, 40); });
   }
+
   var __orig = null;
-  try {
-    __orig = module.exports && module.exports.getStreams;
-  } catch (e) {
-    __orig = null;
-  }
+  try { __orig = module.exports && module.exports.getStreams; } catch (e) { __orig = null; }
   if (typeof __orig === "function") {
     module.exports.getStreams = function () {
-      var args = Array.prototype.slice.call(arguments);
-      var self = this;
+      var args = Array.prototype.slice.call(arguments), self = this;
       function finish(v) {
-        if (settings().postFilter === false) {
-          return v;
-        }
-        try {
-          return postProcess(Array.isArray(v) ? v : []);
-        } catch (e) {
-          if (Array.isArray(v)) {
-            return v;
-          } else {
-            return [];
-          }
-        }
+        if (settings().postFilter === false) return v;
+        try { return postProcess(Array.isArray(v) ? v : []); }
+        catch (e) { return Array.isArray(v) ? v : []; }
       }
       try {
         var r = __orig.apply(self, args);
@@ -746,24 +243,14 @@ if (typeof module !== "undefined" && module.exports) {
           if (typeof setTimeout === "function") {
             // nv best-settings 4.23.0: hard 8s cap on the whole provider run
             r = Promise.race([r, new Promise(function (res) {
-              var dl = setTimeout(function () {
-                res([]);
-              }, 8000);
-              if (dl && typeof dl.unref === "function") {
-                dl.unref();
-              }
+              var dl = setTimeout(function () { res([]); }, 8000);
+              if (dl && typeof dl.unref === "function") dl.unref();
             })]);
           }
-          return r.then(function (v) {
-            return finish(v);
-          }, function () {
-            return [];
-          });
+          return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);
-      } catch (e) {
-        return Promise.resolve([]);
-      }
+      } catch (e) { return Promise.resolve([]); }
     };
   }
 })();
