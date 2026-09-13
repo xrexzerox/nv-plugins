@@ -501,3 +501,25 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   global.getStreams = getStreams;
 }
+
+/* ===== nv best-settings 4.26.0: overall run cap (QuickJS-safe race, no AbortController)
+   streamflix had no internal deadline and could spin ~31s on device; capped at 8s ===== */
+(function () {
+  var __orig = null;
+  try { __orig = module.exports && module.exports.getStreams; } catch (e) { __orig = null; }
+  if (typeof __orig === 'function') {
+    module.exports.getStreams = function () {
+      var args = Array.prototype.slice.call(arguments), self = this;
+      var run;
+      try { run = __orig.apply(self, args); } catch (e) { run = Promise.resolve([]); }
+      if (typeof setTimeout !== 'function') return run;
+      return Promise.race([
+        Promise.resolve(run).catch(function () { return []; }),
+        new Promise(function (res) {
+          var dl = setTimeout(function () { res([]); }, 8000);
+          if (dl && typeof dl.unref === 'function') dl.unref();
+        })
+      ]);
+    };
+  }
+})();

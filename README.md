@@ -4,6 +4,14 @@ Clean Nuvio provider collection migrated from the canonical NVV provider set.
 
 The import workflow keeps only the canonical provider implementations registered in `manifest.json`.
 
+## v4.26.0 — STREAM-SHEET SPEED PARITY: fail-open quality gate + AIO upstream sync (profiled)
+
+Measured head-to-head (all 63 nv providers vs all 61 All-in-One-Nuvio providers, identical titles/network, one isolated VM per provider like NuvioMobile):
+
+- Root causes found for "AIO loads streams faster": (1) nv's nvio post-filter in 56 files held every unknown-quality HLS row hostage to a real m3u8 probe (6s cap) and DELETED rows whose probe failed — turning fast upstreams into 8s/zero-row stragglers (vidfast, ctgmovies, vixsrc, 1shows, videasy) and taxing every working provider 1.5-3s; (2) torrents.js gated on the TorrentsDB lane with no short cap; (3) streamflix had no internal deadline (31s) and pencuri 13-22s; (4) nv's AIO-merge snapshot predated upstream's newer provider files.
+- Fixes: post-filter is FAIL-OPEN (probe 2s cap; probe result wins, else title-derived quality, else Auto — only rows whose title explicitly tags CAM/telesync/sub-720p are removed; en/tl language gate + cross-provider dedupe unchanged); TorrentsDB lane capped at 3s; streamflix + pencuri hard 8s overall caps; 11 providers rebased onto CURRENT AIO upstream (hdhub4u 1.0.1, nakios 3.8.2, moviesdrive 3.0.0, anikototv 1.0.5, movies4u 1.0.2, moviebox 1.0.1, allwish 1.0.1, animepahe 1.0.1, castle 2.3.0, cineby 2.5.0, dahmermovies 2.5.0), decode-normalized with zero obfuscator remnants, fail-open tail re-attached.
+- Result (movie/TV titles): every provider now settles in <= 9s (was 31s; AIO itself still has 21-60s stragglers); rows>0 up from 17 to 19 on the movie title; torrents 1.1s/15 rows (was 1.7s/13); streamflix 1.1s/4 rows (was 31s/0); vidfast now yields rows instead of 8s-zero; hdhub4u TV 10 rows (was 1). Manifest 4.26.0, netmirror v14 unchanged (net27 hot path), miruro 2.7.0 untouched, exclusions unchanged (no Hindi providers, no duplicate backends).
+
 ## v4.25.0 — TRUE full decode of all 43 leftover files + netmirror v14 (decoded + fast)
 
 User report on 4.24.0: "SLOW TO FETCH STREAMS — FULLY DECODE THE NETMIRROR.JS", with the still-obfuscated AIO netmirror.js attached. Findings and fixes, all verified:

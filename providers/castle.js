@@ -1,4 +1,518 @@
 /*
+ * nv-plugins castle.js — rebased on the CURRENT All-in-One-Nuvio upstream file (4.26.0 sync pass).
+ * Upstream version: 2.3.0. Decoded + identifier-normalized, zero obfuscator remnants.
+ * nv tail re-attached: fail-open quality gate (4.26.0), en/tl language gate, cross-provider dedupe.
+ */
+var __defProp = Object.defineProperty;
+var __getOwnPropSymbols = Object.getOwnPropertySymbols;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __propIsEnum = Object.prototype.propertyIsEnumerable;
+var __defNormalProp = (v1, v2, v3) => v2 in v1 ? __defProp(v1, v2, {
+  enumerable: true,
+  configurable: true,
+  writable: true,
+  value: v3
+}) : v1[v2] = v3;
+var __spreadValues = (v4, v5) => {
+  for (var v6 in v5 ||= {}) {
+    if (__hasOwnProp.call(v5, v6)) {
+      __defNormalProp(v4, v6, v5[v6]);
+    }
+  }
+  if (__getOwnPropSymbols) {
+    for (var v6 of __getOwnPropSymbols(v5)) {
+      if (__propIsEnum.call(v5, v6)) {
+        __defNormalProp(v4, v6, v5[v6]);
+      }
+    }
+  }
+  return v4;
+};
+var __async = (v7, v8, v9) => {
+  return new Promise((v10, v11) => {
+    var v12 = v13 => {
+      try {
+        v14(v9.next(v13));
+      } catch (v15) {
+        v11(v15);
+      }
+    };
+    var v16 = v17 => {
+      try {
+        v14(v9.throw(v17));
+      } catch (v18) {
+        v11(v18);
+      }
+    };
+    var v14 = v19 => v19.done ? v10(v19.value) : Promise.resolve(v19.value).then(v12, v16);
+    v14((v9 = v9.apply(v7, v8)).next());
+  });
+};
+var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
+var TMDB_BASE_URL = "https://api.themoviedb.org/3";
+var CASTLE_BASE = "https://api.hlowb.com";
+var PKG = "com.external.castle";
+var CHANNEL = "IndiaA";
+var CLIENT = "1";
+var LANG = "en-US";
+var API_HEADERS = {
+  "User-Agent": "okhttp/4.9.3",
+  Accept: "application/json",
+  "Accept-Language": "en-US,en;q=0.9",
+  Connection: "Keep-Alive",
+  Referer: CASTLE_BASE
+};
+var PLAYBACK_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+  Accept: "video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Accept-Encoding": "identity",
+  Connection: "keep-alive",
+  "Sec-Fetch-Dest": "video",
+  "Sec-Fetch-Mode": "no-cors",
+  "Sec-Fetch-Site": "cross-site",
+  DNT: "1"
+};
+function makeRequest(v20) {
+  return __async(this, arguments, function* (v21, v22 = {}) {
+    try {
+      const v23 = yield fetch(v21, {
+        method: v22.method || "GET",
+        headers: __spreadValues(__spreadValues({}, API_HEADERS), v22.headers),
+        body: v22.body
+      });
+      if (!v23.ok) {
+        throw new Error("HTTP " + v23.status + ": " + v23.statusText);
+      }
+      return v23;
+    } catch (v24) {
+      console.error("[Castle] Request failed for " + v21 + ": " + v24.message);
+      throw v24;
+    }
+  });
+}
+function extractCipherFromResponse(v25) {
+  return __async(this, null, function* () {
+    const v26 = yield v25.text();
+    const v27 = v26.trim();
+    if (!v27) {
+      throw new Error("Empty response");
+    }
+    try {
+      const v28 = JSON.parse(v27);
+      if (v28 && v28.data && typeof v28.data === "string") {
+        return v28.data.trim();
+      }
+    } catch (v29) {}
+    return v27;
+  });
+}
+function extractDataBlock(v30) {
+  if (v30 && v30.data && typeof v30.data === "object") {
+    return v30.data;
+  }
+  return v30 || {};
+}
+function getTMDBDetails(v31, v32) {
+  return __async(this, null, function* () {
+    const v33 = v32 === "tv" ? "tv" : "movie";
+    const v34 = TMDB_BASE_URL + "/" + v33 + "/" + v31 + "?api_key=" + TMDB_API_KEY + "&append_to_response=external_ids";
+    const v35 = yield makeRequest(v34);
+    const v36 = yield v35.json();
+    const v37 = v32 === "tv" ? v36.name : v36.title;
+    const v38 = v32 === "tv" ? v36.first_air_date : v36.release_date;
+    const v39 = v38 ? parseInt(v38.split("-")[0]) : null;
+    return {
+      title: v37,
+      year: v39,
+      tmdbId: v31
+    };
+  });
+}
+function decryptCastle(v40, v41) {
+  return __async(this, null, function* () {
+    console.log("[Castle] Starting local AES-CBC decryption...");
+    try {
+      const v42 = require("crypto-js");
+      if (typeof __crypto_aes_decrypt_raw !== "undefined") {
+        const v43 = v42.AES.decrypt;
+        v42.AES.decrypt = function (v44, v45, v46) {
+          try {
+            const v47 = v48 => {
+              const v49 = new Uint8Array(v48.sigBytes);
+              for (let v50 = 0; v50 < v48.sigBytes; v50++) {
+                v49[v50] = v48.words[v50 >>> 2] >>> 24 - v50 % 4 * 8 & 255;
+              }
+              return v49;
+            };
+            const v51 = v52 => {
+              if (v52 instanceof Uint8Array) {
+                return v52;
+              }
+              if (v52 instanceof ArrayBuffer) {
+                return new Uint8Array(v52);
+              }
+              if (v52 && typeof v52.length === "number") {
+                return new Uint8Array(Array.prototype.slice.call(v52));
+              }
+              return new Uint8Array(0);
+            };
+            const v53 = typeof v44 === "string" ? new Uint8Array(Array.from(atob(v44), v54 => v54.charCodeAt(0))) : v44.ciphertext ? v47(v44.ciphertext) : v51(v44);
+            const v55 = v47(v45);
+            const v56 = v46 && v46.iv ? v47(v46.iv) : new Uint8Array(0);
+            const v57 = v46 && v46.mode || "AES-CBC";
+            const v58 = typeof Int8Array !== "undefined" ? new Int8Array(v55.buffer) : v55;
+            const v59 = typeof Int8Array !== "undefined" ? new Int8Array(v56.buffer) : v56;
+            const v60 = typeof Int8Array !== "undefined" ? new Int8Array(v53.buffer) : v53;
+            const v61 = __crypto_aes_decrypt_raw(v57, v58, v59, v60);
+            const v62 = new TextDecoder().decode(v61);
+            return {
+              toString: function () {
+                return v62;
+              }
+            };
+          } catch (v63) {
+            console.error("[Castle JNI Patch] Decrypt failed, falling back:", v63);
+            return v43.call(v42.AES, v44, v45, v46);
+          }
+        };
+      }
+      const v64 = "T!BgJB";
+      const v65 = v42.enc.Base64.parse(v41);
+      const v66 = v42.enc.Utf8.parse(v64);
+      const v67 = v65.concat(v66);
+      let v68;
+      if (v67.sigBytes < 16) {
+        const v69 = v42.lib.WordArray.create(new Array(16 - v67.sigBytes).fill(0));
+        v68 = v67.concat(v69);
+      } else if (v67.sigBytes > 16) {
+        v68 = v42.lib.WordArray.create(v67.words.slice(0, 4), 16);
+      } else {
+        v68 = v67;
+      }
+      const v70 = v68;
+      const v71 = v42.AES.decrypt(v40, v68, {
+        iv: v70,
+        mode: v42.mode.CBC,
+        padding: v42.pad.Pkcs7
+      });
+      const v72 = v71.toString(v42.enc.Utf8);
+      if (!v72) {
+        throw new Error("Decryption resulted in empty string (possible key/IV mismatch)");
+      }
+      console.log("[Castle] Local decryption successful");
+      return v72;
+    } catch (v73) {
+      console.error("[Castle] Local decryption failed: " + v73.message);
+      throw v73;
+    }
+  });
+}
+function getSecurityKey() {
+  return __async(this, null, function* () {
+    console.log("[Castle] Fetching security key...");
+    const v74 = CASTLE_BASE + "/v0.1/system/getSecurityKey/1?channel=" + CHANNEL + "&clientType=" + CLIENT + "&lang=" + LANG;
+    const v75 = yield makeRequest(v74);
+    const v76 = yield v75.json();
+    if (v76.code !== 200 || !v76.data) {
+      throw new Error("Security key API error: " + JSON.stringify(v76));
+    }
+    console.log("[Castle] Security key obtained");
+    return v76.data;
+  });
+}
+function searchCastle(v77, v78, v79 = 1, v80 = 30) {
+  return __async(this, null, function* () {
+    console.log("[Castle] Searching for: " + v78);
+    const v81 = new URLSearchParams({
+      channel: CHANNEL,
+      clientType: CLIENT,
+      keyword: v78,
+      lang: LANG,
+      mode: "1",
+      packageName: PKG,
+      page: v79.toString(),
+      size: v80.toString()
+    });
+    const v82 = CASTLE_BASE + "/film-api/v1.1.0/movie/searchByKeyword?" + v81.toString();
+    const v83 = yield makeRequest(v82);
+    const v84 = yield extractCipherFromResponse(v83);
+    const v85 = yield decryptCastle(v84, v77);
+    return JSON.parse(v85);
+  });
+}
+function getDetails(v86, v87) {
+  return __async(this, null, function* () {
+    console.log("[Castle] Fetching details for movieId: " + v87);
+    const v88 = CASTLE_BASE + "/film-api/v1.9.9/movie?channel=" + CHANNEL + "&clientType=" + CLIENT + "&lang=" + LANG + "&movieId=" + v87 + "&packageName=" + PKG;
+    const v89 = yield makeRequest(v88);
+    const v90 = yield extractCipherFromResponse(v89);
+    const v91 = yield decryptCastle(v90, v86);
+    return JSON.parse(v91);
+  });
+}
+function getVideoV1(v92, v93, v94, v95, v96 = 2) {
+  return __async(this, null, function* () {
+    console.log("[Castle] Fetching video (v1) for movieId: " + v93 + ", languageId: " + v95);
+    const v97 = CASTLE_BASE + "/film-api/v2.0.1/movie/getVideo2?clientType=" + CLIENT + "&packageName=" + PKG + "&channel=" + CHANNEL + "&lang=" + LANG;
+    const v98 = {
+      mode: "1",
+      appMarket: "GuanWang",
+      clientType: CLIENT,
+      woolUser: "false",
+      apkSignKey: "ED0955EB04E67A1D9F3305B95454FED485261475",
+      androidVersion: "13",
+      movieId: v93.toString(),
+      episodeId: v94.toString(),
+      languageId: v95.toString(),
+      isNewUser: "true",
+      resolution: v96.toString(),
+      packageName: PKG
+    };
+    const v99 = yield makeRequest(v97, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(v98)
+    });
+    const v100 = yield extractCipherFromResponse(v99);
+    const v101 = yield decryptCastle(v100, v92);
+    return JSON.parse(v101);
+  });
+}
+function getVideo2(v102, v103, v104, v105 = 2) {
+  return __async(this, null, function* () {
+    console.log("[Castle] Fetching video (v2) for movieId: " + v103 + ", episodeId: " + v104);
+    const v106 = CASTLE_BASE + "/film-api/v2.0.1/movie/getVideo2?clientType=" + CLIENT + "&packageName=" + PKG + "&channel=" + CHANNEL + "&lang=" + LANG;
+    const v107 = {
+      mode: "1",
+      appMarket: "GuanWang",
+      clientType: CLIENT,
+      woolUser: "false",
+      apkSignKey: "ED0955EB04E67A1D9F3305B95454FED485261475",
+      androidVersion: "13",
+      movieId: v103.toString(),
+      episodeId: v104.toString(),
+      isNewUser: "true",
+      resolution: v105.toString(),
+      packageName: PKG
+    };
+    const v108 = yield makeRequest(v106, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(v107)
+    });
+    const v109 = yield extractCipherFromResponse(v108);
+    const v110 = yield decryptCastle(v109, v102);
+    return JSON.parse(v110);
+  });
+}
+function findCastleMovieId(v111, v112) {
+  return __async(this, null, function* () {
+    const v113 = v112.year ? v112.title + " " + v112.year : v112.title;
+    const v114 = yield searchCastle(v111, v113);
+    const v115 = extractDataBlock(v114);
+    const v116 = v115.rows || [];
+    if (v116.length === 0) {
+      throw new Error("No search results found");
+    }
+    for (const v117 of v116) {
+      const v118 = (v117.title || v117.name || "").toLowerCase();
+      const v119 = v112.title.toLowerCase();
+      if (v118.includes(v119) || v119.includes(v118)) {
+        const v120 = v117.id || v117.redirectId || v117.redirectIdStr;
+        if (v120) {
+          console.log("[Castle] Found match: " + (v117.title || v117.name) + " (id: " + v120 + ")");
+          return v120.toString();
+        }
+      }
+    }
+    const v121 = v116[0];
+    const v122 = v121.id || v121.redirectId || v121.redirectIdStr;
+    if (v122) {
+      console.log("[Castle] Using first result: " + (v121.title || v121.name) + " (id: " + v122 + ")");
+      return v122.toString();
+    }
+    throw new Error("Could not extract movie ID from search results");
+  });
+}
+function getQualityValue(v123) {
+  if (!v123) {
+    return 0;
+  }
+  const v124 = v123.toString().toLowerCase().replace(/^(sd|hd|fhd|uhd|4k)\s*/i, "").replace(/p$/, "").trim();
+  const v125 = {
+    "4k": 2160,
+    "2160": 2160,
+    "1440": 1440,
+    "1080": 1080,
+    "720": 720,
+    "480": 480,
+    "360": 360,
+    "240": 240
+  };
+  if (v125[v124]) {
+    return v125[v124];
+  }
+  const v126 = parseInt(v124);
+  if (!isNaN(v126) && v126 > 0) {
+    return v126;
+  }
+  return 0;
+}
+function formatSize(v127) {
+  if (typeof v127 !== "number" || v127 <= 0) {
+    return "Unknown";
+  }
+  if (v127 > 1000000000) {
+    return (v127 / 1000000000).toFixed(2) + " GB";
+  }
+  return (v127 / 1000000).toFixed(0) + " MB";
+}
+function resolutionToQuality(v128) {
+  const v129 = {
+    1: "480p",
+    2: "720p",
+    3: "1080p"
+  };
+  return v129[v128] || v128 + "p";
+}
+function processVideoResponse(v130, v131, v132, v133, v134, v135) {
+  const v136 = [];
+  const v137 = extractDataBlock(v130);
+  const v138 = v137.videoUrl;
+  if (!v138) {
+    console.log("[Castle] No videoUrl found in response");
+    return v136;
+  }
+  const v139 = [];
+  if (v137.subtitles && Array.isArray(v137.subtitles)) {
+    v137.subtitles.forEach(v140 => {
+      if (v140.url) {
+        v139.push({
+          url: v140.url,
+          language: v140.abbreviate || "Unknown",
+          name: v140.title || v140.abbreviate || "Unknown",
+          headers: PLAYBACK_HEADERS
+        });
+      }
+    });
+  }
+  let v141 = v131.title || "Unknown";
+  if (v131.year) {
+    v141 += " (" + v131.year + ")";
+  }
+  if (v132 && v133) {
+    v141 = v131.title + " S" + String(v132).padStart(2, "0") + "E" + String(v133).padStart(2, "0");
+  }
+  const v142 = resolutionToQuality(v134);
+  if (v137.videos && Array.isArray(v137.videos)) {
+    for (const v143 of v137.videos) {
+      let v144 = v143.resolutionDescription || v143.resolution || v142;
+      v144 = v144.replace(/^(SD|HD|FHD)\s+/i, "");
+      const v145 = v135 ? "Castle " + v135 + " - " + v144 : "Castle - " + v144;
+      v136.push({
+        name: v145,
+        title: v141,
+        url: v143.url || v138,
+        quality: v144,
+        size: formatSize(v143.size),
+        headers: PLAYBACK_HEADERS,
+        provider: "castle",
+        subtitles: v139
+      });
+    }
+  } else {
+    const v146 = v135 ? "Castle " + v135 + " - " + v142 : "Castle - " + v142;
+    v136.push({
+      name: v146,
+      title: v141,
+      url: v138,
+      quality: v142,
+      size: formatSize(v137.size),
+      headers: PLAYBACK_HEADERS,
+      provider: "castle",
+      subtitles: v139
+    });
+  }
+  return v136;
+}
+function getStreams(v147, v148, v149, v150) {
+  return __async(this, null, function* () {
+    console.log("[Castle] Starting extraction for TMDB ID: " + v147 + ", Type: " + v148 + (v148 === "tv" ? ", S:" + v149 + "E:" + v150 : ""));
+    try {
+      const v151 = yield getTMDBDetails(v147, v148);
+      console.log("[Castle] TMDB Info: \"" + v151.title + "\" (" + (v151.year || "N/A") + ")");
+      const v152 = yield getSecurityKey();
+      const v153 = yield findCastleMovieId(v152, v151);
+      let v154 = yield getDetails(v152, v153);
+      let v155 = v153;
+      if (v148 === "tv" && v149 && v150) {
+        const v156 = extractDataBlock(v154);
+        const v157 = v156.seasons || [];
+        const v158 = v157.find(v159 => v159.number === v149);
+        if (v158 && v158.movieId && v158.movieId !== v153) {
+          console.log("[Castle] Fetching season " + v149 + " details...");
+          v154 = yield getDetails(v152, v158.movieId.toString());
+          v155 = v158.movieId.toString();
+        }
+      }
+      const v160 = extractDataBlock(v154);
+      const v161 = v160.episodes || [];
+      let v162 = null;
+      if (v148 === "tv" && v149 && v150) {
+        const v163 = v161.find(v164 => v164.number === v150);
+        if (v163 && v163.id) {
+          v162 = v163.id.toString();
+        }
+      } else if (v161.length > 0) {
+        v162 = v161[0].id.toString();
+      }
+      if (!v162) {
+        throw new Error("Could not find episode ID");
+      }
+      const v165 = v161.find(v166 => v166.id.toString() === v162);
+      const v167 = v165 && v165.tracks || [];
+      const v168 = 2;
+      const v169 = [];
+      for (const v170 of v167) {
+        const v171 = v170.languageName || v170.abbreviate || "Unknown";
+        if (v170.existIndividualVideo && v170.languageId) {
+          try {
+            console.log("[Castle] Fetching " + v171 + " (languageId: " + v170.languageId + ")");
+            const v172 = yield getVideoV1(v152, v155, v162, v170.languageId, v168);
+            const v173 = processVideoResponse(v172, v151, v149, v150, v168, "[" + v171 + "]");
+            if (v173.length > 0) {
+              console.log("[Castle] ✅ " + v171 + ": Found " + v173.length + " streams");
+              v169.push(...v173);
+            }
+          } catch (v174) {
+            console.log("[Castle] ⚠️ " + v171 + ": Failed - " + v174.message);
+          }
+        }
+      }
+      if (v169.length === 0) {
+        console.log("[Castle] Falling back to shared stream (v2)");
+        const v175 = yield getVideo2(v152, v155, v162, v168);
+        const v176 = processVideoResponse(v175, v151, v149, v150, v168, "[Shared]");
+        v169.push(...v176);
+      }
+      v169.sort((v177, v178) => getQualityValue(v178.quality) - getQualityValue(v177.quality));
+      console.log("[Castle] Total streams found: " + v169.length);
+      return v169;
+    } catch (v179) {
+      console.error("[Castle] Error: " + v179.message);
+      return [];
+    }
+  });
+}
+module.exports = {
+  getStreams: getStreams
+};
+/*
  * nv-plugins castle.js — FULLY DECODED port of the All-in-One-Nuvio provider (4.23.0 best-settings pass).
  * Decoded from the obfuscated AIO build: string tables resolved, decoder machinery stripped,
  * every network call capped by an 8s deadline, nvio post-filter attached (en/tl audio gate,
@@ -729,7 +1243,7 @@ module.exports = {
       p = Promise.race([p, new Promise(function (res) {
         var timer = setTimeout(function () {
           res("");
-        }, 6000);
+        }, 2000);
         if (typeof timer === "object" && typeof timer.unref === "function") {
           timer.unref();
         }
@@ -799,77 +1313,56 @@ module.exports = {
   }
   function postProcess(list) {
     var now = Date.now();
-    var kept = [];
     var probes = [];
     var rows = [];
     (list || []).forEach(function (s, i) {
-      if (!s || !s.url) {
-        return;
-      }
-      if (!langAllowed(s.title)) {
-        return;
-      }
+      if (!s || !s.url) return;
+      if (!langAllowed(s.title)) return;
       var text = (s.name || "") + " " + (s.title || "");
       var isMagnet = /^magnet:/i.test(String(s.url));
       var q = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText(text);
-      var isHlsLike = /m3u8/i.test(String(s.url)) || !/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) && /^https?:/i.test(String(s.url));
+      var isHlsLike = /m3u8/i.test(String(s.url)) ||
+        (!/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) && /^https?:/i.test(String(s.url)));
       if (!q && !isMagnet && isHlsLike) {
-        rows.push({
-          s: s,
-          i: i
-        });
+        rows.push({ s: s, i: i });
         probes.push(probeM3u8(String(s.url), s.headers));
       } else {
-        rows.push({
-          s: s,
-          i: i
-        });
+        rows.push({ s: s, i: i });
         probes.push(Promise.resolve(q));
       }
     });
     return Promise.all(probes).then(function (qs) {
       var ranked = [];
       rows.forEach(function (row, k) {
-        var q = qs[k];
-        if (!q) {
-          return;
-        } // unknown resolution -> removed
-        if (q === "CAM") {
-          return;
-        } // cam / sd / sub-720 -> removed
-        row.s.quality = q;
-        ranked.push({
-          s: row.s,
-          i: row.i,
-          q: q
-        });
+        var s = row.s;
+        var tq = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText((s.name || "") + " " + (s.title || ""));
+        // nv best-settings 4.26.0: FAIL-OPEN quality gate (AIO parity)
+        // - a successful HLS probe result wins
+        // - otherwise the title-derived quality is kept, else "Auto"
+        // - unknown-resolution rows are NO LONGER dropped; only rows whose
+        //   title explicitly tags CAM/telesync/sub-720p are removed
+        var q = qs[k] || tq || "Auto";
+        if (q === "CAM") return; // explicit cam / sd / sub-720 tag -> removed
+        s.quality = q;
+        ranked.push({ s: s, i: row.i, q: q });
       });
       // best first so dedupe keeps the strongest duplicate (stable)
       ranked.sort(function (a, b) {
         var r = rank(b.q) - rank(a.q);
-        if (r !== 0) {
-          return r;
-        }
+        if (r !== 0) return r;
         return a.i - b.i;
       });
-      var seenLocal = {};
-      var out = [];
+      var seenLocal = {}, out = [];
       ranked.forEach(function (row) {
         var s = row.s;
         var nu = normUrl(s.url);
-        if (seenLocal[nu]) {
-          return;
-        }
-        if (!claim(nu, now, PROVIDER)) {
-          return;
-        } // already reported by a different provider
+        if (seenLocal[nu]) return;
+        if (!claim(nu, now, PROVIDER)) return; // already reported by a different provider
         seenLocal[nu] = 1;
         out.push(s);
       });
       return out.slice(0, 40);
-    }).catch(function () {
-      return (list || []).slice(0, 40);
-    });
+    }).catch(function () { return (list || []).slice(0, 40); });
   }
   var __orig = null;
   try {

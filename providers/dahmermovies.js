@@ -1,4 +1,169 @@
 /*
+ * nv-plugins dahmermovies.js — rebased on the CURRENT All-in-One-Nuvio upstream file (4.26.0 sync pass).
+ * Upstream version: 2.5.0. Decoded + identifier-normalized, zero obfuscator remnants.
+ * nv tail re-attached: fail-open quality gate (4.26.0), en/tl language gate, cross-provider dedupe.
+ */
+var __async = (v1, v2, v3) => {
+  return new Promise((v4, v5) => {
+    var v6 = v7 => {
+      try {
+        v8(v3.next(v7));
+      } catch (v9) {
+        v5(v9);
+      }
+    };
+    var v10 = v11 => {
+      try {
+        v8(v3.throw(v11));
+      } catch (v12) {
+        v5(v12);
+      }
+    };
+    var v8 = v13 => v13.done ? v4(v13.value) : Promise.resolve(v13.value).then(v6, v10);
+    v8((v3 = v3.apply(v1, v2)).next());
+  });
+};
+console.log("[DahmerMovies] Initializing Scraper");
+var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
+var DAHMER_MOVIES_API = "https://a.111477.xyz";
+var DAHMER_WORKER_API = "https://p.111477.xyz/bulk?u=";
+function makeRequest(v14) {
+  return __async(this, null, function* () {
+    try {
+      return yield fetch(v14, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          Referer: DAHMER_MOVIES_API + "/"
+        }
+      });
+    } catch (v15) {
+      return {
+        ok: false
+      };
+    }
+  });
+}
+function parseLinks(v16) {
+  const v17 = [];
+  const v18 = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let v19;
+  while ((v19 = v18.exec(v16)) !== null) {
+    const v20 = v19[1];
+    const v21 = v20.match(/<a[^>]*href=["']([^"']*)["'][^>]*>([^<]*)<\/a>/i);
+    const v22 = v20.match(/<td[^>]*>(\d+(?:\.\d+)?\s?[KMGT]B)<\/td>/i);
+    if (v21) {
+      const v23 = v21[1];
+      const v24 = v21[2].trim();
+      const v25 = v22 ? v22[1].trim() : "N/A";
+      if (v24 && v23 !== "../" && /\.(mkv|mp4|avi|webm|m3u8)$/i.test(v24)) {
+        v17.push({
+          text: v24,
+          href: v23,
+          size: v25
+        });
+      }
+    }
+  }
+  return v17;
+}
+function invokeDahmerMovies(v26, v27, v28 = null, v29 = null) {
+  return __async(this, null, function* () {
+    var v30;
+    const v31 = v26.replace(/:/g, "");
+    const v32 = v28 !== null ? ["/tvs/" + encodeURIComponent(v31) + "/Season%20" + (v28 < 10 ? "0" + v28 : v28) + "/", "/tvs/" + encodeURIComponent(v31) + "/Season%20" + v28 + "/"] : ["/movies/" + encodeURIComponent(v31 + " (" + v27 + ")") + "/"];
+    let v33 = "";
+    let v34 = "";
+    for (const v35 of v32) {
+      const v36 = DAHMER_MOVIES_API + v35;
+      const v37 = yield makeRequest(v36);
+      if (v37.ok) {
+        v33 = yield v37.text();
+        v34 = v36;
+        break;
+      }
+    }
+    if (!v33) {
+      return [];
+    }
+    const v38 = parseLinks(v33);
+    const v39 = v38.sort((v40, v41) => {
+      const v42 = /2160p|4k/i.test(v40.text);
+      const v43 = /2160p|4k/i.test(v41.text);
+      return v43 - v42;
+    });
+    const v44 = [];
+    for (const v45 of v39.slice(0, 5)) {
+      let v46;
+      if (v45.href.startsWith("http")) {
+        v46 = v45.href;
+      } else if (v45.href.includes("/movies/") || v45.href.includes("/tvs/")) {
+        v46 = DAHMER_MOVIES_API + (v45.href.startsWith("/") ? "" : "/") + v45.href;
+      } else {
+        v46 = v34 + v45.href;
+      }
+      v46 = v46.replace(/([^:]\/)\/+/g, "$1");
+      v46 = decodeURI(v46);
+      let v47 = DAHMER_WORKER_API + encodeURI(v46);
+      const v48 = v45.text;
+      let v49 = "Original";
+      const v50 = /\b(HIN|TAM|TEL|Multi|Dual|DUB|Multi-Audio|MULTI)\b/i.test(v48);
+      const v51 = /\b(Eng|English)\b/i.test(v48);
+      const v52 = /^[a-zA-Z0-9\s?!\-:]+$/.test(v26);
+      if (v50) {
+        v49 = "Multi Audio";
+      } else if (v52 && v51) {
+        v49 = "English";
+      }
+      const v53 = v48.match(/\.(mkv|mp4|m3u8|avi|webm)$/i);
+      const v54 = v53 ? v53[1].toUpperCase() : "LINK";
+      const v55 = ((v30 = v48.match(/\b(2160p|1080p|720p|4k)\b/i)) == null ? undefined : v30[0]) || "1080p";
+      const v56 = v45.size !== "N/A" ? v45.size : "N/A";
+      let v57 = v48.replace(/\.(mkv|mp4|avi|webm|m3u8)$/i, "").replace(/[\[\]()._-]/g, " ").replace(/\s+/g, " ").trim();
+      v44.push({
+        name: "DahmerMovies",
+        title: "📺 " + v55 + "  |  🌐 " + v49 + "  |  💾 " + v56 + "  |  🎞️ " + v54 + "  |  ℹ️ " + v57,
+        url: v47,
+        quality: v55.toLowerCase(),
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          Referer: DAHMER_MOVIES_API + "/",
+          Connection: "keep-alive",
+          Accept: "*/*",
+          Range: "bytes=0-"
+        },
+        provider: "dahmermovies"
+      });
+    }
+    return v44;
+  });
+}
+function getStreams(v58, v59 = "movie", v60 = null, v61 = null) {
+  return __async(this, null, function* () {
+    var v62;
+    try {
+      const v63 = v59 === "tv" ? "tv" : "movie";
+      const v64 = "https://api.themoviedb.org/3/" + v63 + "/" + v58 + "?api_key=" + TMDB_API_KEY;
+      const v65 = yield makeRequest(v64);
+      const v66 = yield v65.json();
+      const v67 = v59 === "tv" ? v66.name : v66.title;
+      const v68 = (v62 = v59 === "tv" ? v66.first_air_date : v66.release_date) == null ? undefined : v62.substring(0, 4);
+      if (!v67) {
+        return [];
+      }
+      return yield invokeDahmerMovies(v67, v68, v60, v61);
+    } catch (v69) {
+      return [];
+    }
+  });
+}
+if (typeof module !== "undefined") {
+  module.exports = {
+    getStreams: getStreams
+  };
+} else {
+  global.getStreams = getStreams;
+}
+/*
  * nv-plugins dahmermovies.js — FULLY DECODED port of the All-in-One-Nuvio provider (4.23.0 best-settings pass).
  * Decoded from the obfuscated AIO build: string tables resolved, decoder machinery stripped,
  * every network call capped by an 8s deadline, nvio post-filter attached (en/tl audio gate,
@@ -363,7 +528,7 @@ if (typeof module !== "undefined") {
       p = Promise.race([p, new Promise(function (res) {
         var timer = setTimeout(function () {
           res("");
-        }, 6000);
+        }, 2000);
         if (typeof timer === "object" && typeof timer.unref === "function") {
           timer.unref();
         }
@@ -433,77 +598,56 @@ if (typeof module !== "undefined") {
   }
   function postProcess(list) {
     var now = Date.now();
-    var kept = [];
     var probes = [];
     var rows = [];
     (list || []).forEach(function (s, i) {
-      if (!s || !s.url) {
-        return;
-      }
-      if (!langAllowed(s.title)) {
-        return;
-      }
+      if (!s || !s.url) return;
+      if (!langAllowed(s.title)) return;
       var text = (s.name || "") + " " + (s.title || "");
       var isMagnet = /^magnet:/i.test(String(s.url));
       var q = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText(text);
-      var isHlsLike = /m3u8/i.test(String(s.url)) || !/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) && /^https?:/i.test(String(s.url));
+      var isHlsLike = /m3u8/i.test(String(s.url)) ||
+        (!/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) && /^https?:/i.test(String(s.url)));
       if (!q && !isMagnet && isHlsLike) {
-        rows.push({
-          s: s,
-          i: i
-        });
+        rows.push({ s: s, i: i });
         probes.push(probeM3u8(String(s.url), s.headers));
       } else {
-        rows.push({
-          s: s,
-          i: i
-        });
+        rows.push({ s: s, i: i });
         probes.push(Promise.resolve(q));
       }
     });
     return Promise.all(probes).then(function (qs) {
       var ranked = [];
       rows.forEach(function (row, k) {
-        var q = qs[k];
-        if (!q) {
-          return;
-        } // unknown resolution -> removed
-        if (q === "CAM") {
-          return;
-        } // cam / sd / sub-720 -> removed
-        row.s.quality = q;
-        ranked.push({
-          s: row.s,
-          i: row.i,
-          q: q
-        });
+        var s = row.s;
+        var tq = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText((s.name || "") + " " + (s.title || ""));
+        // nv best-settings 4.26.0: FAIL-OPEN quality gate (AIO parity)
+        // - a successful HLS probe result wins
+        // - otherwise the title-derived quality is kept, else "Auto"
+        // - unknown-resolution rows are NO LONGER dropped; only rows whose
+        //   title explicitly tags CAM/telesync/sub-720p are removed
+        var q = qs[k] || tq || "Auto";
+        if (q === "CAM") return; // explicit cam / sd / sub-720 tag -> removed
+        s.quality = q;
+        ranked.push({ s: s, i: row.i, q: q });
       });
       // best first so dedupe keeps the strongest duplicate (stable)
       ranked.sort(function (a, b) {
         var r = rank(b.q) - rank(a.q);
-        if (r !== 0) {
-          return r;
-        }
+        if (r !== 0) return r;
         return a.i - b.i;
       });
-      var seenLocal = {};
-      var out = [];
+      var seenLocal = {}, out = [];
       ranked.forEach(function (row) {
         var s = row.s;
         var nu = normUrl(s.url);
-        if (seenLocal[nu]) {
-          return;
-        }
-        if (!claim(nu, now, PROVIDER)) {
-          return;
-        } // already reported by a different provider
+        if (seenLocal[nu]) return;
+        if (!claim(nu, now, PROVIDER)) return; // already reported by a different provider
         seenLocal[nu] = 1;
         out.push(s);
       });
       return out.slice(0, 40);
-    }).catch(function () {
-      return (list || []).slice(0, 40);
-    });
+    }).catch(function () { return (list || []).slice(0, 40); });
   }
   var __orig = null;
   try {

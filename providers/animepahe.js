@@ -1,4 +1,409 @@
 /*
+ * nv-plugins animepahe.js — rebased on the CURRENT All-in-One-Nuvio upstream file (4.26.0 sync pass).
+ * Upstream version: 1.0.1. Decoded + identifier-normalized, zero obfuscator remnants.
+ * nv tail re-attached: fail-open quality gate (4.26.0), en/tl language gate, cross-provider dedupe.
+ */
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __defProps = Object.defineProperties;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getOwnPropSymbols = Object.getOwnPropertySymbols;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __propIsEnum = Object.prototype.propertyIsEnumerable;
+var __defNormalProp = (v1, v2, v3) => v2 in v1 ? __defProp(v1, v2, {
+  enumerable: true,
+  configurable: true,
+  writable: true,
+  value: v3
+}) : v1[v2] = v3;
+var __spreadValues = (v4, v5) => {
+  for (var v6 in v5 ||= {}) {
+    if (__hasOwnProp.call(v5, v6)) {
+      __defNormalProp(v4, v6, v5[v6]);
+    }
+  }
+  if (__getOwnPropSymbols) {
+    for (var v6 of __getOwnPropSymbols(v5)) {
+      if (__propIsEnum.call(v5, v6)) {
+        __defNormalProp(v4, v6, v5[v6]);
+      }
+    }
+  }
+  return v4;
+};
+var __spreadProps = (v7, v8) => __defProps(v7, __getOwnPropDescs(v8));
+var __objRest = (v9, v10) => {
+  var v11 = {};
+  for (var v12 in v9) {
+    if (__hasOwnProp.call(v9, v12) && v10.indexOf(v12) < 0) {
+      v11[v12] = v9[v12];
+    }
+  }
+  if (v9 != null && __getOwnPropSymbols) {
+    for (var v12 of __getOwnPropSymbols(v9)) {
+      if (v10.indexOf(v12) < 0 && __propIsEnum.call(v9, v12)) {
+        v11[v12] = v9[v12];
+      }
+    }
+  }
+  return v11;
+};
+var __copyProps = (v13, v14, v15, v16) => {
+  if (v14 && typeof v14 === "object" || typeof v14 === "function") {
+    for (let v17 of __getOwnPropNames(v14)) {
+      if (!__hasOwnProp.call(v13, v17) && v17 !== v15) {
+        __defProp(v13, v17, {
+          get: () => v14[v17],
+          enumerable: !(v16 = __getOwnPropDesc(v14, v17)) || v16.enumerable
+        });
+      }
+    }
+  }
+  return v13;
+};
+var __toESM = (v18, v19, v20) => {
+  v20 = v18 != null ? __create(__getProtoOf(v18)) : {};
+  return __copyProps(v19 || !v18 || !v18.__esModule ? __defProp(v20, "default", {
+    value: v18,
+    enumerable: true
+  }) : v20, v18);
+};
+var __async = (v21, v22, v23) => {
+  return new Promise((v24, v25) => {
+    var v26 = v27 => {
+      try {
+        v28(v23.next(v27));
+      } catch (v29) {
+        v25(v29);
+      }
+    };
+    var v30 = v31 => {
+      try {
+        v28(v23.throw(v31));
+      } catch (v32) {
+        v25(v32);
+      }
+    };
+    var v28 = v33 => v33.done ? v24(v33.value) : Promise.resolve(v33.value).then(v26, v30);
+    v28((v23 = v23.apply(v21, v22)).next());
+  });
+};
+var import_cheerio_without_node_native = __toESM(require("cheerio-without-node-native"));
+var MAIN_URL = "https://animepahe.com";
+var PROXY_URL = "https://animepaheproxy.phisheranimepahe.workers.dev/?url=";
+var HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
+  Cookie: "__ddg2_=1234567890",
+  Referer: "https://animepahe.com/"
+};
+function fetchText(v34) {
+  return __async(this, arguments, function* (v35, v36 = {}) {
+    const v37 = v36;
+    const {
+      useProxy = true
+    } = v37;
+    const v38 = __objRest(v37, ["useProxy"]);
+    const v39 = v35.startsWith("http") ? v35 : "" + MAIN_URL + v35;
+    const v40 = useProxy ? "" + PROXY_URL + encodeURIComponent(v39) : v39;
+    const v41 = yield fetch(v40, __spreadValues({
+      headers: HEADERS
+    }, v38));
+    if (!v41.ok) {
+      throw new Error("HTTP " + v41.status + " on " + v39);
+    }
+    return yield v41.text();
+  });
+}
+function fetchJson(v42) {
+  return __async(this, arguments, function* (v43, v44 = {}) {
+    const v45 = yield fetchText(v43, v44);
+    return JSON.parse(v45);
+  });
+}
+function getImdbId(v46, v47) {
+  return __async(this, null, function* () {
+    try {
+      const v48 = "https://api.themoviedb.org/3/" + (v47 === "tv" ? "tv" : "movie") + "/" + v46 + "/external_ids?api_key=1865f43a0549ca50d341dd9ab8b29f49";
+      const v49 = yield fetch(v48);
+      const v50 = yield v49.json();
+      return v50.imdb_id;
+    } catch (v51) {
+      return null;
+    }
+  });
+}
+function resolveMapping(v52, v53, v54) {
+  return __async(this, null, function* () {
+    try {
+      const v55 = "https://id-mapping-api-malid.hf.space/api/resolve?id=" + v52 + "&s=" + v53 + "&e=" + v54;
+      const v56 = yield fetch(v55);
+      if (!v56.ok) {
+        return null;
+      }
+      return yield v56.json();
+    } catch (v57) {
+      return null;
+    }
+  });
+}
+function getMalTitle(v58) {
+  return __async(this, null, function* () {
+    try {
+      const v59 = yield fetch("https://api.jikan.moe/v4/anime/" + v58);
+      if (!v59.ok) {
+        return null;
+      }
+      const v60 = yield v59.json();
+      return v60.data.title;
+    } catch (v61) {
+      return null;
+    }
+  });
+}
+function searchAnime(v62) {
+  return __async(this, null, function* () {
+    const v63 = "/api?m=search&l=8&q=" + encodeURIComponent(v62);
+    return yield fetchJson(v63);
+  });
+}
+function extractQuality(v64) {
+  const v65 = v64.match(/(\d{3,4}p)/);
+  if (v65) {
+    return v65[1];
+  } else {
+    return "720p";
+  }
+}
+function unpack(v66) {
+  try {
+    const v67 = v66.match(/}\((['"])([\s\S]*?)\1,\s*(\d+),\s*(\d+),\s*(['"])([\s\S]*?)\5\.split\((['"])\|\7\)/);
+    if (v67) {
+      let [v68, v69, v70, v71, v72, v73, v74] = v67;
+      v70 = v70.replace(/\\'/g, "'").replace(/\\"/g, "\"").replace(/\\\\/g, "\\");
+      v71 = parseInt(v71);
+      v72 = parseInt(v72);
+      const v75 = v74.split("|");
+      const v76 = v77 => (v77 < v71 ? "" : v76(parseInt(v77 / v71))) + ((v77 = v77 % v71) > 35 ? String.fromCharCode(v77 + 29) : v77.toString(36));
+      const v78 = {};
+      while (v72--) {
+        v78[v76(v72)] = v75[v72] || v76(v72);
+      }
+      return v70.replace(/\b\w+\b/g, v79 => v78[v79]);
+    }
+  } catch (v80) {
+    console.error("[AnimePahe] Unpack error:", v80.message);
+  }
+  return v66;
+}
+function extractKwik(v81) {
+  return __async(this, null, function* () {
+    try {
+      const v82 = globalThis.SCRAPER_SETTINGS || {};
+      const v83 = v82.domain || "https://animepahe.com";
+      const v84 = yield fetchText(v81, {
+        headers: __spreadProps(__spreadValues({}, HEADERS), {
+          Referer: v83 + "/",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }),
+        useProxy: false
+      });
+      const v85 = v84.match(/<script.*?>([\s\S]*?)<\/script>/g) || [];
+      const v86 = [];
+      for (const v87 of v85) {
+        if (v87.includes("eval(function(p,a,c,k,e,d)")) {
+          let v88 = 0;
+          while (true) {
+            const v89 = v87.indexOf("eval(function(p,a,c,k,e,d)", v88);
+            if (v89 === -1) {
+              break;
+            }
+            const v90 = v87.indexOf(".split('|')", v89);
+            if (v90 === -1) {
+              break;
+            }
+            const v91 = v87.indexOf("))", v90);
+            if (v91 === -1) {
+              break;
+            }
+            v86.push(v87.substring(v89, v91 + 2));
+            v88 = v91 + 2;
+          }
+        }
+      }
+      for (const v92 of v86) {
+        const v93 = unpack(v92);
+        const v94 = v93.match(/source\s*=\s*'([^']+m3u8[^']*)'/) || v93.match(/source\s*=\s*"([^"]+m3u8[^"]*)"/);
+        if (v94) {
+          return {
+            url: v94[1],
+            headers: {
+              Referer: "https://kwik.cx/",
+              Origin: "https://kwik.cx",
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+          };
+        }
+      }
+    } catch (v95) {
+      console.error("[AnimePahe] Kwik extraction failed:", v95.message);
+    }
+    return null;
+  });
+}
+function getStreams(v96, v97, v98, v99) {
+  return __async(this, null, function* () {
+    try {
+      let v100 = null;
+      let v101 = "";
+      let v102 = v99;
+      let v103 = null;
+      if (v97 === "tv") {
+        const v104 = yield getImdbId(v96, v97);
+        if (!v104) {
+          return [];
+        }
+        const v105 = yield resolveMapping(v104, v98, v99);
+        if (!v105 || !v105.mal_id) {
+          return [];
+        }
+        v103 = v105.mal_id;
+        v102 = v105.mal_episode || v99;
+        v101 = yield getMalTitle(v103);
+        if (!v101) {
+          return [];
+        }
+        const v106 = yield searchAnime(v101);
+        if (v106.data && v106.data.length > 0) {
+          for (let v107 = 0; v107 < Math.min(v106.data.length, 3); v107++) {
+            const v108 = v106.data[v107];
+            const v109 = yield fetchText("/anime/" + v108.session);
+            if (v109.includes("myanimelist.net/anime/" + v103)) {
+              v100 = v108.session;
+              break;
+            }
+          }
+        }
+      } else {
+        const v110 = "https://api.themoviedb.org/3/movie/" + v96 + "?api_key=1865f43a0549ca50d341dd9ab8b29f49";
+        const v111 = yield fetch(v110);
+        const v112 = yield v111.json();
+        v101 = v112.title || v112.original_title;
+        v102 = 1;
+        if (!v101) {
+          return [];
+        }
+        const v113 = yield searchAnime(v101);
+        if (v113.data && v113.data.length > 0) {
+          const v114 = v113.data[0];
+          if (v114.title.toLowerCase() === v101.toLowerCase()) {
+            v100 = v114.session;
+          }
+        }
+      }
+      if (!v100) {
+        return [];
+      }
+      const v115 = "/api?m=release&id=" + v100 + "&sort=episode_asc&page=1";
+      const v116 = yield fetchJson(v115);
+      if (!v116.data || v116.data.length === 0) {
+        return [];
+      }
+      const v117 = Math.floor(v116.data[0].episode);
+      const v118 = v116.per_page || 30;
+      const v119 = v117 - 1 + v102;
+      const v120 = Math.ceil(v102 / v118) || 1;
+      const v121 = "/api?m=release&id=" + v100 + "&sort=episode_asc&page=" + v120;
+      const v122 = yield fetchJson(v121);
+      let v123 = null;
+      if (v122 && v122.data) {
+        const v124 = v122.data.find(v125 => Math.floor(v125.episode) == v119);
+        if (v124) {
+          v123 = v124.session;
+        }
+      }
+      if (!v123 && v120 !== 1) {
+        const v126 = v116.data.find(v127 => Math.floor(v127.episode) == v119);
+        if (v126) {
+          v123 = v126.session;
+        }
+      }
+      if (!v123) {
+        return [];
+      }
+      const v128 = "/play/" + v100 + "/" + v123;
+      const v129 = yield fetchText(v128);
+      const v130 = import_cheerio_without_node_native.default.load(v129);
+      const v131 = [];
+      const v132 = [];
+      v130("#resolutionMenu button").each((v133, v134) => {
+        const v135 = v130(v134);
+        const v136 = v135.attr("data-src");
+        const v137 = v135.text();
+        const v138 = extractQuality(v137);
+        const v139 = v137.toLowerCase().includes("eng") ? "Dub" : "Sub";
+        if (v136 && v136.includes("kwik")) {
+          v132.push(extractKwik(v136).then(v140 => {
+            if (v140) {
+              v131.push({
+                name: "AnimePahe (" + v138 + " " + v139 + ")",
+                title: v101 + " - Episode " + v102,
+                url: v140.url,
+                quality: v138,
+                headers: v140.headers
+              });
+            }
+          }));
+        }
+      });
+      yield Promise.all(v132);
+      const v141 = {
+        "1080p": 3,
+        "720p": 2,
+        "360p": 1
+      };
+      return v131.sort((v142, v143) => (v141[v143.quality] || 0) - (v141[v142.quality] || 0));
+    } catch (v144) {
+      return [];
+    }
+  });
+}
+function onSettings() {
+  return __async(this, null, function* () {
+    return [{
+      type: "header",
+      label: "Domain Selection"
+    }, {
+      type: "select",
+      key: "domain",
+      label: "Preferred Domain",
+      description: "AnimePahe frequently rotates domains. Choose the one currently working for you.",
+      options: [{
+        label: "animepahe.com",
+        value: "https://animepahe.com"
+      }, {
+        label: "animepahe.org",
+        value: "https://animepahe.org"
+      }, {
+        label: "animepahe.pw",
+        value: "https://animepahe.pw"
+      }],
+      defaultValue: "https://animepahe.com"
+    }];
+  });
+}
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    getStreams: getStreams,
+    onSettings: onSettings
+  };
+} else {
+  global.getStreams = getStreams;
+  global.onSettings = onSettings;
+}
+/*
  * nv-plugins animepahe.js — FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass).
  * Decoded from the obfuscated AIO build: string tables resolved, decoder machinery stripped,
  * every network call capped by an 8s deadline, node-core requires fail-soft, nvio post-filter
@@ -652,7 +1057,7 @@ if (typeof module !== "undefined" && module.exports) {
       p = Promise.race([p, new Promise(function (res) {
         var timer = setTimeout(function () {
           res("");
-        }, 6000);
+        }, 2000);
         if (typeof timer === "object" && typeof timer.unref === "function") {
           timer.unref();
         }
@@ -722,77 +1127,56 @@ if (typeof module !== "undefined" && module.exports) {
   }
   function postProcess(list) {
     var now = Date.now();
-    var kept = [];
     var probes = [];
     var rows = [];
     (list || []).forEach(function (s, i) {
-      if (!s || !s.url) {
-        return;
-      }
-      if (!langAllowed(s.title)) {
-        return;
-      }
+      if (!s || !s.url) return;
+      if (!langAllowed(s.title)) return;
       var text = (s.name || "") + " " + (s.title || "");
       var isMagnet = /^magnet:/i.test(String(s.url));
       var q = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText(text);
-      var isHlsLike = /m3u8/i.test(String(s.url)) || !/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) && /^https?:/i.test(String(s.url));
+      var isHlsLike = /m3u8/i.test(String(s.url)) ||
+        (!/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) && /^https?:/i.test(String(s.url)));
       if (!q && !isMagnet && isHlsLike) {
-        rows.push({
-          s: s,
-          i: i
-        });
+        rows.push({ s: s, i: i });
         probes.push(probeM3u8(String(s.url), s.headers));
       } else {
-        rows.push({
-          s: s,
-          i: i
-        });
+        rows.push({ s: s, i: i });
         probes.push(Promise.resolve(q));
       }
     });
     return Promise.all(probes).then(function (qs) {
       var ranked = [];
       rows.forEach(function (row, k) {
-        var q = qs[k];
-        if (!q) {
-          return;
-        } // unknown resolution -> removed
-        if (q === "CAM") {
-          return;
-        } // cam / sd / sub-720 -> removed
-        row.s.quality = q;
-        ranked.push({
-          s: row.s,
-          i: row.i,
-          q: q
-        });
+        var s = row.s;
+        var tq = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText((s.name || "") + " " + (s.title || ""));
+        // nv best-settings 4.26.0: FAIL-OPEN quality gate (AIO parity)
+        // - a successful HLS probe result wins
+        // - otherwise the title-derived quality is kept, else "Auto"
+        // - unknown-resolution rows are NO LONGER dropped; only rows whose
+        //   title explicitly tags CAM/telesync/sub-720p are removed
+        var q = qs[k] || tq || "Auto";
+        if (q === "CAM") return; // explicit cam / sd / sub-720 tag -> removed
+        s.quality = q;
+        ranked.push({ s: s, i: row.i, q: q });
       });
       // best first so dedupe keeps the strongest duplicate (stable)
       ranked.sort(function (a, b) {
         var r = rank(b.q) - rank(a.q);
-        if (r !== 0) {
-          return r;
-        }
+        if (r !== 0) return r;
         return a.i - b.i;
       });
-      var seenLocal = {};
-      var out = [];
+      var seenLocal = {}, out = [];
       ranked.forEach(function (row) {
         var s = row.s;
         var nu = normUrl(s.url);
-        if (seenLocal[nu]) {
-          return;
-        }
-        if (!claim(nu, now, PROVIDER)) {
-          return;
-        } // already reported by a different provider
+        if (seenLocal[nu]) return;
+        if (!claim(nu, now, PROVIDER)) return; // already reported by a different provider
         seenLocal[nu] = 1;
         out.push(s);
       });
       return out.slice(0, 40);
-    }).catch(function () {
-      return (list || []).slice(0, 40);
-    });
+    }).catch(function () { return (list || []).slice(0, 40); });
   }
   var __orig = null;
   try {

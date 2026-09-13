@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "4.25.0",
-  "description": "Canonical Nuvio provider collection. v4.25.0 = the TRUE full decode of the whole pack: the 43 provider files still shipped obfuscated inside 4.24.0 are now fully decoded (string tables resolved, control-flow flattened out, obfuscator machinery stripped, scope-safe identifier rename, prettier-formatted), each validated by syntax check, module-export parity and live A/B behavior test against the original: 1Shows, AllAnime, AllMovieLand, AllWish, AniDB, AnikotoTV, AnimeKai, AnimePahe, Animetsu, AnimeWorld, AnimeZey, Castle, CineBy, CineFreak, CTGMovies, DahmerMovies, Dooflix, FibWatch, Goated, GramCinema, HDGharTV, HDHub4u, HiAnime, Kurage, MoonFlix, MovieBlast, MovieBox, Movies4u, MoviesDrive, MoviesHunt, Movix, Nakios, OnlyKDrama, Peachify (620KB build), Playimdb, ShowBox, VegaMovies, VidEasy, VidLove, VidSrc, VixSrc (972KB build), XPass, ZinkMovies. netmirror v14 = the AIO netmirror.js FULLY DECODED and rewritten for speed: net27.cc /api/embed-tmdb single-request hot path (~0.5s, movies + series, live-verified stream HEAD 200 video/mp4, en+fil captions), NewTV platform lane kept as fail-fast fallback (24-domain bootstrap raced in parallel, api base cached 6h, platforms + episode pages in parallel), streams cached 8min, TMDB title cached 30min, overall 13s cap. Exclusions unchanged: no Hindi providers, no duplicate backends, nothing pushed to AIO. 63 providers.",
+  "version": "4.26.0",
+  "description": "Canonical Nuvio provider collection. v4.26.0 = the STREAM-SHEET SPEED PARITY pass, tuned from a full live head-to-head profile of all 63 nv providers vs all 61 All-in-One-Nuvio providers on identical titles (Fight Club + Breaking Bad S1E1, identical network): (1) the nvio quality post-filter shipped in all 56 provider files is now FAIL-OPEN - unknown/Auto-quality HLS rows keep their row (probe result wins, else title-derived quality, else Auto) instead of being dropped after a 6s probe, cutting the per-provider probe tax from up to 8s to 2s and restoring rows AIO users see; only rows whose title explicitly tags CAM/telesync/sub-720p are still removed (en/tl language gate + cross-provider dedupe unchanged); (2) 11 providers rebased onto the CURRENT AIO upstream files (hdhub4u 1.0.1, nakios 3.8.2, moviesdrive 3.0.0, anikototv 1.0.5, movies4u 1.0.2, moviebox 1.0.1, allwish 1.0.1, animepahe 1.0.1, castle 2.3.0, cineby 2.5.0, dahmermovies 2.5.0), each decode-normalized (zero obfuscator remnants) with the fail-open tail re-attached; (3) torrents.js: the TorrentsDB lane is capped at 3s so a stalled lane can never hold the whole provider (AIO parity: Torrentio primary); (4) streamflix + pencuri get hard 8s overall caps (were able to spin 31s / 22s); netmirror v14 hot path unchanged (single net27.cc request). All 63 providers still fully decoded with zero obfuscator remnants. Exclusions unchanged: no Hindi providers, no duplicate backends, miruro 2.7.0 untouched, nothing pushed to AIO. 63 providers.",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -412,8 +412,8 @@
     {
       "id": "castle",
       "name": "Castle",
-      "description": "Castle: FULLY DECODED port of the AIO provider (string tables resolved, no obfuscated code): api.hlowb.com lanes with the okhttp app user-agent, 8s per-call + 12s overall deadlines, nvio post-filter attached (en/tl audio gate, >=720p, dedupe). v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
-      "version": "2.2.0",
+      "description": "Castle: FULLY DECODED port of the AIO provider (string tables resolved, no obfuscated code): api.hlowb.com lanes with the okhttp app user-agent, 8s per-call + 12s overall deadlines, nvio post-filter attached (en/tl audio gate, >=720p, dedupe). v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet. v4.26.0: rebased on the current AIO upstream logic (2.0.0) + fail-open quality gate.",
+      "version": "2.3.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -434,8 +434,8 @@
     {
       "id": "cineby",
       "name": "Cineby",
-      "description": "Cineby: FULLY DECODED AIO port - seed handshake + sources-with-title flow on the live api host, encrypted payload decryption intact, subtitles mapped, 8s/12s deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
-      "version": "2.4.0",
+      "description": "Cineby: FULLY DECODED AIO port - seed handshake + sources-with-title flow on the live api host, encrypted payload decryption intact, subtitles mapped, 8s/12s deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet. v4.26.0: rebased on the current AIO upstream logic (1.9.2) + fail-open quality gate.",
+      "version": "2.5.0",
       "author": "Nuvio Team (AIO merge)",
       "supportedTypes": [
         "movie",
@@ -587,8 +587,8 @@
     {
       "id": "dahmermovies",
       "name": "DahmerMovies",
-      "description": "DahmerMovies: FULLY DECODED AIO port - a.111477.xyz API + p.111477.xyz bulk proxy lanes with Range probing, 8s per-call + 12s overall deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
-      "version": "2.4.0",
+      "description": "DahmerMovies: FULLY DECODED AIO port - a.111477.xyz API + p.111477.xyz bulk proxy lanes with Range probing, 8s per-call + 12s overall deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet. v4.26.0: rebased on the current AIO upstream logic (1.0.0) + fail-open quality gate.",
+      "version": "2.5.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -697,8 +697,8 @@
     {
       "id": "allwish",
       "name": "AllWish",
-      "description": "AllWish/megaplay anime + movie lanes (megaplay.buzz getSources + player.sgsgsgsr), anime-first id mapping. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
-      "version": "1.0.0",
+      "description": "AllWish/megaplay anime + movie lanes (megaplay.buzz getSources + player.sgsgsgsr), anime-first id mapping. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). v4.26.0: rebased on the current AIO upstream logic (1.0.1) + fail-open quality gate.",
+      "version": "1.0.1",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -874,8 +874,8 @@
     {
       "id": "hdhub4u",
       "name": "HDHub4u",
-      "description": "HDHub4u with the live domains source (phisher98 TVVVV repo) + link-hub hops. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
-      "version": "1.0.0",
+      "description": "HDHub4u with the live domains source (phisher98 TVVVV repo) + link-hub hops. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). v4.26.0: rebased on the current AIO upstream logic (1.0.1) + fail-open quality gate.",
+      "version": "1.0.1",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -961,8 +961,8 @@
     {
       "id": "moviebox",
       "name": "MovieBox",
-      "description": "MovieBox via the pengu.uk resolver gateway (source_moviebox config, auth token from the AIO build). FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
-      "version": "1.0.0",
+      "description": "MovieBox via the pengu.uk resolver gateway (source_moviebox config, auth token from the AIO build). FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). v4.26.0: rebased on the current AIO upstream logic (1.0.1) + fail-open quality gate.",
+      "version": "1.0.1",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -983,8 +983,8 @@
     {
       "id": "movies4u",
       "name": "Movies4u",
-      "description": "Movies4u with the live domains source (phisher98 TVVVV repo) + m4uplay + worker resolver lanes. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
-      "version": "1.0.0",
+      "description": "Movies4u with the live domains source (phisher98 TVVVV repo) + m4uplay + worker resolver lanes. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). v4.26.0: rebased on the current AIO upstream logic (1.0.2) + fail-open quality gate.",
+      "version": "1.0.2",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie"
@@ -1004,8 +1004,8 @@
     {
       "id": "moviesdrive",
       "name": "MoviesDrive",
-      "description": "MoviesDrive new1.moviesdrive.christmas + mdrive.lol link hops. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
-      "version": "1.0.0",
+      "description": "MoviesDrive new1.moviesdrive.christmas + mdrive.lol link hops. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). v4.26.0: rebased on the current AIO upstream logic (3.0.0) + fail-open quality gate.",
+      "version": "3.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -1027,8 +1027,8 @@
     {
       "id": "nakios",
       "name": "Nakios",
-      "description": "Nakios with the live domains source (wooodyhood repo) + player extraction. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
-      "version": "1.0.0",
+      "description": "Nakios with the live domains source (wooodyhood repo) + player extraction. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). v4.26.0: rebased on the current AIO upstream logic (3.8.2) + fail-open quality gate.",
+      "version": "3.8.2",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -1297,8 +1297,8 @@
     {
       "id": "anikototv",
       "name": "AnikotoTV",
-      "description": "AnikotoTV: TVDB login + aiometadata mapping + stream lanes. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
-      "version": "1.0.0",
+      "description": "AnikotoTV: TVDB login + aiometadata mapping + stream lanes. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). v4.26.0: rebased on the current AIO upstream logic (1.0.5) + fail-open quality gate.",
+      "version": "1.0.5",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -1341,8 +1341,8 @@
     {
       "id": "animepahe",
       "name": "AnimePahe",
-      "description": "AnimePahe with its worker proxy + kwik extraction + MAL id mapping. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
-      "version": "1.0.0",
+      "description": "AnimePahe with its worker proxy + kwik extraction + MAL id mapping. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). v4.26.0: rebased on the current AIO upstream logic (1.0.1) + fail-open quality gate.",
+      "version": "1.0.1",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",

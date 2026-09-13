@@ -1,4 +1,175 @@
 /*
+ * nv-plugins moviebox.js — rebased on the CURRENT All-in-One-Nuvio upstream file (4.26.0 sync pass).
+ * Upstream version: 1.0.1. Decoded + identifier-normalized, zero obfuscator remnants.
+ * nv tail re-attached: fail-open quality gate (4.26.0), en/tl language gate, cross-provider dedupe.
+ */
+var __defProp = Object.defineProperty;
+var __defProps = Object.defineProperties;
+var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
+var __getOwnPropSymbols = Object.getOwnPropertySymbols;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __propIsEnum = Object.prototype.propertyIsEnumerable;
+var __defNormalProp = (v1, v2, v3) => v2 in v1 ? __defProp(v1, v2, {
+  enumerable: true,
+  configurable: true,
+  writable: true,
+  value: v3
+}) : v1[v2] = v3;
+var __spreadValues = (v4, v5) => {
+  for (var v6 in v5 ||= {}) {
+    if (__hasOwnProp.call(v5, v6)) {
+      __defNormalProp(v4, v6, v5[v6]);
+    }
+  }
+  if (__getOwnPropSymbols) {
+    for (var v6 of __getOwnPropSymbols(v5)) {
+      if (__propIsEnum.call(v5, v6)) {
+        __defNormalProp(v4, v6, v5[v6]);
+      }
+    }
+  }
+  return v4;
+};
+var __spreadProps = (v7, v8) => __defProps(v7, __getOwnPropDescs(v8));
+var __async = (v9, v10, v11) => {
+  return new Promise((v12, v13) => {
+    var v14 = v15 => {
+      try {
+        v16(v11.next(v15));
+      } catch (v17) {
+        v13(v17);
+      }
+    };
+    var v18 = v19 => {
+      try {
+        v16(v11.throw(v19));
+      } catch (v20) {
+        v13(v20);
+      }
+    };
+    var v16 = v21 => v21.done ? v12(v21.value) : Promise.resolve(v21.value).then(v14, v18);
+    v16((v11 = v11.apply(v9, v10)).next());
+  });
+};
+function onSettings() {
+  return __async(this, null, function* () {
+    return [{
+      type: "header",
+      label: "Audio Preferences"
+    }, {
+      type: "toggle",
+      key: "langEnglish",
+      label: "Enable English 🇺🇸",
+      defaultValue: true
+    }, {
+      type: "toggle",
+      key: "langHindi",
+      label: "Enable Hindi 🇮🇳",
+      defaultValue: true
+    }];
+  });
+}
+var PROVIDER_NAME = "MovieBox";
+var CINESCRAPE_BASE = "https://pengu.uk/%7B%22source_moviebox%22%3A%22on%22%2C%22res_1080%22%3A%22on%22%2C%22disable_direct%22%3A%22on%22%2C%22auth_token%22%3A%22XwZg2rLkLlbjXBeDVCyxgfHXjxN1ijLMkUuToW8KaKc%22%7D";
+var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
+function getStreams(v22, v23, v24, v25) {
+  return __async(this, null, function* () {
+    var v26;
+    const v27 = v23 === "tv" || v23 === "series";
+    const v28 = "https://api.themoviedb.org/3/" + (v27 ? "tv" : "movie") + "/" + v22 + "?api_key=" + TMDB_API_KEY + "&append_to_response=external_ids";
+    try {
+      const v29 = globalThis.SCRAPER_SETTINGS || {};
+      const v30 = v29.langEnglish !== false;
+      const v31 = v29.langHindi !== false;
+      const v32 = yield fetch(v28).then(v33 => v33.json());
+      const v34 = ((v26 = v32 == null ? undefined : v32.external_ids) == null ? undefined : v26.imdb_id) || (v32 == null ? undefined : v32.imdb_id);
+      if (!v34) {
+        return [];
+      }
+      const v35 = v32.title || v32.name || "Movie/Show";
+      const v36 = v32.release_date ? v32.release_date.split("-")[0] : v32.first_air_date ? v32.first_air_date.split("-")[0] : "2026";
+      const v37 = v27 ? CINESCRAPE_BASE + "/stream/series/" + v34 + ":" + (v24 || 1) + ":" + (v25 || 1) + ".json" : CINESCRAPE_BASE + "/stream/movie/" + v34 + ".json";
+      const v38 = yield fetch(v37).then(v39 => v39.json());
+      if (!(v38 == null ? undefined : v38.streams) || v38.streams.length === 0) {
+        return [];
+      }
+      const v40 = [];
+      v38.streams.forEach(v41 => {
+        if (v41.url && v41.url.includes("bcdnxw.hakunaymatata.com")) {
+          return;
+        }
+        const v42 = (v41.title || v41.description || "").toLowerCase();
+        let v43 = "English 🇺🇲";
+        let v44 = false;
+        if (/hindi|hin|dual/.test(v42)) {
+          v43 = "Hindi 🇮🇳";
+          v44 = true;
+        } else if (/multi|🌐/.test(v42)) {
+          v43 = "Multi 🌐";
+        }
+        if (v44 && !v31) {
+          return;
+        }
+        if (!v44 && !v30) {
+          return;
+        }
+        v40.push(__spreadProps(__spreadValues({}, v41), {
+          lang: v43
+        }));
+      });
+      const v45 = [];
+      const v46 = {};
+      v40.forEach(v47 => {
+        const v48 = (v47.title || "").toLowerCase();
+        const v49 = /2160|4k/.test(v48) ? "2160p" : /1080/.test(v48) ? "1080p" : /720/.test(v48) ? "720p" : /480/.test(v48) ? "480p" : "1080p";
+        const v50 = v49 + "-" + v47.lang;
+        if (!v46[v50]) {
+          v46[v50] = [];
+        }
+        v46[v50].push(v47);
+      });
+      Object.entries(v46).forEach(([v51, v52]) => {
+        const [v53, v54] = v51.split("-");
+        v52.forEach(v55 => {
+          const v56 = (v55.title || v55.description || "").toLowerCase();
+          const v57 = v55.title ? v55.title.match(/(\d+(?:\.\d+)?\s*(?:GB|MB))/i) : null;
+          const v58 = v57 ? v57[1] : "1.99 GB";
+          const v59 = /\b(mp4|avi|m4v)\b/.test(v56) ? "MP4" : "MKV";
+          const v60 = v54.replace(/[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD00-\uDFFF]/g, "").trim();
+          const v61 = "🎬 " + v35 + " - (" + v36 + ")\n💎 " + v53 + " | 🔊 " + v60 + " | 💾 " + v58 + "\n🎞️ " + v59 + " | ⛓️‍💥 MovieBox";
+          v45.push({
+            name: PROVIDER_NAME + " | " + v53 + " | " + v54,
+            title: v61,
+            size: v61,
+            description: v61,
+            url: v55.url,
+            behaviorHints: {
+              proxyHeaders: {
+                request: {
+                  Referer: "https://stremio-moviebox-1.onrender.com/"
+                }
+              }
+            }
+          });
+        });
+      });
+      return v45;
+    } catch (v62) {
+      console.error("Global processing failure context:", v62);
+      return [];
+    }
+  });
+}
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    getStreams: getStreams,
+    onSettings: onSettings
+  };
+} else {
+  global.getStreams = getStreams;
+  global.onSettings = onSettings;
+}
+/*
  * nv-plugins moviebox.js — FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass).
  * Decoded from the obfuscated AIO build: string tables resolved, decoder machinery stripped,
  * every network call capped by an 8s deadline, node-core requires fail-soft, nvio post-filter
@@ -445,7 +616,7 @@ if (typeof module !== "undefined" && module.exports) {
       p = Promise.race([p, new Promise(function (res) {
         var timer = setTimeout(function () {
           res("");
-        }, 6000);
+        }, 2000);
         if (typeof timer === "object" && typeof timer.unref === "function") {
           timer.unref();
         }
@@ -515,77 +686,56 @@ if (typeof module !== "undefined" && module.exports) {
   }
   function postProcess(list) {
     var now = Date.now();
-    var kept = [];
     var probes = [];
     var rows = [];
     (list || []).forEach(function (s, i) {
-      if (!s || !s.url) {
-        return;
-      }
-      if (!langAllowed(s.title)) {
-        return;
-      }
+      if (!s || !s.url) return;
+      if (!langAllowed(s.title)) return;
       var text = (s.name || "") + " " + (s.title || "");
       var isMagnet = /^magnet:/i.test(String(s.url));
       var q = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText(text);
-      var isHlsLike = /m3u8/i.test(String(s.url)) || !/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) && /^https?:/i.test(String(s.url));
+      var isHlsLike = /m3u8/i.test(String(s.url)) ||
+        (!/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) && /^https?:/i.test(String(s.url)));
       if (!q && !isMagnet && isHlsLike) {
-        rows.push({
-          s: s,
-          i: i
-        });
+        rows.push({ s: s, i: i });
         probes.push(probeM3u8(String(s.url), s.headers));
       } else {
-        rows.push({
-          s: s,
-          i: i
-        });
+        rows.push({ s: s, i: i });
         probes.push(Promise.resolve(q));
       }
     });
     return Promise.all(probes).then(function (qs) {
       var ranked = [];
       rows.forEach(function (row, k) {
-        var q = qs[k];
-        if (!q) {
-          return;
-        } // unknown resolution -> removed
-        if (q === "CAM") {
-          return;
-        } // cam / sd / sub-720 -> removed
-        row.s.quality = q;
-        ranked.push({
-          s: row.s,
-          i: row.i,
-          q: q
-        });
+        var s = row.s;
+        var tq = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText((s.name || "") + " " + (s.title || ""));
+        // nv best-settings 4.26.0: FAIL-OPEN quality gate (AIO parity)
+        // - a successful HLS probe result wins
+        // - otherwise the title-derived quality is kept, else "Auto"
+        // - unknown-resolution rows are NO LONGER dropped; only rows whose
+        //   title explicitly tags CAM/telesync/sub-720p are removed
+        var q = qs[k] || tq || "Auto";
+        if (q === "CAM") return; // explicit cam / sd / sub-720 tag -> removed
+        s.quality = q;
+        ranked.push({ s: s, i: row.i, q: q });
       });
       // best first so dedupe keeps the strongest duplicate (stable)
       ranked.sort(function (a, b) {
         var r = rank(b.q) - rank(a.q);
-        if (r !== 0) {
-          return r;
-        }
+        if (r !== 0) return r;
         return a.i - b.i;
       });
-      var seenLocal = {};
-      var out = [];
+      var seenLocal = {}, out = [];
       ranked.forEach(function (row) {
         var s = row.s;
         var nu = normUrl(s.url);
-        if (seenLocal[nu]) {
-          return;
-        }
-        if (!claim(nu, now, PROVIDER)) {
-          return;
-        } // already reported by a different provider
+        if (seenLocal[nu]) return;
+        if (!claim(nu, now, PROVIDER)) return; // already reported by a different provider
         seenLocal[nu] = 1;
         out.push(s);
       });
       return out.slice(0, 40);
-    }).catch(function () {
-      return (list || []).slice(0, 40);
-    });
+    }).catch(function () { return (list || []).slice(0, 40); });
   }
   var __orig = null;
   try {
