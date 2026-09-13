@@ -106,6 +106,20 @@ Per user directive, the pack now contains **only the provider files present in t
 - peachify + cinefreak remain registered-but-disabled (upstream dead evidence unchanged)
 - Verify after upload: `providers/` on GitHub must contain **at least these 31 `.js` files** (netmirror.js must be 74,735 bytes). If older leftover files remain on GitHub from previous uploads, they are harmless - the manifest only loads the 30 registered providers - but deleting them keeps the repo clean.
 
+## v4.31.0 — DEVICE-RUNTIME FIXES: miruro crypto bug, animotvslash restored, torrentio de-Unknowned + 5-seeder floor
+
+Root cause of the 4.30.0 device failures: the Nuvio app runtime (QuickJS) provides CryptoJS ONLY through `require("crypto-js")` (a bundled AES-CBC + HMAC-capable polyfill) - it has NO `__nvRequire` global (that shim exists only in the repo audit harness). miruro v2.8.0 probed `__nvRequire` first and gave up, so every MegaPlay decrypt failed silently on devices while datacenter audits passed. Fixed by building a device-faithful harness (real Kotlin crypto polyfill + real requirePolyfill from the app source) and re-testing everything through it.
+
+### Fixed
+- miruro v2.9.0 - RESTORED the device-proven 85KB v2.7.0 base (fail-open post-filter, CDN hint rotation, ani.zip mal+ani dual-route, pipe circuit breaker, overall deadline) and grafted the 2026-09 MegaPlay API fix: getSourcesNew AES "enc" decrypt + signed master.m3u8 token; crypto via require("crypto-js") (device path) first. Device-harness verified: Frieren tmdb 209867 = Sub+Dub 1080p; **anikoto:8952 = 4 rows** (the Anikoto catalog lane is back); mal:52991 = 2 rows.
+- animotvslash v7.0.0 - RESTORED the device-proven v5.4.0 implementation (site crawl, asian-catalog direct lane, WordPress search fallback, Auto+480/720/1080 whitelist) and grafted the site's own MegaPlay fallback (ru-watch ids -> ani.zip -> MegaPlay ani/mal routes, same enc+token scheme). Device-harness verified: tmdb 209867 E1 = Sub+Dub 1080p; asian:an-frieren-beyond-journeys-end:1:5 = Sub+Dub. Also tolerates the site's new "-N" suffixed episode slugs ("-episode-5-2/", observed live) and decorated catalog ids ("asian:an-<slug>:1:5").
+- torrentio v1.2.0 - FIXED the "Unknown" streams: the parser read torrent.description, which Torrentio ships as NULL - seeders/quality/size all parsed from nothing ("👤 0 | UNKNOWN" on every row). Parsing now targets the real fields (title: 👤 seeders / 💾 size / ⚙️ tracker; name line 2: quality tag), verified against the live API. **USER RULE: rows under 5 seeders (or unparseable seeders) are dropped** - no 0-seeder rows. tt-ids (addon catalog rows) now resolve titles via TMDB /find (the old /tv/tt path 404'd -> "Unknown Title"). Verified: 15 rows/lanes, zero UNKNOWN labels.
+- anikototv v1.1.0 - verified against the device crypto polyfill (works; unchanged).
+- audit harness (repo-side): added device-harness.js (emulates PluginRuntime.kt + JsBindings.kt: device requirePolyfill, Kotlin crypto polyfill over node:crypto, IIFE wrap, 4-arg contract) - the class of bug above can no longer escape to devices unnoticed.
+
+### Pack
+- 32 provider files = 32 registered scrapers, manifest 4.31.0. Upload the zip contents to GitHub, then in Nuvio REMOVE + RE-ADD the plugins. netmirror.js must be 74,735 bytes on GitHub. No CF Worker redeploy (asian-catalog addon unchanged).
+
 ## v4.30.0 — ANIMOTVSLASH REBUILT (registered) + ANIKOTOTV FIXED (MegaPlay enc)
 
 Report: "animotvslash and anikoto catalog doesnt show streams - review miruro.js and animotvslash.js".

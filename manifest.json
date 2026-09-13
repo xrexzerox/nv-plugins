@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "4.30.0",
-  "description": "NV Plugins v4.30.0 - ANIMOTVSLASH REBUILT + ANIKOTOTV FIXED. animotvslash.js v6.0.0 (registered per user request): the site moved every episode page to a device-bound animotvslash.ru/watch iframe (tryembed signature-locked, plyr/videas lanes gone, the .ru API lanes Cloudflare-403 even to a real browser), and the .ru SPA itself falls back to MegaPlay's ani route - v6.0.0 ports exactly that: TMDB ids map via ani.zip to the AniList id, addon asian:an-<slug> rows navigate the site to the .ru watch ids, then MegaPlay enc decrypt + signed master token deliver Sub+Dub 1080p (live-verified Frieren E1/E28). anikototv.js v1.1.0: MegaPlay getSources now returns an AES \"enc\" payload (plain sources.file retired upstream) - extractHLS decrypts it and signs the CDN token; the SUB row label \"Japanese\" also tripped the post-filter language gate and is relabeled SUB (JP). miruro v2.8.0 (4.29.0) already covers mal/anilist/kitsu/anikoto catalog ids incl. the anikoto catalog lanes - the reported \"anikoto catalog no streams\" was the 4.28.0 build; uploading this pack and remove+re-add brings the fix. torrentio.js stays registered (4.29.0). 31+1 provider files, manifest 1:1, peachify/cinefreak remain disabled spares.",
+  "version": "4.31.0",
+  "description": "nv-plugins 4.31.0 - device-failure fixes: (1) animotvslash v7.0.0 restores the device-proven v5.4.0 implementation and grafts the MegaPlay fallback of the site (AES enc decrypt + signed master token) onto every lane including the asian-catalog direct lane; (2) miruro v2.9.0 restores the device-proven v2.7.0 hardening and fixes THE device bug - v2.8.0 probed the harness-only __nvRequire shim for CryptoJS, found nothing on real devices and silently returned zero rows (the Anikoto-catalog regression); crypto now comes from require(\"crypto-js\") which the Nuvio runtime bundles; (3) torrentio v1.2.0 parses the real Torrentio fields (title/name - the old parser read a null description -> \"👤 0 | UNKNOWN\" rows) and drops rows under 5 seeders per user rule; (4) anikototv v1.1.0 verified working against the device crypto polyfill (unchanged).",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -235,8 +235,8 @@
     {
       "id": "miruro",
       "name": "Miruro",
-      "description": "Miruro v2.8.0 - FIXED: MegaPlay's getSourcesNew now returns the stream URL AES-encrypted in 'enc' (the old plain sources.file body is gone upstream - this is why miruro stopped giving streams). v2.8.0 decrypts enc via CryptoJS AES-256-CBC, signs the master.m3u8 token with HMAC-SHA256 ( MegaPlay's own scheme, reversed from e1-player.min.js), keeps the CDN-hint rotation, host swaps, English/Tagalog subtitle tracks and the fail-open post-filter. Live-verified: Frieren S1E1 = Sub 1080p + Dub 1080p. Anime-only provider (non-anime = 0 rows by design).",
-      "version": "2.8.0",
+      "description": "Miruro v2.9.0 - DEVICE FIX: restores the device-proven v2.7.0 base (fail-open post-filter, CDN hint rotation, ani.zip mal+ani dual-route, pipe circuit breaker, deadline) and grafts the 2026-09 MegaPlay API fix: getSourcesNew AES \"enc\" decrypt + signed master.m3u8 token. Root cause of the device zero-rows: v2.8.0 took CryptoJS from the harness-only __nvRequire shim which does not exist in the real Nuvio runtime (require(\"crypto-js\") is what the app provides) - so every decrypt failed silently on devices. Serves anikoto:* catalog ids as before.",
+      "version": "2.9.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -683,8 +683,8 @@
     {
       "id": "torrentio",
       "name": "Torrentio",
-      "description": "Torrentio v1.1.0 - registered per user request (2026-09-13). Original Torrentio provider (torrentio.strem.fun + TMDB/IMDb meta, magnet rows with seed/size info, debrid settings supported). NOTE: torrents.js already queries the same torrentio.strem.fun upstream (plus torrentsdb) - expect overlapping magnet rows between the two; both stay per user choice.",
-      "version": "1.1.0",
+      "description": "Torrentio v1.2.0 - FIXED \"Unknown\" streams: the previous parser read torrent.description, which Torrentio ships as null - seeders/quality/size were parsed from nothing, so every row displayed \"👤 0 | UNKNOWN\". The real data lives in torrent.title (👤 seeders 💾 size ⚙️ tracker) and torrent.name line 2 (quality tag); parsing now matches the live API shape. USER RULE: rows with fewer than 5 seeders (or unparseable seeders) are dropped, 0-seeder rows never appear. Debrid settings unchanged.",
+      "version": "1.2.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -702,8 +702,8 @@
     {
       "id": "animotvslash",
       "name": "AnimeTVSlash",
-      "description": "AnimeTVSlash v6.0.0 - full rebuild, registered per user request. The site's own extract lanes died upstream (tryembed signature-locked, plyr/videas players removed, the new animotvslash.ru SPA + its API lanes Cloudflare-locked even to real browsers). The .ru watch player itself falls back to MegaPlay's ani route - v6.0.0 ports that fallback: TMDB ids via ani.zip -> AniList id; addon asian:an-<slug> rows navigate the site's own episode pages to the .ru watch ids; MegaPlay enc decrypt + signed master token -> Sub+Dub 1080p rows (whitelist Auto/480/720/1080 kept). Live-verified: Frieren S1E1/E28 Sub+Dub. Anime series only - movies fail soft (MegaPlay ani route serves no movie ids).",
-      "version": "6.0.0",
+      "description": "AnimeTVSlash v7.0.0 - RESTORED the device-proven v5.4.0 implementation (site crawl, asian-catalog direct lane, WordPress search fallback, quality whitelist) and grafted the MegaPlay fallback of the site: episode pages embed animotvslash.ru/watch/{anilistId}/{ep} whose player resolves through megaplay.buzz (AES enc decrypt + signed master token, same scheme as miruro v2.9.0). When the site itself is unreachable, api.ani.zip maps TMDB -> AniList and the MegaPlay ani route answers directly. Anime series; movies fail soft (MegaPlay ani route is series-only).",
+      "version": "7.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
