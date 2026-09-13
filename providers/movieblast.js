@@ -1,255 +1,26 @@
-/**
- * movieblast - Built from src/movieblast/
- * Generated: 2026-03-30T05:44:57.393Z
+/*
+ * nv-plugins movieblast.js — FULLY DECODED port of the All-in-One-Nuvio provider (4.23.0 best-settings pass).
+ * Decoded from the obfuscated AIO build: string tables resolved, decoder machinery stripped,
+ * every network call capped by an 8s deadline, nvio post-filter attached (en/tl audio gate,
+ * >=720p quality gate, cross-provider dedupe). Behavior/endpoints identical to the AIO original.
  */
-var __create = Object.create;
-var __defProp = Object.defineProperty;
-var __defProps = Object.defineProperties;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getOwnPropSymbols = Object.getOwnPropertySymbols;
-var __getProtoOf = Object.getPrototypeOf;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __propIsEnum = Object.prototype.propertyIsEnumerable;
-var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-var __spreadValues = (a, b) => {
-  for (var prop in b || (b = {}))
-    if (__hasOwnProp.call(b, prop))
-      __defNormalProp(a, prop, b[prop]);
-  if (__getOwnPropSymbols)
-    for (var prop of __getOwnPropSymbols(b)) {
-      if (__propIsEnum.call(b, prop))
-        __defNormalProp(a, prop, b[prop]);
-    }
-  return a;
-};
-var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
-var __async = (__this, __arguments, generator) => {
-  return new Promise((resolve, reject) => {
-    var fulfilled = (value) => {
-      try {
-        step(generator.next(value));
-      } catch (e) {
-        reject(e);
-      }
-    };
-    var rejected = (value) => {
-      try {
-        step(generator.throw(value));
-      } catch (e) {
-        reject(e);
-      }
-    };
-    var step = (x) => x.done ? resolve(x.value) : Promise.resolve(x.value).then(fulfilled, rejected);
-    step((generator = generator.apply(__this, __arguments)).next());
-  });
-};
-
-// src/movieblast/constants.js
-var BASE_URL = "https://app.cloud-mb.xyz";
-var TOKEN = "jdvhhjv255vghhghdhvfch2565656jhdcghfdf";
-var APP_ID = "com.movieblast";
-var HEADERS = {
-  "user-agent": "okhttp/5.0.0-alpha.6",
-  "x-request-x": APP_ID
-};
-var SEARCH_HEADERS = __spreadProps(__spreadValues({}, HEADERS), {
-  "hash256": "86dc03244adddb3cbedbf0ae36074a736ee293a64774b18e82a6244eafd0df30",
-  "packagename": APP_ID
-});
-var SIGN_SECRET = "GJ8reydarI7Jqat9rvbAJKNQ9gY4DoEQF2H5nfuI1gi";
-var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
-var TMDB_BASE_URL = "https://api.themoviedb.org/3";
-
-// src/movieblast/utils.js
-var import_crypto_js = __toESM(require("crypto-js"));
-function generateSignedUrl(urlStr) {
-  try {
-    const url = new URL(urlStr);
-    const path = url.pathname;
-    const timestamp = Math.floor(Date.now() / 1e3).toString();
-    const hash = import_crypto_js.default.HmacSHA256(path + timestamp, SIGN_SECRET);
-    const signature = import_crypto_js.default.enc.Base64.stringify(hash);
-    const encodedSignature = encodeURIComponent(signature);
-    return `${urlStr}?verify=${timestamp}-${encodedSignature}`;
-  } catch (e) {
-    console.error("[MovieBlast] Error generating signed URL:", e.message);
-    return urlStr;
-  }
-}
-function matchQuality(s) {
-  if (!s)
-    return "Unknown";
-  const v = s.toLowerCase();
-  if (v.includes("2160") || v.includes("4k"))
-    return "4K";
-  if (v.includes("1440"))
-    return "2K";
-  if (v.includes("1080"))
-    return "1080p";
-  if (v.includes("720"))
-    return "720p";
-  if (v.includes("480"))
-    return "480p";
-  if (v.includes("360"))
-    return "360p";
-  return "Unknown";
-}
-function normalizeTitle(title) {
-  if (!title)
-    return "";
-  return title.toLowerCase().replace(/\b(the|a|an)\b/g, "").replace(/[:\-_]/g, " ").replace(/\s+/g, " ").replace(/[^\w\s]/g, "").trim();
-}
-function getTMDBDetails(tmdbId, mediaType) {
-  return __async(this, null, function* () {
-    const endpoint = mediaType === "tv" ? "tv" : "movie";
-    const url = `${TMDB_BASE_URL}/${endpoint}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-    const response = yield fetch(url, {
-      method: "GET",
-      headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" }
-    });
-    if (!response.ok)
-      throw new Error(`TMDB API error: ${response.status}`);
-    const data = yield response.json();
-    const title = mediaType === "tv" ? data.name : data.title;
-    const releaseDate = mediaType === "tv" ? data.first_air_date : data.release_date;
-    const year = releaseDate ? parseInt(releaseDate.split("-")[0]) : null;
-    return { title, year };
-  });
-}
-function calculateTitleSimilarity(title1, title2) {
-  const norm1 = normalizeTitle(title1);
-  const norm2 = normalizeTitle(title2);
-  if (norm1 === norm2)
-    return 1;
-  const words1 = norm1.split(/\s+/).filter((w) => w.length > 0);
-  const words2 = norm2.split(/\s+/).filter((w) => w.length > 0);
-  if (words1.length === 0 || words2.length === 0)
-    return 0;
-  const set1 = new Set(words1);
-  const set2 = new Set(words2);
-  const intersection = words1.filter((w) => set2.has(w));
-  const union = /* @__PURE__ */ new Set([...words1, ...words2]);
-  return intersection.length / union.size;
-}
-function findBestMatch(mediaInfo, searchResults) {
-  if (!searchResults || searchResults.length === 0)
-    return null;
-  let bestMatch = null;
-  let bestScore = 0;
-  for (const result of searchResults) {
-    let score = calculateTitleSimilarity(mediaInfo.title, result.name);
-    if (mediaInfo.year && result.release_date) {
-      const resultYear = parseInt(result.release_date.split("-")[0]);
-      if (mediaInfo.year === resultYear)
-        score += 0.2;
-    }
-    if (score > bestScore && score > 0.4) {
-      bestScore = score;
-      bestMatch = result;
-    }
-  }
-  return bestMatch;
-}
-
-// src/movieblast/index.js
-function getStreams(tmdbId, mediaType = "movie", season = null, episode = null) {
-  return __async(this, null, function* () {
-    console.log(`[MovieBlast] Fetching streams for TMDB ID: ${tmdbId}, Type: ${mediaType}`);
-    try {
-      const mediaInfo = yield getTMDBDetails(tmdbId, mediaType);
-      console.log(`[MovieBlast] Searching for: "${mediaInfo.title}" (${mediaInfo.year})`);
-      const safeQuery = encodeURIComponent(mediaInfo.title);
-      const searchUrl = `${BASE_URL}/api/search/${safeQuery}/${TOKEN}`;
-      const searchRes = yield fetch(searchUrl, { headers: SEARCH_HEADERS });
-      if (!searchRes.ok) {
-        console.error(`[MovieBlast] Search failed with status: ${searchRes.status}`);
-        return [];
-      }
-      const searchData = yield searchRes.json();
-      const searchResults = searchData.search || [];
-      const match = findBestMatch(mediaInfo, searchResults);
-      if (!match) {
-        console.log("[MovieBlast] No confident matches found in MovieBlast.");
-        return [];
-      }
-      const internalId = match.id;
-      const isSeries = match.type.toLowerCase().includes("serie") || mediaType === "tv";
-      console.log(`[MovieBlast] Match Found: "${match.name}" (ID: ${internalId})`);
-      const detailPath = isSeries ? "series/show" : "media/detail";
-      const detailUrl = `${BASE_URL}/api/${detailPath}/${internalId}/${TOKEN}`;
-      const detailRes = yield fetch(detailUrl, { headers: HEADERS });
-      if (!detailRes.ok) {
-        console.error(`[MovieBlast] Detail fetch failed: ${detailRes.status}`);
-        return [];
-      }
-      const detailData = yield detailRes.json();
-      let targetVideos = [];
-      if (isSeries) {
-        const seasons = detailData.seasons || [];
-        const targetSeason = seasons.find((s) => s.season_number == season);
-        if (targetSeason) {
-          const targetEpisode = (targetSeason.episodes || []).find((e) => e.episode_number == episode);
-          if (targetEpisode) {
-            targetVideos = targetEpisode.videos || [];
-          } else {
-            console.log(`[MovieBlast] Episode ${episode} not found in Season ${season}.`);
-          }
-        } else {
-          console.log(`[MovieBlast] Season ${season} not found.`);
-        }
-      } else {
-        targetVideos = detailData.videos || [];
-      }
-      if (targetVideos.length === 0) {
-        console.log("[MovieBlast] No video links found in details.");
-        return [];
-      }
-      const streams = targetVideos.map((vid) => {
-        const rawUrl = vid.link;
-        if (!rawUrl)
-          return null;
-        const httpsUrl = rawUrl.startsWith("http") ? rawUrl : `https://${rawUrl}`;
-        const signedUrl = generateSignedUrl(httpsUrl);
-        return {
-          name: "MovieBlast",
-          title: `MovieBlast - ${vid.server} (${vid.lang || "EN"})`,
-          url: signedUrl,
-          quality: matchQuality(vid.server),
-          headers: {
-            "User-Agent": "MovieBlast",
-            "Referer": "MovieBlast",
-            "x-request-x": "com.movieblast"
-          },
-          provider: "movieblast"
-        };
-      }).filter((s) => s !== null);
-      console.log(`[MovieBlast] Successfully found ${streams.length} streams.`);
-      return streams;
-    } catch (error) {
-      console.error(`[MovieBlast] Error: ${error.message}`);
-      return [];
-    }
-  });
-}
-module.exports = { getStreams };
+/* nv-plugins best-settings pass 4.23.0: hard 8s deadline on every network call */
+var __nvFetch = (function () {
+  var _f = null;
+  try { _f = (typeof fetch === "function") ? fetch : null; } catch (e) { _f = null; }
+  if (!_f) return function () { return Promise.reject(new Error("no fetch")); };
+  var hasT = typeof setTimeout === "function";
+  return function (input, init) {
+    var p;
+    try { p = _f.apply(this, arguments); } catch (e) { return Promise.reject(e); }
+    if (!hasT || !p || typeof p.then !== "function") return p;
+    return Promise.race([p, new Promise(function (_res, rej) {
+      var t = setTimeout(function () { rej(new Error("nv deadline 8s")); }, 8000);
+      if (t && typeof t.unref === "function") t.unref();
+    })]);
+  };
+})();
+var _0x2a84=function(){return "";};const _0x5096f5=_0x2a84;/*rotation removed*/;var __create=Object["create"],__defProp=Object['defineProperty'],__defProps=Object["defineProperties"],__getOwnPropDesc=Object["getOwnPropertyDescriptor"],__getOwnPropDescs=Object["getOwnPropertyDescriptors"],__getOwnPropNames=Object["getOwnPropertyNames"],__getOwnPropSymbols=Object["getOwnPropertySymbols"],__getProtoOf=Object['getPrototypeOf'],__hasOwnProp=Object["prototype"]["hasOwnProperty"],__propIsEnum=Object["prototype"]["propertyIsEnumerable"],__defNormalProp=(_0x2f6bc6,_0x4b6353,_0x140ba5)=>_0x4b6353 in _0x2f6bc6?__defProp(_0x2f6bc6,_0x4b6353,{'enumerable':!![],'configurable':!![],'writable':!![],'value':_0x140ba5}):_0x2f6bc6[_0x4b6353]=_0x140ba5,__spreadValues=(_0xe116ae,_0x31f087)=>{const _0x485ac7=_0x5096f5;for(var _0x26c768 in _0x31f087||(_0x31f087={}))if(__hasOwnProp["call"](_0x31f087,_0x26c768))__defNormalProp(_0xe116ae,_0x26c768,_0x31f087[_0x26c768]);if(__getOwnPropSymbols)for(var _0x26c768 of __getOwnPropSymbols(_0x31f087)){if(__propIsEnum["call"](_0x31f087,_0x26c768))__defNormalProp(_0xe116ae,_0x26c768,_0x31f087[_0x26c768]);}return _0xe116ae;},__spreadProps=(_0x29229e,_0xafc651)=>__defProps(_0x29229e,__getOwnPropDescs(_0xafc651)),__copyProps=(_0x4e4855,_0x172aab,_0x3f2bd2,_0x5a288a)=>{const _0x1d640a=_0x5096f5;if(_0x172aab&&typeof _0x172aab==="object"||typeof _0x172aab==="function"){for(let _0x2d4dd8 of __getOwnPropNames(_0x172aab))if(!__hasOwnProp["call"](_0x4e4855,_0x2d4dd8)&&_0x2d4dd8!==_0x3f2bd2)__defProp(_0x4e4855,_0x2d4dd8,{'get':()=>_0x172aab[_0x2d4dd8],'enumerable':!(_0x5a288a=__getOwnPropDesc(_0x172aab,_0x2d4dd8))||_0x5a288a["enumerable"]});}return _0x4e4855;},__toESM=(_0x47c598,_0x5847fa,_0x25675a)=>(_0x25675a=_0x47c598!=null?__create(__getProtoOf(_0x47c598)):{},__copyProps(_0x5847fa||!_0x47c598||!_0x47c598["__esModule"]?__defProp(_0x25675a,"default",{'value':_0x47c598,'enumerable':!![]}):_0x25675a,_0x47c598)),__async=(_0x9f583a,_0x2a2a09,_0x5a70eb)=>{return new Promise((_0x2adea4,_0x4691ab)=>{const _0x5cc2bc=_0x2a84;var _0x469cf7=_0x3d6f15=>{const _0x13ac69=_0x2a84;try{_0x5c2342(_0x5a70eb["next"](_0x3d6f15));}catch(_0x5c07f6){_0x4691ab(_0x5c07f6);}},_0x51c245=_0x3ddc9b=>{const _0x271587=_0x2a84;try{_0x5c2342(_0x5a70eb["throw"](_0x3ddc9b));}catch(_0x5f2a47){_0x4691ab(_0x5f2a47);}},_0x5c2342=_0x3704b8=>_0x3704b8["done"]?_0x2adea4(_0x3704b8["value"]):Promise["resolve"](_0x3704b8['value'])['then'](_0x469cf7,_0x51c245);_0x5c2342((_0x5a70eb=_0x5a70eb["apply"](_0x9f583a,_0x2a2a09))["next"]());});},BASE_URL='https://app.cloud-mb.xyz',TOKEN="jdvhhjv255vghhghdhvfch2565656jhdcghfdf",APP_ID='com.movieblast',HEADERS={'user-agent':'okhttp/5.0.0-alpha.6','x-request-x':APP_ID},SEARCH_HEADERS=__spreadProps(__spreadValues({},HEADERS),{'hash256':'86dc03244adddb3cbedbf0ae36074a736ee293a64774b18e82a6244eafd0df30','packagename':APP_ID}),SIGN_SECRET="GJ8reydarI7Jqat9rvbAJKNQ9gY4DoEQF2H5nfuI1gi",TMDB_API_KEY="439c478a771f35c05022f9feabcca01c",TMDB_BASE_URL="https://api.themoviedb.org/3",import_crypto_js=__toESM(require('crypto-js'));function generateSignedUrl(_0x5e4203){const _0x273036=_0x5096f5;try{const _0x56b7f6=new URL(_0x5e4203),_0x1ee493=_0x56b7f6['pathname'],_0x596117=Math["floor"](Date["now"]()/0x3e8)["toString"](),_0x28999f=import_crypto_js["default"]["HmacSHA256"](_0x1ee493+_0x596117,SIGN_SECRET),_0x5b06cf=import_crypto_js["default"]["enc"]["Base64"]["stringify"](_0x28999f),_0x99067d=encodeURIComponent(_0x5b06cf);return _0x5e4203+"?verify="+_0x596117+'-'+_0x99067d;}catch(_0x313287){return console["error"]("[MovieBlast] Error generating signed URL:",_0x313287["message"]),_0x5e4203;}}function matchQuality(_0x256200){const _0x43bb8e=_0x5096f5;if(!_0x256200)return "Unknown";const _0x3e071e=_0x256200["toLowerCase"]();if(_0x3e071e["includes"]("2160")||_0x3e071e["includes"]('4k'))return'4K';if(_0x3e071e["includes"]("1440"))return'2K';if(_0x3e071e["includes"]('1080'))return "1080p";if(_0x3e071e['includes']("720"))return "720p";if(_0x3e071e["includes"]("480"))return "480p";if(_0x3e071e['includes']("360"))return "360p";return "Unknown";}function normalizeTitle(_0x22fd67){const _0x8372c6=_0x5096f5;if(!_0x22fd67)return'';return _0x22fd67["toLowerCase"]()["replace"](/\b(the|a|an)\b/g,'')["replace"](/[:\-_]/g,'\x20')["replace"](/\s+/g,'\x20')["replace"](/[^\w\s]/g,'')["trim"]();}function getTMDBDetails(_0x3b02bc,_0x53718d){return __async(this,null,function*(){const _0x4303de=_0x2a84,_0xea0646=_0x53718d==='tv'?'tv':"movie",_0x217bdb=TMDB_BASE_URL+'/'+_0xea0646+'/'+_0x3b02bc+'?api_key='+TMDB_API_KEY,_0x5e2dd7=yield __nvFetch(_0x217bdb,{'method':"GET",'headers':{'Accept':"application/json",'User-Agent':"Mozilla/5.0"}});if(!_0x5e2dd7['ok'])throw new Error("TMDB API error: "+_0x5e2dd7["status"]);const _0x4fcce7=yield _0x5e2dd7["json"](),_0x53021f=_0x53718d==='tv'?_0x4fcce7['name']:_0x4fcce7["title"],_0x3329ed=_0x53718d==='tv'?_0x4fcce7["first_air_date"]:_0x4fcce7["release_date"],_0x2bc970=_0x3329ed?parseInt(_0x3329ed["split"]('-')[0x0]):null;return{'title':_0x53021f,'year':_0x2bc970};});}function calculateTitleSimilarity(_0x59be19,_0x5f4f0f){const _0xca79e1=_0x5096f5,_0x19f894=normalizeTitle(_0x59be19),_0x323850=normalizeTitle(_0x5f4f0f);if(_0x19f894===_0x323850)return 0x1;const _0x3c43cf=_0x19f894['split'](/\s+/)['filter'](_0x1c0bec=>_0x1c0bec["length"]>0x0),_0x1e0c83=_0x323850["split"](/\s+/)["filter"](_0x419b2e=>_0x419b2e["length"]>0x0);if(_0x3c43cf['length']===0x0||_0x1e0c83['length']===0x0)return 0x0;const _0x572156=new Set(_0x3c43cf),_0x4cee15=new Set(_0x1e0c83),_0x31e7cf=_0x3c43cf["filter"](_0xdf7475=>_0x4cee15['has'](_0xdf7475)),_0x79f074=new Set([..._0x3c43cf,..._0x1e0c83]);return _0x31e7cf["length"]/_0x79f074["size"];}/*string-table removed*/function findBestMatch(_0x59dc1f,_0x1fc4dd){const _0x3a7f51=_0x5096f5;if(!_0x1fc4dd||_0x1fc4dd['length']===0x0)return null;let _0xc01b04=null,_0x677343=0x0;for(const _0x25db1d of _0x1fc4dd){let _0x508b5a=calculateTitleSimilarity(_0x59dc1f['title'],_0x25db1d["name"]);if(_0x59dc1f["year"]&&_0x25db1d['release_date']){const _0x42406b=parseInt(_0x25db1d["release_date"]["split"]('-')[0x0]);if(_0x59dc1f["year"]===_0x42406b)_0x508b5a+=0.2;}_0x508b5a>_0x677343&&_0x508b5a>0.4&&(_0x677343=_0x508b5a,_0xc01b04=_0x25db1d);}return _0xc01b04;}/*decoder removed*/function getStreams(_0xe0c8bd,_0xb5223a="movie",_0x674976=null,_0xc1b764=null){return __async(this,null,function*(){const _0x17a8bb=_0x2a84;console["log"]("[MovieBlast] Fetching streams for TMDB ID: "+_0xe0c8bd+", Type: "+_0xb5223a);try{const _0x221f1d=yield getTMDBDetails(_0xe0c8bd,_0xb5223a);console["log"]("[MovieBlast] Searching for: \""+_0x221f1d["title"]+"\" ("+_0x221f1d["year"]+')');const _0x2a3c18=encodeURIComponent(_0x221f1d["title"]),_0xacc299=BASE_URL+"/api/search/"+_0x2a3c18+'/'+TOKEN,_0x12ae95=yield __nvFetch(_0xacc299,{'headers':SEARCH_HEADERS});if(!_0x12ae95['ok'])return console['error']("[MovieBlast] Search failed with status: "+_0x12ae95["status"]),[];const _0x1c34fb=yield _0x12ae95["json"](),_0x52d56d=_0x1c34fb["search"]||[],_0x31ba54=findBestMatch(_0x221f1d,_0x52d56d);if(!_0x31ba54)return console["log"]("[MovieBlast] No confident matches found in MovieBlast."),[];const _0x46aff4=_0x31ba54['id'],_0x258a41=_0x31ba54["type"]["toLowerCase"]()["includes"]('serie')||_0xb5223a==='tv';console['log']("[MovieBlast] Match Found: \""+_0x31ba54["name"]+"\" (ID: "+_0x46aff4+')');const _0x3110f7=_0x258a41?'series/show':'media/detail',_0x1daa73=BASE_URL+'/api/'+_0x3110f7+'/'+_0x46aff4+'/'+TOKEN,_0xe0ae2e=yield __nvFetch(_0x1daa73,{'headers':HEADERS});if(!_0xe0ae2e['ok'])return console["error"]('[MovieBlast]\x20Detail\x20fetch\x20failed:\x20'+_0xe0ae2e["status"]),[];const _0x12af3f=yield _0xe0ae2e['json']();let _0x3b8ffb=[];if(_0x258a41){const _0x75890d=_0x12af3f["seasons"]||[],_0x4d1f9e=_0x75890d['find'](_0x34150d=>_0x34150d['season_number']==_0x674976);if(_0x4d1f9e){const _0x1a67f7=(_0x4d1f9e["episodes"]||[])["find"](_0x3f7514=>_0x3f7514["episode_number"]==_0xc1b764);_0x1a67f7?_0x3b8ffb=_0x1a67f7["videos"]||[]:console['log']("[MovieBlast] Episode "+_0xc1b764+" not found in Season "+_0x674976+'.');}else console['log']("[MovieBlast] Season "+_0x674976+" not found.");}else _0x3b8ffb=_0x12af3f["videos"]||[];if(_0x3b8ffb['length']===0x0)return console["log"]("[MovieBlast] No video links found in details."),[];const _0x4aa62b=_0x3b8ffb["map"](_0x553e51=>{const _0x2c50e4=_0x17a8bb,_0x3884ed=_0x553e51["link"];if(!_0x3884ed)return null;const _0x4ae398=_0x3884ed["startsWith"]("http")?_0x3884ed:"https://"+_0x3884ed,_0x57c144=generateSignedUrl(_0x4ae398);return{'name':"MovieBlast",'title':"MovieBlast - "+_0x553e51["server"]+'\x20('+(_0x553e51["lang"]||'EN')+')','url':_0x57c144,'quality':matchQuality(_0x553e51["server"]),'headers':{'User-Agent':'MovieBlast','Referer':"MovieBlast",'x-request-x':'com.movieblast'},'provider':'movieblast'};})['filter'](_0x29d247=>_0x29d247!==null);return console['log']("[MovieBlast] Successfully found "+_0x4aa62b["length"]+" streams."),_0x4aa62b;}catch(_0x2f009b){return console["error"]("[MovieBlast] Error: "+_0x2f009b["message"]),[];}});}module['exports']={'getStreams':getStreams};
 
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
    Rules (per user request 2026-09):
@@ -451,6 +222,13 @@ module.exports = { getStreams };
       try {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
+          if (typeof setTimeout === "function") {
+            // nv best-settings 4.23.0: hard 8s cap on the whole provider run
+            r = Promise.race([r, new Promise(function (res) {
+              var dl = setTimeout(function () { res([]); }, 8000);
+              if (dl && typeof dl.unref === "function") dl.unref();
+            })]);
+          }
           return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);
