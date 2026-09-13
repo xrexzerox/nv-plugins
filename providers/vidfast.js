@@ -210,7 +210,7 @@ function makeStream(source, title, url, quality, headers, subtitles, extra) {
 function withTimeout(promise, ms, label) {
   if (!hasTimers())
     return promise;
-  const timeout = ms || 8e3;
+  const timeout = ms || 25e3;
   return Promise.race([
     promise,
     new Promise(function(resolve) {
@@ -523,7 +523,7 @@ function scrapeGeneric(opts, ctx) {
       "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
       Referer: base + "/"
     };
-    const page = yield fetchText(pageUrl, headers, 8e3);
+    const page = yield fetchText(pageUrl, headers, 2e4);
     const tokenText = extractToken(page);
     if (!tokenText)
       return [];
@@ -625,7 +625,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     try {
       const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
-      const out = yield withTimeout(scrapeVidfast(ctx), 8e3, "vidfast");
+      const out = yield withTimeout(scrapeVidfast(ctx), 2e4, "vidfast");
       return presentStreams(dedupe(out), ctx);
     } catch (e) {
       console.log("[Streamline][vidfast] " + (e && e.message));
@@ -719,7 +719,7 @@ module.exports = { getStreams };
     }).catch(function () { qualCache[url] = { t: now, q: "" }; return ""; });
     if (hasTimers()) {
       p = Promise.race([p, new Promise(function (res) {
-        var timer = setTimeout(function () { res(""); }, 6000);
+        var timer = setTimeout(function () { res(""); }, 2000);
         if (typeof timer === "object" && typeof timer.unref === "function") timer.unref();
       })]);
     }
@@ -775,7 +775,6 @@ module.exports = { getStreams };
   }
   function postProcess(list) {
     var now = Date.now();
-    var kept = [];
     var probes = [];
     var rows = [];
     (list || []).forEach(function (s, i) {
@@ -797,11 +796,17 @@ module.exports = { getStreams };
     return Promise.all(probes).then(function (qs) {
       var ranked = [];
       rows.forEach(function (row, k) {
-        var q = qs[k];
-        if (!q) return; // unknown resolution -> removed
-        if (q === "CAM") return; // cam / sd / sub-720 -> removed
-        row.s.quality = q;
-        ranked.push({ s: row.s, i: row.i, q: q });
+        var s = row.s;
+        var tq = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText((s.name || "") + " " + (s.title || ""));
+        // nv best-settings 4.26.0: FAIL-OPEN quality gate (AIO parity)
+        // - a successful HLS probe result wins
+        // - otherwise the title-derived quality is kept, else "Auto"
+        // - unknown-resolution rows are NO LONGER dropped; only rows whose
+        //   title explicitly tags CAM/telesync/sub-720p are removed
+        var q = qs[k] || tq || "Auto";
+        if (q === "CAM") return; // explicit cam / sd / sub-720 tag -> removed
+        s.quality = q;
+        ranked.push({ s: s, i: row.i, q: q });
       });
       // best first so dedupe keeps the strongest duplicate (stable)
       ranked.sort(function (a, b) {

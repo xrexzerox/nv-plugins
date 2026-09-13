@@ -6,39 +6,722 @@
  * identical to the AIO original.
  */
 /* nv-plugins best-settings pass 4.24.0: hard 8s deadline on every network call */
-var __nvFetch = (function () {
+var __nvFetch = function () {
   var _f = null;
-  try { _f = (typeof fetch === "function") ? fetch : null; } catch (e) { _f = null; }
-  if (!_f) return function () { return Promise.reject(new Error("no fetch")); };
+  try {
+    _f = typeof fetch === "function" ? fetch : null;
+  } catch (e) {
+    _f = null;
+  }
+  if (!_f) {
+    return function () {
+      return Promise.reject(new Error("no fetch"));
+    };
+  }
   var hasT = typeof setTimeout === "function";
   return function (input, init) {
     var p;
-    try { p = _f.apply(this, arguments); } catch (e) { return Promise.reject(e); }
-    if (!hasT || !p || typeof p.then !== "function") return p;
+    try {
+      p = _f.apply(this, arguments);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+    if (!hasT || !p || typeof p.then !== "function") {
+      return p;
+    }
     return Promise.race([p, new Promise(function (_res, rej) {
-      var t = setTimeout(function () { rej(new Error("nv deadline 8s")); }, 8000);
-      if (t && typeof t.unref === "function") t.unref();
+      var t = setTimeout(function () {
+        rej(new Error("nv deadline 8s"));
+      }, 8000);
+      if (t && typeof t.unref === "function") {
+        t.unref();
+      }
     })]);
   };
-})();
+}();
 /* fail-soft require: node-core modules (net/http/assert/...) never crash the provider */
-var __nvRequire = (function () {
+var __nvRequire = function () {
   var _rq = null;
-  try { _rq = (typeof require === "function") ? require : null; } catch (e) { _rq = null; }
+  try {
+    _rq = typeof require === "function" ? require : null;
+  } catch (e) {
+    _rq = null;
+  }
   return function (name) {
-    if (_rq) { try { return _rq(name); } catch (e) { } }
+    if (_rq) {
+      try {
+        return _rq(name);
+      } catch (e) {}
+    }
     return {};
   };
-})();
+}();
 /* QuickJS-safe global aliases: embedded polyfills (forge/uuid/whatwg) reference
    window/self/document unguarded - in Nuvio's QuickJS those would throw
    ReferenceError at module load and kill the provider. */
-var window = (typeof window !== "undefined" && window) ? window
-  : (typeof globalThis !== "undefined" ? globalThis : (typeof global !== "undefined" ? global : {}));
-var self = (typeof self !== "undefined" && self) ? self : window;
-var document = (typeof document !== "undefined" && document) ? document : { createElement: function () { return { style: {}, setAttribute: function () { }, getElementsByTagName: function () { return []; } }; }, getElementsByTagName: function () { return []; }, addEventListener: function () { } };
-var navigator = (typeof navigator !== "undefined" && navigator) ? navigator : { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" };
-var _0x3d0b=function(){return "";};var _0x10161d=_0x3d0b;/*rotation removed*/;var __async=(_0x46e79d,_0x2eca92,_0xb92204)=>{var _0x183d63={_0x339596:0x12e},_0x2b96b0={_0x34b802:0x13a};return new Promise((_0x6ab048,_0x569803)=>{var _0x4f05ce=_0x3d0b,_0xbf13c=_0x5e9f0b=>{var _0xe59dc4=_0x3d0b;try{_0x32ba86(_0xb92204["next"](_0x5e9f0b));}catch(_0x122bfe){_0x569803(_0x122bfe);}},_0x42a348=_0x3fc4f6=>{var _0x3e1faa=_0x3d0b;try{_0x32ba86(_0xb92204["throw"](_0x3fc4f6));}catch(_0x6743e3){_0x569803(_0x6743e3);}},_0x32ba86=_0x4a6426=>_0x4a6426['done']?_0x6ab048(_0x4a6426["value"]):Promise['resolve'](_0x4a6426["value"])["then"](_0xbf13c,_0x42a348);_0x32ba86((_0xb92204=_0xb92204["apply"](_0x46e79d,_0x2eca92))["next"]());});},BASEDOM='https://whisperingauroras.com',UA='Mozilla/5.0\x20(Windows\x20NT\x2010.0;\x20Win64;\x20x64)\x20AppleWebKit/537.36\x20(KHTML,\x20like\x20Gecko)\x20Chrome/128.0.0.0\x20Safari/537.36',TMDB_API_KEY="439c478a771f35c05022f9feabcca01c";function safeFetch(_0x38c7d2,_0x22c1f2,_0x2470b2){var _0x3e0cb2={_0x45ac16:0x138,_0x2e8254:0x10a},_0x36a12d={_0x6fbd93:0x152},_0x4cedae=_0x10161d;_0x2470b2=_0x2470b2||0x1f40;var _0x1c90ea,_0x28bb5c;try{_0x1c90ea=new AbortController(),_0x28bb5c=setTimeout(function(){var _0x13a933=_0x3d0b;_0x1c90ea["abort"]();},_0x2470b2);}catch(_0x5c632b){_0x1c90ea=null;}var _0x20e058=Object['assign']({'method':"GET"},_0x22c1f2||{});if(_0x1c90ea)_0x20e058["signal"]=_0x1c90ea['signal'];return __nvFetch(_0x38c7d2,_0x20e058)['then'](function(_0x4c01c8){if(_0x28bb5c)clearTimeout(_0x28bb5c);return _0x4c01c8;})["catch"](function(_0x40c68b){if(_0x28bb5c)clearTimeout(_0x28bb5c);throw _0x40c68b;});}function bMGyx71TzQLfdonN(_0x1a8754){var _0x5ac2c2={_0x4b9fec:0x159,_0x26cef1:0x118},_0x399bc8=_0x10161d,_0x487118=0x3,_0x3abed3=[];if(typeof _0x1a8754!=='string')return'';for(var _0x5dc1a0=0x0;_0x5dc1a0<_0x1a8754['length'];_0x5dc1a0+=_0x487118){_0x3abed3["push"](_0x1a8754['slice'](_0x5dc1a0,_0x5dc1a0+_0x487118));}return _0x3abed3["reverse"]()['join']('');}function Iry9MQXnLs(_0x46d1a2){var _0x3a2d67={_0x366036:0x139,_0x885ac9:0x141,_0x1c8698:0x10c,_0xfda53a:0x10c},_0x24ec9a=_0x10161d,_0x24f8b9='pWB9V)[*4I`nJpp?ozyB~dbr9yt!_n4u',_0x4098f2=_0x46d1a2["match"](/.{1,2}/g)['map'](function(_0x2ef788){return String['fromCharCode'](parseInt(_0x2ef788,0x10));})["join"](''),_0x177575='';for(var _0x34df3e=0x0;_0x34df3e<_0x4098f2['length'];_0x34df3e++){_0x177575+=String['fromCharCode'](_0x4098f2['charCodeAt'](_0x34df3e)^_0x24f8b9["charCodeAt"](_0x34df3e%_0x24f8b9['length']));}var _0x420f9a='';for(var _0x2f883f=0x0;_0x2f883f<_0x177575['length'];_0x2f883f++){_0x420f9a+=String["fromCharCode"](_0x177575["charCodeAt"](_0x2f883f)-0x3);}try{return atob(_0x420f9a);}catch(_0x558dde){return'';}}function IGLImMhWrI(_0x41050a){var _0x7ea3b9={_0x52f316:0x141,_0x189d41:0x12b,_0x279d2e:0x141},_0x1997fa=_0x10161d,_0x2f25fe=_0x41050a["split"]('')["reverse"]()["join"](''),_0x4dcd3a=_0x2f25fe['replace'](/[a-zA-Z]/g,function(_0x8d62bc){return String['fromCharCode'](_0x8d62bc['charCodeAt'](0x0)+(_0x8d62bc['toLowerCase']()<'n'?0xd:-0xd));}),_0x594d55=_0x4dcd3a["split"]('')['reverse']()["join"]('');try{return atob(_0x594d55);}catch(_0x3fca10){return'';}}function GTAxQyTyBx(_0x1b8cc4){var _0x1616b6={_0xfefa68:0x12b},_0x270411=_0x10161d,_0xb0374d=_0x1b8cc4["split"]('')["reverse"]()["join"](''),_0x44ba88='';for(var _0x130950=0x0;_0x130950<_0xb0374d['length'];_0x130950+=0x2){_0x44ba88+=_0xb0374d[_0x130950];}try{return atob(_0x44ba88);}catch(_0x475e7f){return'';}}function C66jPHx8qu(_0x3f974b){var _0x364002={_0x443e25:0x151},_0x59a408={_0x4304e7:0x12f},_0x4cd910=_0x10161d,_0x3cd8d6=_0x3f974b['split']('')['reverse']()['join'](''),_0x1f1d77='X9a(O;FMV2-7VO5x;Ao\x20:dN1NoFs?j,',_0x17d46c=_0x3cd8d6['match'](/.{1,2}/g)["map"](function(_0x3b4572){var _0x3fee97=_0x4cd910;return String["fromCharCode"](parseInt(_0x3b4572,0x10));})['join'](''),_0xd98432='';for(var _0xd98bf4=0x0;_0xd98bf4<_0x17d46c["length"];_0xd98bf4++){_0xd98432+=String['fromCharCode'](_0x17d46c['charCodeAt'](_0xd98bf4)^_0x1f1d77["charCodeAt"](_0xd98bf4%_0x1f1d77['length']));}return _0xd98432;}function MyL1IRSfHe(_0x51248d){var _0x61df37=_0x10161d,_0x5b900f=_0x51248d['split']('')['reverse']()["join"](''),_0x70e5d0='';for(var _0x34816d=0x0;_0x34816d<_0x5b900f["length"];_0x34816d++){_0x70e5d0+=String['fromCharCode'](_0x5b900f['charCodeAt'](_0x34816d)-0x1);}var _0x500dc3='';for(var _0x5ef5a8=0x0;_0x5ef5a8<_0x70e5d0['length'];_0x5ef5a8+=0x2){_0x500dc3+=String["fromCharCode"](parseInt(_0x70e5d0['substr'](_0x5ef5a8,0x2),0x10));}return _0x500dc3;}function detdj7JHiK(_0x17773d){var _0xc6c902={_0x262dfb:0x115},_0x46ef5c=_0x10161d,_0x3bc577=_0x17773d['slice'](0xa,-0x10),_0xdece7f="3SAY~#%Y(V%>5d/Yg\"$G[Lh1rK4a;7ok",_0x1aa6a0='';try{_0x1aa6a0=atob(_0x3bc577);}catch(_0x14b217){return'';}var _0x46780c=_0xdece7f["repeat"](Math["ceil"](_0x1aa6a0["length"]/_0xdece7f['length']))['substring'](0x0,_0x1aa6a0['length']),_0x3806b0='';for(var _0x3f2d11=0x0;_0x3f2d11<_0x1aa6a0["length"];_0x3f2d11++){_0x3806b0+=String['fromCharCode'](_0x1aa6a0["charCodeAt"](_0x3f2d11)^_0x46780c["charCodeAt"](_0x3f2d11));}return _0x3806b0;}function nZlUnj2VSo(_0x44f460){var _0x25ec9d=_0x10161d,_0x1a2aa0={'x':'a','y':'b','z':'c','a':'d','b':'e','c':'f','d':'g','e':'h','f':'i','g':'j','h':'k','i':'l','j':'m','k':'n','l':'o','m':'p','n':'q','o':'r','p':'s','q':'t','r':'u','s':'v','t':'w','u':'x','v':'y','w':'z','X':'A','Y':'B','Z':'C','A':'D','B':'E','C':'F','D':'G','E':'H','F':'I','G':'J','H':'K','I':'L','J':'M','K':'N','L':'O','M':'P','N':'Q','O':'R','P':'S','Q':'T','R':'U','S':'V','T':'W','U':'X','V':'Y','W':'Z'};return _0x44f460["replace"](/[xyzabcdefghijklmnopqrstuvwXYZABCDEFGHIJKLMNOPQRSTUVW]/g,function(_0x4ca05e){return _0x1a2aa0[_0x4ca05e]||_0x4ca05e;});}function laM1dAi3vO(_0x3c1a77){var _0x2ae741={_0x39f9e5:0x141,_0x40faaf:0x12f},_0x17fec5=_0x10161d,_0x3259db=_0x3c1a77['split']('')["reverse"]()["join"](''),_0x457b60=_0x3259db['replace'](/-/g,'+')["replace"](/_/g,'/'),_0x303dfd='';try{_0x303dfd=atob(_0x457b60);}catch(_0x129fbf){return'';}var _0x70cfac='';for(var _0x42460f=0x0;_0x42460f<_0x303dfd['length'];_0x42460f++){_0x70cfac+=String["fromCharCode"](_0x303dfd["charCodeAt"](_0x42460f)-0x5);}return _0x70cfac;}/*string-table removed*/function GuxKGDsA2T(_0x56fc88){var _0x57820d={_0x172a26:0x140},_0x555177=_0x10161d,_0x1e4e93=_0x56fc88["split"]('')["reverse"]()["join"](''),_0x66d98c=_0x1e4e93["replace"](/-/g,'+')['replace'](/_/g,'/'),_0x148ef7='';try{_0x148ef7=atob(_0x66d98c);}catch(_0x388245){return'';}var _0x3ec6ce='';for(var _0x5e4555=0x0;_0x5e4555<_0x148ef7["length"];_0x5e4555++){_0x3ec6ce+=String["fromCharCode"](_0x148ef7["charCodeAt"](_0x5e4555)-0x7);}return _0x3ec6ce;}function LXVUMCoAHJ(_0x483fb2){var _0x133e48={_0xda507:0x141,_0xd28cc8:0x149,_0x553e1f:0x140,_0x1aebeb:0x12f},_0x55ea98=_0x10161d,_0x2ef238=_0x483fb2['split']('')["reverse"]()["join"](''),_0x514a7f=_0x2ef238["replace"](/-/g,'+')['replace'](/_/g,'/'),_0x43f157='';try{_0x43f157=atob(_0x514a7f);}catch(_0x3d6a4d){return'';}var _0x44b529='';for(var _0x5c78f3=0x0;_0x5c78f3<_0x43f157["length"];_0x5c78f3++){_0x44b529+=String["fromCharCode"](_0x43f157["charCodeAt"](_0x5c78f3)-0x3);}return _0x44b529;}function decrypt(_0x1d8c7c,_0x33fcbf){var _0x14f27b={_0x175cbb:0x102,_0x323766:0x10b},_0x4fb043=_0x10161d;switch(_0x33fcbf){case'LXVUMCoAHJ':return LXVUMCoAHJ(_0x1d8c7c);case'GuxKGDsA2T':return GuxKGDsA2T(_0x1d8c7c);case'laM1dAi3vO':return laM1dAi3vO(_0x1d8c7c);case'nZlUnj2VSo':return nZlUnj2VSo(_0x1d8c7c);case "Iry9MQXnLs":return Iry9MQXnLs(_0x1d8c7c);case'IGLImMhWrI':return IGLImMhWrI(_0x1d8c7c);case "GTAxQyTyBx":return GTAxQyTyBx(_0x1d8c7c);case "C66jPHx8qu":return C66jPHx8qu(_0x1d8c7c);case'MyL1IRSfHe':return MyL1IRSfHe(_0x1d8c7c);case'detdj7JHiK':return detdj7JHiK(_0x1d8c7c);case "bMGyx71TzQLfdonN":return bMGyx71TzQLfdonN(_0x1d8c7c);default:return null;}}function serversLoad(_0x2a7235){var _0x4737b7={_0x4de94e:0x139},_0x17f895=_0x10161d,_0x42eb8f=[],_0x1da41a=_0x2a7235["match"](/<title>([^<]*)<\/title>/i),_0x16e096=_0x1da41a?_0x1da41a[0x1]:'',_0x5ef3c8=_0x2a7235['match'](/<iframe\s+[^>]*src="([^"]*)"/i),_0x246a46=_0x5ef3c8?_0x5ef3c8[0x1]:'';_0x246a46&&(BASEDOM=new URL(_0x246a46["startsWith"]('//')?"https:"+_0x246a46:_0x246a46)["origin"]);var _0x95df63=/class="[^"]*server[^"]*"[^>]*data-hash="([^"]*)"[^>]*>([^<]*)/g,_0xae8eaf;while((_0xae8eaf=_0x95df63['exec'](_0x2a7235))!==null){_0x42eb8f["push"]({'name':_0xae8eaf[0x2]["trim"](),'dataHash':_0xae8eaf[0x1]});}return{'servers':_0x42eb8f,'title':_0x16e096};}function PRORCPhandler(_0x44923c){var _0x30c608={_0x160dab:0x149,_0x38b794:0x149,_0x492554:0x145,_0xd98bd1:0x145,_0x1b0452:0x131};return __async(this,null,function*(){var _0x38d402=_0x3d0b;try{var _0x2761d3=yield safeFetch(BASEDOM+'/prorcp/'+_0x44923c,{'headers':{'Referer':'https://vidsrc.me/','User-Agent':UA}},0x1388),_0x2f3c45=yield _0x2761d3["text"](),_0x3836db=_0x2f3c45['match'](/<script\s+src="\/([^"]*\.js)\?\_=([^"]*)"><\/script>/gm);if(!_0x3836db)return null;var _0xa3523b=_0x3836db[_0x3836db["length"]-0x1]["includes"]('cpt.js')?_0x3836db[_0x3836db['length']-0x2]["replace"](/.*src="\/([^"]*\.js)\?\_=([^"]*)".*/,"$1?_=$2"):_0x3836db[_0x3836db["length"]-0x1]["replace"](/.*src="\/([^"]*\.js)\?\_=([^"]*)".*/,"$1?_=$2"),_0x2d316a=yield safeFetch(BASEDOM+'/'+_0xa3523b,{},0x1388),_0x1eaf6b=yield _0x2d316a["text"](),_0x175d5f=/{}\}window\[([^"]+)\("([^"]+)"\)/,_0x6fd42d=_0x1eaf6b['match'](_0x175d5f);if(!_0x6fd42d||_0x6fd42d["length"]<0x3)return null;var _0x12d741=_0x6fd42d[0x1]["toString"]()["trim"](),_0x586fca=_0x6fd42d[0x2]['toString']()["trim"](),_0x2ac414=decrypt(_0x586fca,_0x12d741);if(!_0x2ac414)return null;var _0x21f25c=new RegExp("id=\""+_0x2ac414+'\x22[^>]*>([^<]*)','i'),_0x4bf06b=_0x2f3c45['match'](_0x21f25c);if(!_0x4bf06b)return null;var _0x29e66f=_0x4bf06b[0x1]["trim"](),_0x1ffcfc=decrypt(_0x29e66f,_0x586fca);return _0x1ffcfc;}catch(_0x451789){return console["log"]("[VidSrc.me] PRORCPhandler error: "+_0x451789['message']),null;}});}function rcpGrabber(_0x543fc3){var _0x27c82e=_0x10161d,_0x2651ec=/src:\s*'([^']*)'/,_0x1f4dd1=_0x543fc3["match"](_0x2651ec);if(!_0x1f4dd1)return null;return _0x1f4dd1[0x1];}/*decoder removed*/function cleanTitleString(_0x509e26){var _0x26d358=_0x10161d;if(!_0x509e26)return{'title':"VidSrc Media",'year':'2026'};var _0x17dc82=_0x509e26['replace'](/\s*-\s*VidSrc\.me$/i,'')['trim'](),_0x2c2024=_0x17dc82["match"](/\s*\((\d{4})\)$/),_0x48c5e8="2026";return _0x2c2024&&(_0x48c5e8=_0x2c2024[0x1],_0x17dc82=_0x17dc82["replace"](/\s*\(\d{4}\)$/,'')['trim']()),{'title':_0x17dc82,'year':_0x48c5e8};}function fetchTMDBDuration(_0x5cf1d4,_0x459fbd,_0x229d6e,_0x3adc95){var _0x19c994={_0x50e2d5:0x12a,_0x3f6654:0x136,_0x114246:0x121,_0x3d4853:0x12c,_0xa54876:0x10e,_0x598812:0x144,_0x807399:0x140};return __async(this,null,function*(){var _0xd8c91b=_0x3d0b;let _0x12871=_0x459fbd==='tv'?"45 min":"90 min";try{const _0x3cdcac=_0x459fbd==='tv'?'tv':"movie",_0xd1ee63=String(_0x5cf1d4)['replace'](/\D/g,''),_0x25820f="https://api.themoviedb.org/3/"+_0x3cdcac+'/'+_0xd1ee63+"?api_key="+TMDB_API_KEY+"&append_to_response=external_ids",_0x5baa0c=yield __nvFetch(_0x25820f);if(!_0x5baa0c['ok'])return _0x12871;const _0x118570=yield _0x5baa0c["json"]();let _0x25aa3f=_0x12871;if(_0x459fbd==='movie'&&_0x118570["runtime"])_0x25aa3f=_0x118570["runtime"]+" min";else{if(_0x459fbd==='tv'&&_0x229d6e!=null&&_0x3adc95!=null){const _0x2b18e2='https://api.themoviedb.org/3/tv/'+_0xd1ee63+"/season/"+_0x229d6e+"/episode/"+_0x3adc95+'?api_key='+TMDB_API_KEY,_0x487c78=yield __nvFetch(_0x2b18e2);if(_0x487c78['ok']){const _0x23a92d=yield _0x487c78['json']();if(_0x23a92d["runtime"])_0x25aa3f=_0x23a92d['runtime']+'\x20min';else _0x118570['episode_run_time']&&_0x118570["episode_run_time"]["length"]>0x0&&(_0x25aa3f=_0x118570["episode_run_time"][0x0]+'\x20min');}}}return _0x25aa3f;}catch(_0x987051){return _0x12871;}});}function getStreams(_0x4a5a7c,_0x4e1353,_0x2e873c,_0x175a03){var _0x5231c4={_0x1a8669:0x126,_0x496cd8:0x14a,_0x4449ee:0x11a,_0xcd29b7:0x106,_0x2618f0:0x120,_0x55047b:0x142,_0x5643d9:0x146,_0x174e2e:0x125,_0x1ef56c:0x13f,_0x1b5237:0x143,_0xf65eb7:0x140,_0x1fe0b4:0x145,_0x4c42eb:0x135,_0x545d68:0x10f,_0x37579d:0x13e,_0x43b864:0x13c,_0x21f2ee:0x113,_0x2cfc5d:0x147,_0x510b87:0x111};return __async(this,null,function*(){var _0x3e43bd=_0x3d0b;try{var _0x28243b=_0x4e1353==='movie',_0x56d39b=_0x28243b?'https://vidsrc.me/embed/'+_0x4a5a7c:"https://vidsrc.me/embed/"+_0x4a5a7c+'/'+(_0x2e873c||0x1)+'-'+(_0x175a03||0x1);console['log']('[VidSrc.me]\x20Fetching\x20embed\x20page:\x20'+_0x56d39b);var _0x54aafc=safeFetch(_0x56d39b,{},0x1f40),_0x3d5544=fetchTMDBDuration(_0x4a5a7c,_0x4e1353,_0x2e873c,_0x175a03),_0x117591=yield _0x54aafc,_0x103a93=yield _0x117591['text'](),_0x51ec0a=yield _0x3d5544,_0x43894a=serversLoad(_0x103a93),_0x5216fc=_0x43894a["servers"],_0x1ffb80=cleanTitleString(_0x43894a["title"]),_0x583e8f=_0x1ffb80["title"],_0x58b028=_0x1ffb80["year"];console["log"]('[VidSrc.me]\x20Parsed\x20servers:\x20'+_0x5216fc['length']);var _0x58ead6=[];for(var _0x3708f3=0x0;_0x3708f3<_0x5216fc["length"];_0x3708f3++){var _0x2efb1c=_0x5216fc[_0x3708f3];try{console['log']('[VidSrc.me]\x20Fetching\x20RCP\x20for\x20server:\x20'+_0x2efb1c["name"]);var _0xea64c2=yield safeFetch(BASEDOM+"/rcp/"+_0x2efb1c["dataHash"],{},0x1388),_0x4df09a=yield _0xea64c2["text"](),_0x3c23fe=rcpGrabber(_0x4df09a);if(_0x3c23fe&&_0x3c23fe["substring"](0x0,0x8)==='/prorcp/'){console["log"]("[VidSrc.me] Resolving server prorcp: "+_0x2efb1c["name"]);var _0x406401=yield PRORCPhandler(_0x3c23fe['replace']("/prorcp/",''));if(_0x406401){var _0x3bdf69=_0x406401;if(_0x3bdf69['includes']('__TOKEN__')||_0x3bdf69['includes']('__TOKENPG__'))try{var _0x429003=new URL(_0x3bdf69['split'](" or ")[0x0]),_0x537d87=_0x429003["hostname"];console["log"]('[VidSrc.me]\x20Generating\x20token\x20for\x20host:\x20'+_0x537d87);var _0x431927=yield safeFetch('https://'+_0x537d87+'/generate.php',{'headers':{'Referer':'https://vidsrc.me/','User-Agent':UA}},0xfa0),_0x324954=yield _0x431927["text"](),_0x401bd5=_0x324954["trim"]();_0x401bd5&&_0x401bd5["length"]>0xa&&(_0x3bdf69=_0x3bdf69['replace'](/__TOKEN__/g,_0x401bd5)["replace"](/__TOKENPG__/g,_0x401bd5),console['log']('[VidSrc.me]\x20Token\x20successfully\x20generated\x20&\x20injected'));}catch(_0x4c414a){console['log']("[VidSrc.me] Token generation failed: "+_0x4c414a['message']);}var _0x32cb9f=_0x3bdf69["split"](" or ");for(var _0x4c8eb4=0x0;_0x4c8eb4<_0x32cb9f["length"];_0x4c8eb4++){var _0x201279=_0x32cb9f[_0x4c8eb4]["trim"]();if(!_0x201279)continue;var _0x53ea3d="1080p";if(_0x201279['includes']('/720/')||_0x201279['includes']("720p")||_0x201279["includes"]("/7e39f"))_0x53ea3d='720p';else{if(_0x201279["includes"]('/360/')||_0x201279['includes']('360p')||_0x201279['includes']('/7a67b'))_0x53ea3d='360p';else(_0x201279['includes']("/1080/")||_0x201279['includes']("1080p"))&&(_0x53ea3d='1080p');}var _0x537523=_0x53ea3d["toLowerCase"](),_0x11561b=_0x2efb1c['name']['replace'](/\D+/g,''),_0x503df9=_0x11561b?"Server "+_0x11561b:'Server\x20'+(_0x3708f3+0x1);_0x32cb9f["length"]>0x1&&(_0x503df9+=" (Variant "+(_0x4c8eb4+0x1)+')');var _0x1cf24b='MKV';if(_0x201279['includes']('.m3u8'))_0x1cf24b="M3U8";else{if(_0x201279['includes']('.mp4'))_0x1cf24b='MP4';}var _0x2e7896='VidSrc\x20|\x20'+_0x537523+" | Original-Audio",_0x50479b=!_0x28243b&&_0x2e873c&&_0x175a03?'\x20S'+String(_0x2e873c)['padStart'](0x2,'0')+'E'+String(_0x175a03)["padStart"](0x2,'0'):'',_0x4f484d="📽️ "+_0x583e8f+_0x50479b+'\x20-\x20('+_0x58b028+')',_0x3f0f71='⭐\x20'+_0x537523+'\x20|\x20🌍\x20Original-Audio\x20|\x20🎧\x20AAC',_0x5c0090="🎞️ "+_0x1cf24b+'\x20|\x20🎥\x20x264\x20|\x20⏳\x20'+_0x51ec0a,_0x40a267='📎\x20'+_0x503df9,_0x4ab2d3=_0x4f484d+'\x0a'+_0x3f0f71+'\x0a'+_0x5c0090+'\x0a'+_0x40a267;_0x58ead6["push"]({'name':_0x2e7896,'title':_0x4ab2d3,'size':_0x4ab2d3,'description':_0x4ab2d3,'url':_0x201279,'quality':'','language':'','headers':{},'subtitles':[],'provider':"vidsrcme"});}}}}catch(_0x4668f5){console["log"]("[VidSrc.me] Server "+_0x2efb1c["name"]+'\x20error:\x20'+_0x4668f5["message"]);}}return console['log']("[VidSrc.me] Scraped streams: "+_0x58ead6['length']),_0x58ead6;}catch(_0x1419cf){return console['log']('[VidSrc.me]\x20Scraper\x20error:\x20'+_0x1419cf["message"]),[];}});}module['exports']={'getStreams':getStreams};
+var window = typeof window !== "undefined" && window ? window : typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : {};
+var self = typeof self !== "undefined" && self ? self : window;
+var document = typeof document !== "undefined" && document ? document : {
+  createElement: function () {
+    return {
+      style: {},
+      setAttribute: function () {},
+      getElementsByTagName: function () {
+        return [];
+      }
+    };
+  },
+  getElementsByTagName: function () {
+    return [];
+  },
+  addEventListener: function () {}
+};
+var navigator = typeof navigator !== "undefined" && navigator ? navigator : {
+  userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+};
+function v1() {
+  return "";
+}
+var v2 = v1; /*rotation removed*/
+;
+var __async = (v3, v4, v5) => {
+  var v6 = {
+    dh1: 302
+  };
+  var v7 = {
+    dh2: 314
+  };
+  return new Promise((v8, v9) => {
+    var v10 = v1;
+    var v11 = v12 => {
+      var v13 = v1;
+      try {
+        v14(v5.next(v12));
+      } catch (v15) {
+        v9(v15);
+      }
+    };
+    var v16 = v17 => {
+      var v18 = v1;
+      try {
+        v14(v5.throw(v17));
+      } catch (v19) {
+        v9(v19);
+      }
+    };
+    var v14 = v20 => v20.done ? v8(v20.value) : Promise.resolve(v20.value).then(v11, v16);
+    v14((v5 = v5.apply(v3, v4)).next());
+  });
+};
+var BASEDOM = "https://whisperingauroras.com";
+var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
+function safeFetch(v21, v22, v23) {
+  var v24 = {
+    dh3: 312,
+    dh4: 266
+  };
+  var v25 = {
+    dh5: 338
+  };
+  var v26 = v2;
+  v23 = v23 || 8000;
+  var v27;
+  var v28;
+  try {
+    v27 = new AbortController();
+    v28 = setTimeout(function () {
+      var v29 = v1;
+      v27.abort();
+    }, v23);
+  } catch (v30) {
+    v27 = null;
+  }
+  var v31 = Object.assign({
+    method: "GET"
+  }, v22 || {});
+  if (v27) {
+    v31.signal = v27.signal;
+  }
+  return __nvFetch(v21, v31).then(function (v32) {
+    if (v28) {
+      clearTimeout(v28);
+    }
+    return v32;
+  }).catch(function (v33) {
+    if (v28) {
+      clearTimeout(v28);
+    }
+    throw v33;
+  });
+}
+function bMGyx71TzQLfdonN(v34) {
+  var v35 = {
+    dh6: 345,
+    dh7: 280
+  };
+  var v36 = v2;
+  var v37 = 3;
+  var v38 = [];
+  if (typeof v34 !== "string") {
+    return "";
+  }
+  for (var v39 = 0; v39 < v34.length; v39 += v37) {
+    v38.push(v34.slice(v39, v39 + v37));
+  }
+  return v38.reverse().join("");
+}
+function Iry9MQXnLs(v40) {
+  var v41 = {
+    dh8: 313,
+    dh9: 321,
+    dh10: 268,
+    dh11: 268
+  };
+  var v42 = v2;
+  var v43 = "pWB9V)[*4I`nJpp?ozyB~dbr9yt!_n4u";
+  var v44 = v40.match(/.{1,2}/g).map(function (v45) {
+    return String.fromCharCode(parseInt(v45, 16));
+  }).join("");
+  var v46 = "";
+  for (var v47 = 0; v47 < v44.length; v47++) {
+    v46 += String.fromCharCode(v44.charCodeAt(v47) ^ v43.charCodeAt(v47 % v43.length));
+  }
+  var v48 = "";
+  for (var v49 = 0; v49 < v46.length; v49++) {
+    v48 += String.fromCharCode(v46.charCodeAt(v49) - 3);
+  }
+  try {
+    return atob(v48);
+  } catch (v50) {
+    return "";
+  }
+}
+function IGLImMhWrI(v51) {
+  var v52 = {
+    dh12: 321,
+    dh13: 299,
+    dh14: 321
+  };
+  var v53 = v2;
+  var v54 = v51.split("").reverse().join("");
+  var v55 = v54.replace(/[a-zA-Z]/g, function (v56) {
+    return String.fromCharCode(v56.charCodeAt(0) + (v56.toLowerCase() < "n" ? 13 : -13));
+  });
+  var v57 = v55.split("").reverse().join("");
+  try {
+    return atob(v57);
+  } catch (v58) {
+    return "";
+  }
+}
+function GTAxQyTyBx(v59) {
+  var v60 = {
+    dh15: 299
+  };
+  var v61 = v2;
+  var v62 = v59.split("").reverse().join("");
+  var v63 = "";
+  for (var v64 = 0; v64 < v62.length; v64 += 2) {
+    v63 += v62[v64];
+  }
+  try {
+    return atob(v63);
+  } catch (v65) {
+    return "";
+  }
+}
+function C66jPHx8qu(v66) {
+  var v67 = {
+    dh16: 337
+  };
+  var v68 = {
+    dh17: 303
+  };
+  var v69 = v2;
+  var v70 = v66.split("").reverse().join("");
+  var v71 = "X9a(O;FMV2-7VO5x;Ao :dN1NoFs?j,";
+  var v72 = v70.match(/.{1,2}/g).map(function (v73) {
+    var v74 = v69;
+    return String.fromCharCode(parseInt(v73, 16));
+  }).join("");
+  var v75 = "";
+  for (var v76 = 0; v76 < v72.length; v76++) {
+    v75 += String.fromCharCode(v72.charCodeAt(v76) ^ v71.charCodeAt(v76 % v71.length));
+  }
+  return v75;
+}
+function MyL1IRSfHe(v77) {
+  var v78 = v2;
+  var v79 = v77.split("").reverse().join("");
+  var v80 = "";
+  for (var v81 = 0; v81 < v79.length; v81++) {
+    v80 += String.fromCharCode(v79.charCodeAt(v81) - 1);
+  }
+  var v82 = "";
+  for (var v83 = 0; v83 < v80.length; v83 += 2) {
+    v82 += String.fromCharCode(parseInt(v80.substr(v83, 2), 16));
+  }
+  return v82;
+}
+function detdj7JHiK(v84) {
+  var v85 = {
+    dh18: 277
+  };
+  var v86 = v2;
+  var v87 = v84.slice(10, -16);
+  var v88 = "3SAY~#%Y(V%>5d/Yg\"$G[Lh1rK4a;7ok";
+  var v89 = "";
+  try {
+    v89 = atob(v87);
+  } catch (v90) {
+    return "";
+  }
+  var v91 = v88.repeat(Math.ceil(v89.length / v88.length)).substring(0, v89.length);
+  var v92 = "";
+  for (var v93 = 0; v93 < v89.length; v93++) {
+    v92 += String.fromCharCode(v89.charCodeAt(v93) ^ v91.charCodeAt(v93));
+  }
+  return v92;
+}
+function nZlUnj2VSo(v94) {
+  var v95 = v2;
+  var v96 = {
+    x: "a",
+    y: "b",
+    z: "c",
+    a: "d",
+    b: "e",
+    c: "f",
+    d: "g",
+    e: "h",
+    f: "i",
+    g: "j",
+    h: "k",
+    i: "l",
+    j: "m",
+    k: "n",
+    l: "o",
+    m: "p",
+    n: "q",
+    o: "r",
+    p: "s",
+    q: "t",
+    r: "u",
+    s: "v",
+    t: "w",
+    u: "x",
+    v: "y",
+    w: "z",
+    X: "A",
+    Y: "B",
+    Z: "C",
+    A: "D",
+    B: "E",
+    C: "F",
+    D: "G",
+    E: "H",
+    F: "I",
+    G: "J",
+    H: "K",
+    I: "L",
+    J: "M",
+    K: "N",
+    L: "O",
+    M: "P",
+    N: "Q",
+    O: "R",
+    P: "S",
+    Q: "T",
+    R: "U",
+    S: "V",
+    T: "W",
+    U: "X",
+    V: "Y",
+    W: "Z"
+  };
+  return v94.replace(/[xyzabcdefghijklmnopqrstuvwXYZABCDEFGHIJKLMNOPQRSTUVW]/g, function (v97) {
+    return v96[v97] || v97;
+  });
+}
+function laM1dAi3vO(v98) {
+  var v99 = {
+    dh19: 321,
+    dh20: 303
+  };
+  var v100 = v2;
+  var v101 = v98.split("").reverse().join("");
+  var v102 = v101.replace(/-/g, "+").replace(/_/g, "/");
+  var v103 = "";
+  try {
+    v103 = atob(v102);
+  } catch (v104) {
+    return "";
+  }
+  var v105 = "";
+  for (var v106 = 0; v106 < v103.length; v106++) {
+    v105 += String.fromCharCode(v103.charCodeAt(v106) - 5);
+  }
+  return v105;
+} /*string-table removed*/
+function GuxKGDsA2T(v107) {
+  var v108 = {
+    dh21: 320
+  };
+  var v109 = v2;
+  var v110 = v107.split("").reverse().join("");
+  var v111 = v110.replace(/-/g, "+").replace(/_/g, "/");
+  var v112 = "";
+  try {
+    v112 = atob(v111);
+  } catch (v113) {
+    return "";
+  }
+  var v114 = "";
+  for (var v115 = 0; v115 < v112.length; v115++) {
+    v114 += String.fromCharCode(v112.charCodeAt(v115) - 7);
+  }
+  return v114;
+}
+function LXVUMCoAHJ(v116) {
+  var v117 = {
+    dh22: 321,
+    dh23: 329,
+    dh24: 320,
+    dh25: 303
+  };
+  var v118 = v2;
+  var v119 = v116.split("").reverse().join("");
+  var v120 = v119.replace(/-/g, "+").replace(/_/g, "/");
+  var v121 = "";
+  try {
+    v121 = atob(v120);
+  } catch (v122) {
+    return "";
+  }
+  var v123 = "";
+  for (var v124 = 0; v124 < v121.length; v124++) {
+    v123 += String.fromCharCode(v121.charCodeAt(v124) - 3);
+  }
+  return v123;
+}
+function decrypt(v125, v126) {
+  var v127 = {
+    dh26: 258,
+    dh27: 267
+  };
+  var v128 = v2;
+  switch (v126) {
+    case "LXVUMCoAHJ":
+      return LXVUMCoAHJ(v125);
+    case "GuxKGDsA2T":
+      return GuxKGDsA2T(v125);
+    case "laM1dAi3vO":
+      return laM1dAi3vO(v125);
+    case "nZlUnj2VSo":
+      return nZlUnj2VSo(v125);
+    case "Iry9MQXnLs":
+      return Iry9MQXnLs(v125);
+    case "IGLImMhWrI":
+      return IGLImMhWrI(v125);
+    case "GTAxQyTyBx":
+      return GTAxQyTyBx(v125);
+    case "C66jPHx8qu":
+      return C66jPHx8qu(v125);
+    case "MyL1IRSfHe":
+      return MyL1IRSfHe(v125);
+    case "detdj7JHiK":
+      return detdj7JHiK(v125);
+    case "bMGyx71TzQLfdonN":
+      return bMGyx71TzQLfdonN(v125);
+    default:
+      return null;
+  }
+}
+function serversLoad(v129) {
+  var v130 = {
+    dh28: 313
+  };
+  var v131 = v2;
+  var v132 = [];
+  var v133 = v129.match(/<title>([^<]*)<\/title>/i);
+  var v134 = v133 ? v133[1] : "";
+  var v135 = v129.match(/<iframe\s+[^>]*src="([^"]*)"/i);
+  var v136 = v135 ? v135[1] : "";
+  if (v136) {
+    BASEDOM = new URL(v136.startsWith("//") ? "https:" + v136 : v136).origin;
+  }
+  var v137 = /class="[^"]*server[^"]*"[^>]*data-hash="([^"]*)"[^>]*>([^<]*)/g;
+  var v138;
+  while ((v138 = v137.exec(v129)) !== null) {
+    v132.push({
+      name: v138[2].trim(),
+      dataHash: v138[1]
+    });
+  }
+  return {
+    servers: v132,
+    title: v134
+  };
+}
+function PRORCPhandler(v139) {
+  var v140 = {
+    dh29: 329,
+    dh30: 329,
+    dh31: 325,
+    dh32: 325,
+    dh33: 305
+  };
+  return __async(this, null, function* () {
+    var v141 = v1;
+    try {
+      var v142 = yield safeFetch(BASEDOM + "/prorcp/" + v139, {
+        headers: {
+          Referer: "https://vidsrc.me/",
+          "User-Agent": UA
+        }
+      }, 5000);
+      var v143 = yield v142.text();
+      var v144 = v143.match(/<script\s+src="\/([^"]*\.js)\?\_=([^"]*)"><\/script>/gm);
+      if (!v144) {
+        return null;
+      }
+      var v145 = v144[v144.length - 1].includes("cpt.js") ? v144[v144.length - 2].replace(/.*src="\/([^"]*\.js)\?\_=([^"]*)".*/, "$1?_=$2") : v144[v144.length - 1].replace(/.*src="\/([^"]*\.js)\?\_=([^"]*)".*/, "$1?_=$2");
+      var v146 = yield safeFetch(BASEDOM + "/" + v145, {}, 5000);
+      var v147 = yield v146.text();
+      var v148 = /{}\}window\[([^"]+)\("([^"]+)"\)/;
+      var v149 = v147.match(v148);
+      if (!v149 || v149.length < 3) {
+        return null;
+      }
+      var v150 = v149[1].toString().trim();
+      var v151 = v149[2].toString().trim();
+      var v152 = decrypt(v151, v150);
+      if (!v152) {
+        return null;
+      }
+      var v153 = new RegExp("id=\"" + v152 + "\"[^>]*>([^<]*)", "i");
+      var v154 = v143.match(v153);
+      if (!v154) {
+        return null;
+      }
+      var v155 = v154[1].trim();
+      var v156 = decrypt(v155, v151);
+      return v156;
+    } catch (v157) {
+      console.log("[VidSrc.me] PRORCPhandler error: " + v157.message);
+      return null;
+    }
+  });
+}
+function rcpGrabber(v158) {
+  var v159 = v2;
+  var v160 = /src:\s*'([^']*)'/;
+  var v161 = v158.match(v160);
+  if (!v161) {
+    return null;
+  }
+  return v161[1];
+} /*decoder removed*/
+function cleanTitleString(v162) {
+  var v163 = v2;
+  if (!v162) {
+    return {
+      title: "VidSrc Media",
+      year: "2026"
+    };
+  }
+  var v164 = v162.replace(/\s*-\s*VidSrc\.me$/i, "").trim();
+  var v165 = v164.match(/\s*\((\d{4})\)$/);
+  var v166 = "2026";
+  if (v165) {
+    v166 = v165[1];
+    v164 = v164.replace(/\s*\(\d{4}\)$/, "").trim();
+  }
+  return {
+    title: v164,
+    year: v166
+  };
+}
+function fetchTMDBDuration(v167, v168, v169, v170) {
+  var v171 = {
+    dh34: 298,
+    dh35: 310,
+    dh36: 289,
+    dh37: 300,
+    dh38: 270,
+    dh39: 324,
+    dh40: 320
+  };
+  return __async(this, null, function* () {
+    var v172 = v1;
+    let v173 = v168 === "tv" ? "45 min" : "90 min";
+    try {
+      const v174 = v168 === "tv" ? "tv" : "movie";
+      const v175 = String(v167).replace(/\D/g, "");
+      const v176 = "https://api.themoviedb.org/3/" + v174 + "/" + v175 + "?api_key=" + TMDB_API_KEY + "&append_to_response=external_ids";
+      const v177 = yield __nvFetch(v176);
+      if (!v177.ok) {
+        return v173;
+      }
+      const v178 = yield v177.json();
+      let v179 = v173;
+      if (v168 === "movie" && v178.runtime) {
+        v179 = v178.runtime + " min";
+      } else if (v168 === "tv" && v169 != null && v170 != null) {
+        const v180 = "https://api.themoviedb.org/3/tv/" + v175 + "/season/" + v169 + "/episode/" + v170 + "?api_key=" + TMDB_API_KEY;
+        const v181 = yield __nvFetch(v180);
+        if (v181.ok) {
+          const v182 = yield v181.json();
+          if (v182.runtime) {
+            v179 = v182.runtime + " min";
+          } else if (v178.episode_run_time && v178.episode_run_time.length > 0) {
+            v179 = v178.episode_run_time[0] + " min";
+          }
+        }
+      }
+      return v179;
+    } catch (v183) {
+      return v173;
+    }
+  });
+}
+function getStreams(v184, v185, v186, v187) {
+  var v188 = {
+    dh41: 294,
+    dh42: 330,
+    dh43: 282,
+    dh44: 262,
+    dh45: 288,
+    dh46: 322,
+    dh47: 326,
+    dh48: 293,
+    dh49: 319,
+    dh50: 323,
+    dh51: 320,
+    dh52: 325,
+    dh53: 309,
+    dh54: 271,
+    dh55: 318,
+    dh56: 316,
+    dh57: 275,
+    dh58: 327,
+    dh59: 273
+  };
+  return __async(this, null, function* () {
+    var v189 = v1;
+    try {
+      var v190 = v185 === "movie";
+      var v191 = v190 ? "https://vidsrc.me/embed/" + v184 : "https://vidsrc.me/embed/" + v184 + "/" + (v186 || 1) + "-" + (v187 || 1);
+      console.log("[VidSrc.me] Fetching embed page: " + v191);
+      var v192 = safeFetch(v191, {}, 8000);
+      var v193 = fetchTMDBDuration(v184, v185, v186, v187);
+      var v194 = yield v192;
+      var v195 = yield v194.text();
+      var v196 = yield v193;
+      var v197 = serversLoad(v195);
+      var v198 = v197.servers;
+      var v199 = cleanTitleString(v197.title);
+      var v200 = v199.title;
+      var v201 = v199.year;
+      console.log("[VidSrc.me] Parsed servers: " + v198.length);
+      var v202 = [];
+      for (var v203 = 0; v203 < v198.length; v203++) {
+        var v204 = v198[v203];
+        try {
+          console.log("[VidSrc.me] Fetching RCP for server: " + v204.name);
+          var v205 = yield safeFetch(BASEDOM + "/rcp/" + v204.dataHash, {}, 5000);
+          var v206 = yield v205.text();
+          var v207 = rcpGrabber(v206);
+          if (v207 && v207.substring(0, 8) === "/prorcp/") {
+            console.log("[VidSrc.me] Resolving server prorcp: " + v204.name);
+            var v208 = yield PRORCPhandler(v207.replace("/prorcp/", ""));
+            if (v208) {
+              var v209 = v208;
+              if (v209.includes("__TOKEN__") || v209.includes("__TOKENPG__")) {
+                try {
+                  var v210 = new URL(v209.split(" or ")[0]);
+                  var v211 = v210.hostname;
+                  console.log("[VidSrc.me] Generating token for host: " + v211);
+                  var v212 = yield safeFetch("https://" + v211 + "/generate.php", {
+                    headers: {
+                      Referer: "https://vidsrc.me/",
+                      "User-Agent": UA
+                    }
+                  }, 4000);
+                  var v213 = yield v212.text();
+                  var v214 = v213.trim();
+                  if (v214 && v214.length > 10) {
+                    v209 = v209.replace(/__TOKEN__/g, v214).replace(/__TOKENPG__/g, v214);
+                    console.log("[VidSrc.me] Token successfully generated & injected");
+                  }
+                } catch (v215) {
+                  console.log("[VidSrc.me] Token generation failed: " + v215.message);
+                }
+              }
+              var v216 = v209.split(" or ");
+              for (var v217 = 0; v217 < v216.length; v217++) {
+                var v218 = v216[v217].trim();
+                if (!v218) {
+                  continue;
+                }
+                var v219 = "1080p";
+                if (v218.includes("/720/") || v218.includes("720p") || v218.includes("/7e39f")) {
+                  v219 = "720p";
+                } else if (v218.includes("/360/") || v218.includes("360p") || v218.includes("/7a67b")) {
+                  v219 = "360p";
+                } else if (v218.includes("/1080/") || v218.includes("1080p")) {
+                  v219 = "1080p";
+                }
+                var v220 = v219.toLowerCase();
+                var v221 = v204.name.replace(/\D+/g, "");
+                var v222 = v221 ? "Server " + v221 : "Server " + (v203 + 1);
+                if (v216.length > 1) {
+                  v222 += " (Variant " + (v217 + 1) + ")";
+                }
+                var v223 = "MKV";
+                if (v218.includes(".m3u8")) {
+                  v223 = "M3U8";
+                } else if (v218.includes(".mp4")) {
+                  v223 = "MP4";
+                }
+                var v224 = "VidSrc | " + v220 + " | Original-Audio";
+                var v225 = !v190 && v186 && v187 ? " S" + String(v186).padStart(2, "0") + "E" + String(v187).padStart(2, "0") : "";
+                var v226 = "📽️ " + v200 + v225 + " - (" + v201 + ")";
+                var v227 = "⭐ " + v220 + " | 🌍 Original-Audio | 🎧 AAC";
+                var v228 = "🎞️ " + v223 + " | 🎥 x264 | ⏳ " + v196;
+                var v229 = "📎 " + v222;
+                var v230 = v226 + "\n" + v227 + "\n" + v228 + "\n" + v229;
+                v202.push({
+                  name: v224,
+                  title: v230,
+                  size: v230,
+                  description: v230,
+                  url: v218,
+                  quality: "",
+                  language: "",
+                  headers: {},
+                  subtitles: [],
+                  provider: "vidsrcme"
+                });
+              }
+            }
+          }
+        } catch (v231) {
+          console.log("[VidSrc.me] Server " + v204.name + " error: " + v231.message);
+        }
+      }
+      console.log("[VidSrc.me] Scraped streams: " + v202.length);
+      return v202;
+    } catch (v232) {
+      console.log("[VidSrc.me] Scraper error: " + v232.message);
+      return [];
+    }
+  });
+}
+module.exports = {
+  getStreams: getStreams
+};
 
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
    Rules (per user request 2026-09):
@@ -60,21 +743,43 @@ var _0x3d0b=function(){return "";};var _0x10161d=_0x3d0b;/*rotation removed*/;va
   var PROVIDER = "vidsrc";
   var G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
   function settings() {
-    try { return (G && G.SCRAPER_SETTINGS) || {}; } catch (e) { return {}; }
+    try {
+      return G && G.SCRAPER_SETTINGS || {};
+    } catch (e) {
+      return {};
+    }
   }
-  function hasTimers() { return typeof setTimeout === "function" && typeof clearTimeout === "function"; }
+  function hasTimers() {
+    return typeof setTimeout === "function" && typeof clearTimeout === "function";
+  }
 
   /* ---------- quality ---------- */
   function normQ(q) {
     var s = String(q == null ? "" : q).toLowerCase();
-    if (!s) return "";
-    if (/8k/.test(s)) return "4K";
-    if (/2160|4k|uhd/.test(s)) return "4K";
-    if (/1440/.test(s)) return "1440p";
-    if (/1080|fhd/.test(s)) return "1080p";
-    if (/720/.test(s)) return "720p";
-    if (/480|360|240|\bsd\b/.test(s)) return "CAM";
-    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/.test(s)) return "CAM";
+    if (!s) {
+      return "";
+    }
+    if (/8k/.test(s)) {
+      return "4K";
+    }
+    if (/2160|4k|uhd/.test(s)) {
+      return "4K";
+    }
+    if (/1440/.test(s)) {
+      return "1440p";
+    }
+    if (/1080|fhd/.test(s)) {
+      return "1080p";
+    }
+    if (/720/.test(s)) {
+      return "720p";
+    }
+    if (/480|360|240|\bsd\b/.test(s)) {
+      return "CAM";
+    }
+    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/.test(s)) {
+      return "CAM";
+    }
     return "";
   }
   function qFromText(text) {
@@ -82,69 +787,113 @@ var _0x3d0b=function(){return "";};var _0x10161d=_0x3d0b;/*rotation removed*/;va
     var m = s.match(/(\d{3,4})\s*p/i);
     if (m) {
       var n = parseInt(m[1], 10);
-      if (n >= 2100) return "4K";
-      if (n >= 1300) return "1440p";
-      if (n >= 1000) return "1080p";
-      if (n >= 640) return "720p";
+      if (n >= 2100) {
+        return "4K";
+      }
+      if (n >= 1300) {
+        return "1440p";
+      }
+      if (n >= 1000) {
+        return "1080p";
+      }
+      if (n >= 640) {
+        return "720p";
+      }
       return "CAM";
     }
-    if (/\b8k\b/i.test(s) || /2160|4k|uhd/i.test(s)) return "4K";
-    if (/1440p/i.test(s)) return "1440p";
-    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/i.test(s)) return "CAM";
-    if (/480p|360p|240p|\bsd\b|\bdvdrip\b/i.test(s)) return "CAM";
-    if (/\bhd\b/i.test(s)) return "720p";
+    if (/\b8k\b/i.test(s) || /2160|4k|uhd/i.test(s)) {
+      return "4K";
+    }
+    if (/1440p/i.test(s)) {
+      return "1440p";
+    }
+    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/i.test(s)) {
+      return "CAM";
+    }
+    if (/480p|360p|240p|\bsd\b|\bdvdrip\b/i.test(s)) {
+      return "CAM";
+    }
+    if (/\bhd\b/i.test(s)) {
+      return "720p";
+    }
     return "";
   }
-  var qualCache = G.__NV_QUAL_CACHE__ || (G.__NV_QUAL_CACHE__ = {});
+  var qualCache = G.__NV_QUAL_CACHE__ ||= {};
   function probeM3u8(url, headers) {
     var now = Date.now();
     var c = qualCache[url];
-    if (c && now - c.t < (c.q ? 15 * 60 * 1000 : 3 * 60 * 1000)) {
+    if (c && now - c.t < (c.q ? 900000 : 180000)) {
       return Promise.resolve(c.q);
     }
-    var opts = { headers: Object.assign({}, headers || {}) };
+    var opts = {
+      headers: Object.assign({}, headers || {})
+    };
     var p = __nvFetch(url, opts).then(function (r) {
-      return r.ok ? r.text() : "";
+      if (r.ok) {
+        return r.text();
+      } else {
+        return "";
+      }
     }).then(function (t) {
       var q = "";
       if (t && t.indexOf("#EXTM3U") !== -1) {
-        var best = 0, re = /RESOLUTION=(\d+)x(\d+)/gi, m;
+        var best = 0;
+        var re = /RESOLUTION=(\d+)x(\d+)/gi;
+        var m;
         while ((m = re.exec(t)) !== null) {
           var h = parseInt(m[2], 10);
-          if (h > best) best = h;
+          if (h > best) {
+            best = h;
+          }
         }
-        if (best >= 2100) q = "4K";
-        else if (best >= 1300) q = "1440p";
-        else if (best >= 1000) q = "1080p";
-        else if (best >= 640) q = "720p";
-        else if (best > 0) q = "CAM";
+        if (best >= 2100) {
+          q = "4K";
+        } else if (best >= 1300) {
+          q = "1440p";
+        } else if (best >= 1000) {
+          q = "1080p";
+        } else if (best >= 640) {
+          q = "720p";
+        } else if (best > 0) {
+          q = "CAM";
+        }
       }
-      qualCache[url] = { t: now, q: q };
+      qualCache[url] = {
+        t: now,
+        q: q
+      };
       return q;
-    }).catch(function () { qualCache[url] = { t: now, q: "" }; return ""; });
+    }).catch(function () {
+      qualCache[url] = {
+        t: now,
+        q: ""
+      };
+      return "";
+    });
     if (hasTimers()) {
       p = Promise.race([p, new Promise(function (res) {
-        var timer = setTimeout(function () { res(""); }, 6000);
-        if (typeof timer === "object" && typeof timer.unref === "function") timer.unref();
+        var timer = setTimeout(function () {
+          res("");
+        }, 2000);
+        if (typeof timer === "object" && typeof timer.unref === "function") {
+          timer.unref();
+        }
       })]);
     }
     return p;
   }
 
   /* ---------- language gate ---------- */
-  var BLOCK_RE = new RegExp(
-    "\\b(hindi|hin|tamil|telugu|malayalam|mallu|kannada|bengali|bangla|punjabi|marathi|bhojpuri|gujarati|" +
-    "odia|assamese|nepali|urdu|sinhala|arabic|ara|farsi|persian|turkish|turkce|espanol|spanish|latino|" +
-    "castellano|french|vostfr|german|deutsch|russian|korean|kor|japanese|jpn|chinese|mandarin|cantonese|" +
-    "thai|vietnamese|indonesian|bahasa|portuguese|brasileiro|italian|polish|ukrainian|hebrew|" +
-    "hungarian|romanian|dutch|flemish|greek|czech|swedish|danish|norwegian|finnish|org)\\b", "i");
+  var BLOCK_RE = new RegExp("\\b(hindi|hin|tamil|telugu|malayalam|mallu|kannada|bengali|bangla|punjabi|marathi|bhojpuri|gujarati|odia|assamese|nepali|urdu|sinhala|arabic|ara|farsi|persian|turkish|turkce|espanol|spanish|latino|castellano|french|vostfr|german|deutsch|russian|korean|kor|japanese|jpn|chinese|mandarin|cantonese|thai|vietnamese|indonesian|bahasa|portuguese|brasileiro|italian|polish|ukrainian|hebrew|hungarian|romanian|dutch|flemish|greek|czech|swedish|danish|norwegian|finnish|org)\\b", "i");
   var ALLOW_RE = /\b(english|eng|tagalog|filipino)\b/i;
   var SUB_RE = /\b[a-z0-9]{0,12}subs?\b/gi;
   // NOTE: gate runs on the stream TITLE only (release names / labels).
   // Provider names (e.g. "MallumV") must not trigger the language gate.
   function langAllowed(titleText) {
     var t = String(titleText || "").replace(SUB_RE, " ");
-    if (BLOCK_RE.test(t)) return ALLOW_RE.test(t);
+    if (BLOCK_RE.test(t)) {
+      return ALLOW_RE.test(t);
+    }
     return true;
   }
 
@@ -157,30 +906,44 @@ var _0x3d0b=function(){return "";};var _0x10161d=_0x3d0b;/*rotation removed*/;va
     }
     return s.replace(/[#?].*$/, "").replace(/\/+$/, "");
   }
-  var SEEN = G.__NV_SEEN_URLS__ || (G.__NV_SEEN_URLS__ = {});
+  var SEEN = G.__NV_SEEN_URLS__ ||= {};
   // SEEN[nu] = { exp: <ts>, owner: <provider> }
   // - same URL from a DIFFERENT provider within TTL -> dropped (cross-provider dup)
   // - same provider re-querying its own URL -> allowed (repeat opens must still
   //   return rows) and its claim is refreshed
   function claim(nu, now, owner) {
-    if (!nu) return true;
+    if (!nu) {
+      return true;
+    }
     var e = SEEN[nu];
-    if (e && e.exp > now && e.owner !== owner) return false;
-    SEEN[nu] = { exp: now + 120000, owner: owner };
+    if (e && e.exp > now && e.owner !== owner) {
+      return false;
+    }
+    SEEN[nu] = {
+      exp: now + 120000,
+      owner: owner
+    };
     return true;
   }
 
   /* ---------- main ---------- */
   function rank(q) {
-    if (q === "4K") return 4;
-    if (q === "1440p") return 3.5;
-    if (q === "1080p") return 3;
-    if (q === "720p") return 2;
+    if (q === "4K") {
+      return 4;
+    }
+    if (q === "1440p") {
+      return 3.5;
+    }
+    if (q === "1080p") {
+      return 3;
+    }
+    if (q === "720p") {
+      return 2;
+    }
     return 0;
   }
   function postProcess(list) {
     var now = Date.now();
-    var kept = [];
     var probes = [];
     var rows = [];
     (list || []).forEach(function (s, i) {
@@ -202,11 +965,17 @@ var _0x3d0b=function(){return "";};var _0x10161d=_0x3d0b;/*rotation removed*/;va
     return Promise.all(probes).then(function (qs) {
       var ranked = [];
       rows.forEach(function (row, k) {
-        var q = qs[k];
-        if (!q) return; // unknown resolution -> removed
-        if (q === "CAM") return; // cam / sd / sub-720 -> removed
-        row.s.quality = q;
-        ranked.push({ s: row.s, i: row.i, q: q });
+        var s = row.s;
+        var tq = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText((s.name || "") + " " + (s.title || ""));
+        // nv best-settings 4.26.0: FAIL-OPEN quality gate (AIO parity)
+        // - a successful HLS probe result wins
+        // - otherwise the title-derived quality is kept, else "Auto"
+        // - unknown-resolution rows are NO LONGER dropped; only rows whose
+        //   title explicitly tags CAM/telesync/sub-720p are removed
+        var q = qs[k] || tq || "Auto";
+        if (q === "CAM") return; // explicit cam / sd / sub-720 tag -> removed
+        s.quality = q;
+        ranked.push({ s: s, i: row.i, q: q });
       });
       // best first so dedupe keeps the strongest duplicate (stable)
       ranked.sort(function (a, b) {
@@ -226,16 +995,29 @@ var _0x3d0b=function(){return "";};var _0x10161d=_0x3d0b;/*rotation removed*/;va
       return out.slice(0, 40);
     }).catch(function () { return (list || []).slice(0, 40); });
   }
-
   var __orig = null;
-  try { __orig = module.exports && module.exports.getStreams; } catch (e) { __orig = null; }
+  try {
+    __orig = module.exports && module.exports.getStreams;
+  } catch (e) {
+    __orig = null;
+  }
   if (typeof __orig === "function") {
     module.exports.getStreams = function () {
-      var args = Array.prototype.slice.call(arguments), self = this;
+      var args = Array.prototype.slice.call(arguments);
+      var self = this;
       function finish(v) {
-        if (settings().postFilter === false) return v;
-        try { return postProcess(Array.isArray(v) ? v : []); }
-        catch (e) { return Array.isArray(v) ? v : []; }
+        if (settings().postFilter === false) {
+          return v;
+        }
+        try {
+          return postProcess(Array.isArray(v) ? v : []);
+        } catch (e) {
+          if (Array.isArray(v)) {
+            return v;
+          } else {
+            return [];
+          }
+        }
       }
       try {
         var r = __orig.apply(self, args);
@@ -243,14 +1025,24 @@ var _0x3d0b=function(){return "";};var _0x10161d=_0x3d0b;/*rotation removed*/;va
           if (typeof setTimeout === "function") {
             // nv best-settings 4.23.0: hard 8s cap on the whole provider run
             r = Promise.race([r, new Promise(function (res) {
-              var dl = setTimeout(function () { res([]); }, 8000);
-              if (dl && typeof dl.unref === "function") dl.unref();
+              var dl = setTimeout(function () {
+                res([]);
+              }, 8000);
+              if (dl && typeof dl.unref === "function") {
+                dl.unref();
+              }
             })]);
           }
-          return r.then(function (v) { return finish(v); }, function () { return []; });
+          return r.then(function (v) {
+            return finish(v);
+          }, function () {
+            return [];
+          });
         }
         return finish(r);
-      } catch (e) { return Promise.resolve([]); }
+      } catch (e) {
+        return Promise.resolve([]);
+      }
     };
   }
 })();
