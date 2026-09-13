@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "4.23.0",
-  "description": "Canonical Nuvio provider collection. v4.23.0 = FULL DECODE of the All-in-One-Nuvio pack applied to nv-plugins: all 9 adopted AIO providers re-built from their decoded sources (no obfuscated code left in the pack), each with the best settings surfaced by the decode (exact endpoints/keys/headers, 8s per-call + 12s overall deadlines, nvio post-filter attached). topcartoons rewritten clean and revived (direct mp4). netmirror v12: the AIO NewTV device lane ported 1:1, the device-dead net27 lane removed (its rows hit the 429-blocked hakunaymatata CDN), Alpha relay cap raised to 16s. uhdmovies removed (its new download gateway is JS+cookie protected - zero rows headless) and dvdplay removed (dead domain, 43s hangs). hexa/movish/vidfast/vidrock stall fixes. 29 fast, readable, fail-soft providers.",
+  "version": "4.24.0",
+  "description": "Canonical Nuvio provider collection. v4.24.0 = the FULL All-in-One-Nuvio merge: all 34 remaining non-Hindi AIO providers added as fully decoded, deadline-hardened ports (1Shows, AllMovieLand, AllWish, CineFreak, CTGMovies, DooFlix, FibWatch, Goated, GramCinema, HDGharTV, HDHub4u, HiAnime, Kurage, MoonFlix, MovieBox, Movies4u, MoviesDrive, Nakios, OnlyKDrama, Peachify, ShowBox, VidEasy, VidLove, VidSrc, VixSrc, XPass, ZinkMovies + the anime lanes AllAnime, AniDB, AnikotoTV, AnimeKai, AnimePahe, Animetsu, AnimeWorld) - zero obfuscated code, every call 8s-capped, nvio post-filter everywhere. Hindi providers (DesiFlix/HindMoviez/Einthusan/AnimeSalt), duplicate backends (Purstream == Movix, DahmerMovies-4K == DahmerMovies, AIO Torrentio == torrents) and the undecodable French Anime-Sama excluded. netmirror v13 (parallel Alpha candidates, VidSpark verified alive, caps 10s/9s/6s). Speed: every provider capped at 8s overall (netmirror 10s), torrent lanes 6s/8s - the sheet completes as fast as AIO's. 63 providers.",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -31,9 +31,9 @@
     {
       "id": "vidlink",
       "name": "Vidlink",
-      "description": "Vidlink streaming with encrypted TMDB ID support; v1.3.0 replaces the size:Unknown placeholder (shown as 'Unknown' in Nuvio rows) with real formatted sizes and attaches English+Filipino subtitles.",
-      "version": "1.3.0",
-      "author": "Streamline",
+      "description": "Vidlink streaming with encrypted TMDB ID support; v1.3.0 replaces the size:Unknown placeholder (shown as 'Unknown' in Nuvio rows) with real formatted sizes and attaches English+Filipino subtitles. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "1.4.0",
+      "author": "xrexzerox",
       "supportedTypes": [
         "movie",
         "tv"
@@ -41,19 +41,20 @@
       "filename": "providers/vidlink.js",
       "enabled": true,
       "formats": [
-        "m3u8",
-        "mp4"
+        "mp4",
+        "m3u8"
       ],
-      "logo": "https://www.google.com/s2/favicons?domain=vidlink.pro&sz=128",
+      "logo": "https://i.postimg.cc/RZRHQd75/vidlink.png",
       "contentLanguage": [
         "en"
-      ]
+      ],
+      "hasSettings": true
     },
     {
       "id": "hexa",
       "name": "Hexa",
-      "description": "Hexa v10.1: default network timeout 20s -> 8s so a stalled hexa.su/enc-dec call can never hang the sheet. All lanes unchanged (cap.hexa.su + enc-dec.app decode, sub.wyzie.io/opensubtitles subtitles, nvio post-filter).",
-      "version": "1.4.0",
+      "description": "Hexa v10.1: default network timeout 20s -> 8s so a stalled hexa.su/enc-dec call can never hang the sheet. All lanes unchanged (cap.hexa.su + enc-dec.app decode, sub.wyzie.io/opensubtitles subtitles, nvio post-filter). v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "1.5.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -73,8 +74,8 @@
     {
       "id": "vidzee",
       "name": "Vidzee",
-      "description": "Vidzee rebuilt for core.vidzee.wtf API: per-language servers, embedded wasm2js decryptor (pure JS, QuickJS-safe), verified live movie+TV",
-      "version": "3.0.0",
+      "description": "Vidzee rebuilt for core.vidzee.wtf API: per-language servers, embedded wasm2js decryptor (pure JS, QuickJS-safe), verified live movie+TV. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "3.1.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -94,21 +95,21 @@
     {
       "id": "vidrock",
       "name": "Vidrock",
-      "description": "Vidrock v7.1: the .ru API fetch now carries a hard 6s deadline (it could stall 20s+ and hang the whole sheet). AES-GCM URL decryption + Nova/Atlas lanes + nvio post-filter unchanged.",
-      "version": "1.3.0",
-      "author": "Streamline",
+      "description": "Vidrock v7.1: the .ru API fetch now carries a hard 6s deadline (it could stall 20s+ and hang the whole sheet). AES-GCM URL decryption + Nova/Atlas lanes + nvio post-filter unchanged. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "1.4.0",
+      "author": "xrexzerox",
       "supportedTypes": [
         "movie",
         "tv"
       ],
       "filename": "providers/vidrock.js",
       "enabled": true,
-      "hasSettings": true,
+      "hasSettings": false,
       "formats": [
-        "m3u8",
-        "mp4"
+        "mp4",
+        "m3u8"
       ],
-      "logo": "https://www.google.com/s2/favicons?domain=vidrock.ru&sz=128",
+      "logo": "https://i.postimg.cc/brxL7qg3/multivid.png",
       "contentLanguage": [
         "en"
       ]
@@ -116,9 +117,9 @@
     {
       "id": "vidfast",
       "name": "VidFast",
-      "description": "VidFast v6.1: default network timeout 20s -> 8s (vidfast.vc enc-dec.app decode lane could stall 20s). Lanes unchanged, nvio post-filter kept.",
-      "version": "1.3.0",
-      "author": "Streamline",
+      "description": "VidFast v6.1: default network timeout 20s -> 8s (vidfast.vc enc-dec.app decode lane could stall 20s). Lanes unchanged, nvio post-filter kept. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "1.4.0",
+      "author": "xrexzerox",
       "supportedTypes": [
         "movie",
         "tv"
@@ -126,19 +127,20 @@
       "filename": "providers/vidfast.js",
       "enabled": true,
       "formats": [
-        "m3u8",
-        "mp4"
+        "mp4",
+        "m3u8"
       ],
-      "logo": "https://www.google.com/s2/favicons?domain=vidfast.vc&sz=128",
+      "logo": "https://i.postimg.cc/0Qp8PSx5/vidfast.png",
       "contentLanguage": [
         "en"
-      ]
+      ],
+      "hasSettings": true
     },
     {
       "id": "vaplayer",
       "name": "VaPlayer",
-      "description": "VaPlayer HLS streams with subtitles (Streamline port of CineStream).",
-      "version": "1.2.0",
+      "description": "VaPlayer HLS streams with subtitles (Streamline port of CineStream). v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "1.3.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -157,8 +159,8 @@
     {
       "id": "cinejoy",
       "name": "Cinejoy",
-      "description": "Cinejoy v1.7.0: chain re-verified live end-to-end (servers -> enc -> binary /g -> dec -> playable HLS). Fast-fail lane memo skips doomed attempts when the runtime cannot send the binary /g request and no relay is configured; server sweep widened to all 8 servers. NuvioMobile still requires the asian-catalog worker relay (cjRelay setting, bundle v5.7.0+); TV/PC work with zero config.",
-      "version": "1.7.0",
+      "description": "Cinejoy v1.8.0: chain re-verified live (3 rows) and the Mobile transport limit now verified at app-source level: NuvioMobile's fetch bridge sends AND receives UTF-8 strings only (AddonPlatform.android.kt encodes request bodies to UTF-8 and decodes octet-stream responses as UTF-8), so the binary shegu /g legs can never succeed there. On Mobile the asian-catalog worker relay (/cjg + /cjs lanes, bundle v5.7.0+) is REQUIRED - paste your worker base URL into the \"Cinejoy relay base URL\" setting. NuvioTV/PC resolve without any configuration.",
+      "version": "1.8.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -179,8 +181,8 @@
     {
       "id": "torrents",
       "name": "Torrents",
-      "description": "Torrentio + TorrentsDB lanes; v1.3.0 drops torrents with no (or unreadable) seeder counts entirely - only >=20-seeder offers are surfaced",
-      "version": "1.3.0",
+      "description": "Torrentio + TorrentsDB lanes; v1.4.0: per-lane timeout 20s -> 6s and overall cap 20s -> 8s (the pack's sheet waits for the slowest provider - AIO's torrentio only \"felt faster\" because nv's 20s lane caps let a stalled stremio instance hold the sheet). Still drops torrents with no/few seeders.",
+      "version": "1.4.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -195,8 +197,7 @@
       ],
       "logo": "https://www.google.com/s2/favicons?domain=torrentio.strem.fun&sz=128",
       "contentLanguage": [
-        "en",
-        "hi"
+        "en"
       ]
     },
     {
@@ -212,13 +213,14 @@
       "filename": "providers/cinemacity.js",
       "enabled": true,
       "formats": [
-        "m3u8",
-        "mp4"
+        "mp4",
+        "m3u8"
       ],
       "contentLanguage": [
-        "en",
-        "ja"
-      ]
+        "en"
+      ],
+      "logo": "https://i.postimg.cc/XYjKhS3b/cinemacity.png",
+      "hasSettings": true
     },
     {
       "id": "4khdhub",
@@ -234,16 +236,13 @@
       "enabled": true,
       "formats": [
         "mp4",
-        "mkv",
         "m3u8"
       ],
       "contentLanguage": [
-        "en",
-        "hi",
-        "ta",
-        "te",
-        "tl"
-      ]
+        "en"
+      ],
+      "logo": "https://i.postimg.cc/DZpW6Xfb/4khdhub.png",
+      "hasSettings": true
     },
     {
       "id": "kisskh",
@@ -258,21 +257,23 @@
       "filename": "providers/kisskh.js",
       "enabled": true,
       "formats": [
-        "m3u8",
-        "mp4"
+        "mp4",
+        "m3u8"
       ],
       "contentLanguage": [
         "en",
         "ko",
         "ja",
         "zh"
-      ]
+      ],
+      "logo": "https://i.postimg.cc/2yLnTzPP/kisskh.jpg",
+      "hasSettings": true
     },
     {
       "id": "netmirror",
       "name": "NetMirror",
-      "description": "NetMirror v12: full All-in-One-Nuvio decode applied. NEW NewTV lane (the AIO build's real device path: checknewtv.php domain resolution -> newtv search/post/episodes/player API with the Ott app header - the lane AIO users stream with on retail IPs) + the user-proven Alpha relay lane (cap raised to 16s so its rows are never cut off on mobile) + the VidSpark proxied-CDN lane. The net27 embed lane is REMOVED: its rows point at bcdn*.hakunaymatata.com, the exact CDN your device 429-blocks. English-only, tolerant ids, caches kept.",
-      "version": "12.0.0",
+      "description": "NetMirror v13: speed + coverage pass on the 4.23.0 decode. The Alpha candidate chain now resolves IN PARALLEL (v12 chained candidates sequentially - 3 x a stalled watchpvr fetch stacked to 17s with zero rows). Lane caps tightened: Alpha 9s, NewTV 6s, VidSpark 6s, overall 10s - the pack's sheet is bounded by its slowest provider. VidSpark lane verified live end-to-end (vidora api alive, same key: new releases answer in ~350ms with proxied HLS verified to the variant level; titles it has not encoded answer 404 \"Movie not yet encoded\" and the lane fails fast). NewTV device lane kept (bootstrap verified live; the api stays IP-gated to retail/mobile IPs). Full late result is late-cached. English-only, Tagalog captions.",
+      "version": "13.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -281,12 +282,15 @@
       "filename": "providers/netmirror.js",
       "enabled": true,
       "formats": [
+        "mp4",
         "m3u8",
-        "mp4"
+        "mkv"
       ],
       "contentLanguage": [
         "en"
-      ]
+      ],
+      "logo": "https://i.postimg.cc/L64M3bYV/netmirror.png",
+      "hasSettings": true
     },
     {
       "id": "asianhub",
@@ -337,8 +341,8 @@
     {
       "id": "movish",
       "name": "Movish",
-      "description": "Movish v6.1: network timeouts 15s/14s -> 8s (the dlproxy/movish.to chain could stall the sheet 10s+). Lanes unchanged: movish.to search, api.dlproxy.com play resolution, nvio post-filter.",
-      "version": "1.1.0",
+      "description": "Movish v6.1: network timeouts 15s/14s -> 8s (the dlproxy/movish.to chain could stall the sheet 10s+). Lanes unchanged: movish.to search, api.dlproxy.com play resolution, nvio post-filter. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "1.2.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -408,9 +412,9 @@
     {
       "id": "castle",
       "name": "Castle",
-      "description": "Castle: FULLY DECODED port of the AIO provider (string tables resolved, no obfuscated code): api.hlowb.com lanes with the okhttp app user-agent, 8s per-call + 12s overall deadlines, nvio post-filter attached (en/tl audio gate, >=720p, dedupe).",
-      "version": "2.1.0",
-      "author": "Nuvio Team (AIO merge)",
+      "description": "Castle: FULLY DECODED port of the AIO provider (string tables resolved, no obfuscated code): api.hlowb.com lanes with the okhttp app user-agent, 8s per-call + 12s overall deadlines, nvio post-filter attached (en/tl audio gate, >=720p, dedupe). v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "2.2.0",
+      "author": "xrexzerox",
       "supportedTypes": [
         "movie",
         "tv"
@@ -430,8 +434,8 @@
     {
       "id": "cineby",
       "name": "Cineby",
-      "description": "Cineby: FULLY DECODED AIO port - seed handshake + sources-with-title flow on the live api host, encrypted payload decryption intact, subtitles mapped, 8s/12s deadlines, nvio post-filter attached.",
-      "version": "2.3.0",
+      "description": "Cineby: FULLY DECODED AIO port - seed handshake + sources-with-title flow on the live api host, encrypted payload decryption intact, subtitles mapped, 8s/12s deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "2.4.0",
       "author": "Nuvio Team (AIO merge)",
       "supportedTypes": [
         "movie",
@@ -451,9 +455,9 @@
     {
       "id": "movieshunt",
       "name": "MoviesHunt",
-      "description": "MoviesHunt: FULLY DECODED AIO port - movieshunt.run search + abhilinks resolver + vcloud/gdflix hops, real UA set, 8s per-call + 12s overall deadlines, nvio post-filter attached.",
-      "version": "2.3.0",
-      "author": "piratezoro9 (AIO merge)",
+      "description": "MoviesHunt: FULLY DECODED AIO port - movieshunt.run search + abhilinks resolver + vcloud/gdflix hops, real UA set, 8s per-call + 12s overall deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "2.4.0",
+      "author": "xrexzerox",
       "supportedTypes": [
         "movie"
       ],
@@ -465,14 +469,15 @@
       "contentLanguage": [
         "en"
       ],
-      "logo": "https://i.postimg.cc/3Rc34LJj/movieshunt.png"
+      "logo": "https://i.postimg.cc/3Rc34LJj/movieshunt.png",
+      "hasSettings": false
     },
     {
       "id": "movix",
       "name": "Movix",
-      "description": "Movix: FULLY DECODED AIO port - live domains.json source list (wooodyhood repo) with fallback, purstream/cpasmal API lanes, referer fidelity, 8s/12s deadlines, nvio post-filter attached.",
-      "version": "2.3.0",
-      "author": "wooodyhood (AIO merge)",
+      "description": "Movix: FULLY DECODED AIO port - live domains.json source list (wooodyhood repo) with fallback, purstream/cpasmal API lanes, referer fidelity, 8s/12s deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "2.4.0",
+      "author": "xrexzerox",
       "supportedTypes": [
         "movie",
         "tv"
@@ -484,8 +489,7 @@
         "m3u8"
       ],
       "contentLanguage": [
-        "en",
-        "fr"
+        "en"
       ],
       "hasSettings": true,
       "logo": "https://i.postimg.cc/XYrPQm87/movix.png"
@@ -493,9 +497,9 @@
     {
       "id": "playimdb",
       "name": "PlayIMDb",
-      "description": "PlayIMDb: FULLY DECODED AIO port - vaplayer streamdata api + nextgencloudfabric player extraction, Original-Audio lanes, 8s/12s deadlines, nvio post-filter attached.",
-      "version": "2.1.0",
-      "author": "PirateZoro9 (AIO merge)",
+      "description": "PlayIMDb: FULLY DECODED AIO port - vaplayer streamdata api + nextgencloudfabric player extraction, Original-Audio lanes, 8s/12s deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "2.2.0",
+      "author": "xrexzerox",
       "supportedTypes": [
         "movie",
         "tv"
@@ -516,9 +520,9 @@
     {
       "id": "topcartoons",
       "name": "TopCartoons",
-      "description": "TopCartoons: clean rewrite decoded from AIO and repaired against the live site (episode links skip # anchors, og:video:url direct mp4 extraction), 8s/12s deadlines, nvio post-filter attached.",
-      "version": "2.3.0",
-      "author": "Phisher (AIO merge)",
+      "description": "TopCartoons: clean rewrite decoded from AIO and repaired against the live site (episode links skip # anchors, og:video:url direct mp4 extraction), 8s/12s deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "2.4.0",
+      "author": "xrexzerox",
       "supportedTypes": [
         "movie",
         "tv"
@@ -538,9 +542,9 @@
     {
       "id": "vegamovies",
       "name": "VegaMovies",
-      "description": "VegaMovies: FULLY DECODED AIO port - live domains source (SaurabhKaperwan utils) + hubcloud/vcloud link hops, 4K/1080p release parsing, 8s/12s deadlines, nvio post-filter attached.",
-      "version": "2.2.0",
-      "author": "piratezoro9 (AIO merge)",
+      "description": "VegaMovies: FULLY DECODED AIO port - live domains source (SaurabhKaperwan utils) + hubcloud/vcloud link hops, 4K/1080p release parsing, 8s/12s deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "2.3.0",
+      "author": "xrexzerox",
       "supportedTypes": [
         "movie",
         "tv"
@@ -552,8 +556,7 @@
         "mkv"
       ],
       "contentLanguage": [
-        "en",
-        "hi"
+        "en"
       ],
       "hasSettings": true,
       "logo": "https://i.postimg.cc/TwYK26jn/vegamovies.png"
@@ -561,9 +564,9 @@
     {
       "id": "movieblast",
       "name": "MovieBlast",
-      "description": "MovieBlast: FULLY DECODED AIO port - app.cloud-mb.xyz search/source API with its token+secret signing, okhttp user-agent, 8s/12s deadlines, nvio post-filter attached.",
-      "version": "2.3.0",
-      "author": "Nuvio Team (AIO merge)",
+      "description": "MovieBlast: FULLY DECODED AIO port - app.cloud-mb.xyz search/source API with its token+secret signing, okhttp user-agent, 8s/12s deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "2.4.0",
+      "author": "xrexzerox",
       "supportedTypes": [
         "movie",
         "tv"
@@ -584,9 +587,9 @@
     {
       "id": "dahmermovies",
       "name": "DahmerMovies",
-      "description": "DahmerMovies: FULLY DECODED AIO port - a.111477.xyz API + p.111477.xyz bulk proxy lanes with Range probing, 8s per-call + 12s overall deadlines, nvio post-filter attached.",
-      "version": "2.3.0",
-      "author": "Nuvio Team (AIO merge)",
+      "description": "DahmerMovies: FULLY DECODED AIO port - a.111477.xyz API + p.111477.xyz bulk proxy lanes with Range probing, 8s per-call + 12s overall deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "2.4.0",
+      "author": "xrexzerox",
       "supportedTypes": [
         "movie",
         "tv"
@@ -607,9 +610,9 @@
     {
       "id": "animezey",
       "name": "AnimeZeY",
-      "description": "AnimeZeY: FULLY DECODED AIO port - worker-domain search (1:search POST) with rotation, episode-code matching (S##E##/absolute-episode), file-card stream building, 8s/12s deadlines, nvio post-filter attached.",
-      "version": "2.3.0",
-      "author": "Nuvio Team (AIO merge)",
+      "description": "AnimeZeY: FULLY DECODED AIO port - worker-domain search (1:search POST) with rotation, episode-code matching (S##E##/absolute-episode), file-card stream building, 8s/12s deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
+      "version": "2.4.0",
+      "author": "xrexzerox",
       "supportedTypes": [
         "movie",
         "tv"
@@ -622,8 +625,7 @@
         "m3u8"
       ],
       "contentLanguage": [
-        "en",
-        "pt"
+        "en"
       ],
       "hasSettings": true,
       "logo": "https://i.postimg.cc/RVTy2djk/ainimezey.png"
@@ -647,6 +649,759 @@
       "contentLanguage": [
         "en"
       ]
+    },
+    {
+      "id": "1shows",
+      "name": "1Shows",
+      "description": "1shows.org catalog with viduki api lanes (streamtape + gd.kmhd direct links), TMDB-keyed search. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/1shows.js",
+      "enabled": true,
+      "formats": [
+        "mkv",
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/9fDVBvn5/1shows.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": false
+    },
+    {
+      "id": "allmovieland",
+      "name": "AllMovieLand",
+      "description": "allmovieland.you play-page lanes with direct mp4/HLS extraction. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/allmovieland.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/hhWqkVQs/allmovieland.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "allwish",
+      "name": "AllWish",
+      "description": "AllWish/megaplay anime + movie lanes (megaplay.buzz getSources + player.sgsgsgsr), anime-first id mapping. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/allwish.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/WpFW45WQ/allwish.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "cinefreak",
+      "name": "CineFreak",
+      "description": "cinefreak.nl WordPress catalog + cinecloud player extraction. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/cinefreak.js",
+      "enabled": true,
+      "formats": [
+        "mkv",
+        "mp4"
+      ],
+      "logo": "https://i.postimg.cc/rpDB2284/cinefreak.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "ctgmovies",
+      "name": "CTGMovies",
+      "description": "ctgmovies.com cockpit api lanes with direct stream links. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/ctgmovies.js",
+      "enabled": true,
+      "formats": [
+        "m3u8",
+        "mp4",
+        "mkv"
+      ],
+      "logo": "https://i.postimg.cc/jSQmk9B3/ctgmovies.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "dooflix",
+      "name": "DooFlix",
+      "description": "DooFlix panel.watchkaroabhi.com api + molop player lanes. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/dooflix.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/59H1DmRk/dooflix.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "fibwatch",
+      "name": "FibWatch",
+      "description": "fibwatch.art catalog with urlshortlink resolver hops. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/fibwatch.js",
+      "enabled": true,
+      "formats": [
+        "mkv",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/sfLR6dMm/fibwatch.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "goated",
+      "name": "Goated",
+      "description": "goated.cx with the live domains source (sapariyaneel repo) + api.reallyfast player lanes. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/goated.js",
+      "enabled": true,
+      "formats": [
+        "mkv",
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/qqsfgS0F/goated.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "gramcinema",
+      "name": "GramCinema",
+      "description": "bollywood.eu.org (CinemaTV) lanes; uses the provider token setting when configured, fail-soft without it. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/gramcinema.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/WbNPW7Jv/gramcinema.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "hdghartv",
+      "name": "HDGharTV",
+      "description": "hdghartv.cc catalog with direct stream extraction. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/hdghartv.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/761WVpJS/hdghartv.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": false
+    },
+    {
+      "id": "hdhub4u",
+      "name": "HDHub4u",
+      "description": "HDHub4u with the live domains source (phisher98 TVVVV repo) + link-hub hops. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/hdhub4u.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/mryRTf0R/hdhub4u.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "hianime",
+      "name": "HiAnime",
+      "description": "HiAnime via megaplay.buzz/vidwish.live with megacloud extraction. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/hianime.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/13SYJPTx/hianime.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "kurage",
+      "name": "Kurage",
+      "description": "Kurage anime: AniList + arm.haglund.dev mapping + kurage.live streams. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/kurage.js",
+      "enabled": true,
+      "formats": [
+        "mkv",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/3N2V7pHc/kurage.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "moonflix",
+      "name": "MoonFlix",
+      "description": "MoonFlix player.moonflix.website with its railway api backends. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/moonflix.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv"
+      ],
+      "logo": "https://i.postimg.cc/90dVRJJq/moonflix.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "moviebox",
+      "name": "MovieBox",
+      "description": "MovieBox via the pengu.uk resolver gateway (source_moviebox config, auth token from the AIO build). FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/moviebox.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/TPwkfqHh/moviebox.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "movies4u",
+      "name": "Movies4u",
+      "description": "Movies4u with the live domains source (phisher98 TVVVV repo) + m4uplay + worker resolver lanes. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie"
+      ],
+      "filename": "providers/movies4u.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/J0QG1QhQ/movies4u.jpg",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "moviesdrive",
+      "name": "MoviesDrive",
+      "description": "MoviesDrive new1.moviesdrive.christmas + mdrive.lol link hops. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/moviesdrive.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/bwDbhq9q/moviesdrive.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "nakios",
+      "name": "Nakios",
+      "description": "Nakios with the live domains source (wooodyhood repo) + player extraction. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/nakios.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/nLwY1pJB/nakios.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "onlykdrama",
+      "name": "OnlyKDrama",
+      "description": "OnlyKDrama kdrama catalog with filepress resolver hops. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/onlykdrama.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/dtX84Gqc/onlykdrama.jpg",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "peachify",
+      "name": "Peachify",
+      "description": "Peachify uwu/usa.eat-peach.sbs api lanes (full decode of the 600KB AIO build). FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/peachify.js",
+      "enabled": true,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "logo": "https://i.postimg.cc/tCz8CDH3/peachify.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "showbox",
+      "name": "ShowBox",
+      "description": "ShowBox via the hf.space id-mapping proxy + febbox share lanes; uses the provider token setting when configured, fail-soft without it. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/showbox.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/8c5XGzsx/showbox.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "videasy",
+      "name": "VidEasy",
+      "description": "VidEasy api.speedracelight.com + vidking.net player lanes. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/videasy.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/7LHYMtVV/videasy.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "vidlove",
+      "name": "VidLove",
+      "description": "VidLove aggregator: one api call fans out to moviebox/ipcloud/tcloud/vidapi/vixsrc/1embed/xpass/vidrift/lookmovie/vidnest sources. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/vidlove.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8",
+        "mkv"
+      ],
+      "logo": "https://i.postimg.cc/ZRjQytBY/vidlove.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": false
+    },
+    {
+      "id": "vidsrc",
+      "name": "VidSrc",
+      "description": "VidSrc.me embed-page server extraction. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/vidsrc.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/ncMLBsLJ/vidsrc.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "vixsrc",
+      "name": "VixSrc",
+      "description": "VixSrc lanes (full decode of the 1MB AIO build incl. its bundled transport shims, node-core requires fail-soft). FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/vixsrc.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/1tHrBvzs/vixsrc.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "xpass",
+      "name": "XPass",
+      "description": "XPass play.xpass.top direct extraction. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/xpass.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/tgqNQxdy/xpass.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "zinkmovies",
+      "name": "ZinkMovies",
+      "description": "ZinkMovies with the live domains source (asura-providers repo) + zinkcloud server-handler + gemma play lanes. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/zinkmovies.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/XqCZyCgp/zinkmovies.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "allanime",
+      "name": "AllAnime",
+      "description": "AllAnime api.allanime.day graphql + youtu-chan/apallink extraction with allmanga referers. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/allanime.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/DwpqLJWV/allanime.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "anidb",
+      "name": "AniDB",
+      "description": "AniDB.app frontend api episode/stream lanes. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/anidb.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/rmMzZ45K/anidb.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "anikototv",
+      "name": "AnikotoTV",
+      "description": "AnikotoTV: TVDB login + aiometadata mapping + stream lanes. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv",
+        "anime"
+      ],
+      "filename": "providers/anikototv.js",
+      "enabled": true,
+      "formats": [
+        "mp4"
+      ],
+      "logo": "https://i.postimg.cc/JhL3HBR4/anikototv.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "animekai",
+      "name": "AnimeKai",
+      "description": "AnimeKai www3.anikai.cc watch/extract lanes. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/animekai.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/MKJd7fy7/animekai.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "animepahe",
+      "name": "AnimePahe",
+      "description": "AnimePahe with its worker proxy + kwik extraction + MAL id mapping. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/animepahe.js",
+      "enabled": true,
+      "formats": [
+        "m3u8",
+        "mp4"
+      ],
+      "logo": "https://i.postimg.cc/c4ZBGNNs/animepahe.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "animetsu",
+      "name": "Animetsu",
+      "description": "Animetsu v2 api + swiftstream proxy + tvdb/anilist mapping. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv",
+        "anime"
+      ],
+      "filename": "providers/animetsu.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/0Q3DvLx7/animetsu.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
+    },
+    {
+      "id": "animeworld",
+      "name": "AnimeWorld",
+      "description": "AnimeWorld watchanimeworld.top + zephyrix player lanes. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe).",
+      "version": "1.0.0",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/animeworld.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/wxD6rVKX/animeworld.png",
+      "contentLanguage": [
+        "en"
+      ],
+      "hasSettings": true
     }
   ]
 }

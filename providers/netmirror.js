@@ -1,7 +1,34 @@
 /**
- * NetMirror - Nuvio provider (v12.0.0)
+ * NetMirror - Nuvio provider (v13.0.0)
  *
- * v12.0.0: full AIO decode applied - NewTV lane added, net27 lane REMOVED (2026-09-12).
+ * v13.0.0: speed + coverage pass (2026-09-12).
+ *  - User report on 4.23.0: "netmirror still not fix, only alpha works" + the
+ *    whole pack loading slower than All-in-One-Nuvio.
+ *  - Findings (live probes, 2026-09-12):
+ *      (a) the Alpha candidate chain ran its search candidates SEQUENTIALLY -
+ *          3 candidates x a stalled watchpvr fetch stacked to 17s with zero
+ *          rows. Candidates now resolve IN PARALLEL (first set with rows wins).
+ *      (b) the VidSpark (moviesapi.to vidora) API is ALIVE - same key, same
+ *          paths - but only carries titles it has encoded: new releases answer
+ *          in ~350ms (result:true + proxied HLS master verified to the variant
+ *          level), older titles answer 404 {result:false,"Movie not yet
+ *          encoded"}. That is not a lane failure - the lane is kept, fails
+ *          fast on result:false, and covers exactly the titles the Alpha
+ *          relay is slowest for.
+ *      (c) the NewTV bootstrap (mobiledetects.com/checknewtv.php -> token_hash
+ *          -> tv.imgcdn.kim) verified live; the newtv API stays IP-gated
+ *          (403 "Page Not Found" from datacenter IPs) - it remains the AIO
+ *          device lane for retail/mobile IPs.
+ *  - v13 lane caps (the pack's sheet is bounded by the SLOWEST provider, so
+ *    every cap was tightened): Alpha 9s (was 16s), NewTV 6s (was 12s),
+ *    VidSpark 6s, overall provider run 10s (was 17s). The full late result is
+ *    still late-cached, so a title whose Alpha rows missed the first serve has
+ *    them on the next open of the sheet.
+ *  - Lanes unchanged: Alpha relay (watchpvr, /^Alpha/ only, English) + NewTV
+ *    (AIO device lane) + VidSpark (vidora proxied HLS, English/Tagalog VTT).
+ *    English-only + Tagalog caption rules, caches and tolerant ids unchanged.
+ *
+ * v12.0.0 history: full AIO decode applied - NewTV lane added, net27 lane REMOVED (2026-09-12).
  *  - User report on 4.22.0: "netmirror not providing stream".
  *  - Root cause (full decode of the AIO netmirror + live probes):
  *      (a) v11's net27 embed lane returns rows whose URLs point at
@@ -1113,7 +1140,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
   }
   if (_nmState.inflight[key]) return _nmState.inflight[key];
 
-  console.log("[NetMirror] v12 start " + mediaType + " " + rawId + " S" + season + "E" + episode);
+  console.log("[NetMirror] v13 start " + mediaType + " " + rawId + " S" + season + "E" + episode);
   var type = mediaType === "tv" ? "tv" : "movie";
 
   var run = parseTmdbId(rawId, mediaType, season, episode).then(function (p) {
@@ -1148,21 +1175,26 @@ function getStreams(tmdbId, mediaType, season, episode) {
           console.log("[NetMirror] no netmirror id for " + JSON.stringify(meta) + " - VidSpark only");
           return [];
         }
-        var chain = Promise.resolve([]);
-        cands.forEach(function (nmId) {
-          chain = chain.then(function (acc) {
-            if (acc && acc.length) return acc;
-            return nmResolveCandidate(nmId, type, se, ep, meta, p.tmdbId);
-          });
+        // v13: resolve candidates IN PARALLEL (v12 chained them sequentially -
+        // 3 candidates x a stalled watchpvr fetch stacked multi-second waits
+        // before the first row). First lane with rows wins; ties keep order.
+        return Promise.all(cands.slice(0, 3).map(function (nmId) {
+          return nmResolveCandidate(nmId, type, se, ep, meta, p.tmdbId)
+            .catch(function () { return []; });
+        })).then(function (sets) {
+          for (var i = 0; i < sets.length; i++) {
+            if (sets[i] && sets[i].length) return sets[i];
+          }
+          return [];
         });
-        return chain;
       });
     }).catch(function () { return []; });
-    // v12: NewTV lane (decoded AIO device path) - 12s overall lane cap
+    // v13: NewTV lane (decoded AIO device path) - 6s lane cap (bootstrap + API
+    // answer in <1s when they answer at all; a longer wait never produced rows)
     var ntP = metaP.then(function (meta) {
       var run = nmNtvRows(meta && meta.title, type, se, ep);
       return hasTimers()
-        ? Promise.race([run, new Promise(function (res) { setTimeout(function () { res({ rows: [] }); }, 12000); })])
+        ? Promise.race([run, new Promise(function (res) { setTimeout(function () { res({ rows: [] }); }, 6000); })])
         : run;
     }).catch(function () { return { rows: [] }; });
 
@@ -1180,12 +1212,14 @@ function getStreams(tmdbId, mediaType, season, episode) {
     }
     function vsSubsOf(vs) { return subsFor(vs.subs || []); }
 
-    // v12: the Alpha relay lane needs 12-15s on mobile - the cap is raised to
-    // 16s so the user-proven rows are never cut off again (v11's 10s cap left
-    // the sheet with only fast-but-device-dead rows). The fast NewTV/VidSpark
-    // rows still arrive first in the merged order (alpha is prepended).
+    // v13: the Alpha relay lane gets a 9s cap (down from 16s). The relay chain
+    // (search2 -> detail -> watchpvr via cinemaos-relay) answers in ~2-4s on
+    // device; when it needs longer, the VidSpark/NewTV rows fill the sheet and
+    // the FULL Alpha result is late-cached below so the next play of the same
+    // title serves it instantly (v11-style cut-off risk is gone - the pack no
+    // longer depends on Alpha alone for coverage).
     var alphaCapP = hasTimers()
-      ? Promise.race([alphaP, new Promise(function (res) { setTimeout(function () { res([]); }, 16000); })])
+      ? Promise.race([alphaP, new Promise(function (res) { setTimeout(function () { res([]); }, 9000); })])
       : alphaP;
     var servedP = Promise.all([alphaCapP, ntP.catch(function () { return { rows: [] }; }), vsP.catch(function () { return { rows: [], subs: [] }; })]).then(function (res) {
       var rows = nmCombine(res[0], res[1], res[2]);
@@ -1448,11 +1482,11 @@ module.exports = {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
           if (typeof setTimeout === "function") {
-            // nv best-settings 4.23.0: 17s overall cap - deliberately LONGER
-            // than the other providers because the Alpha relay lane (the only
-            // user-proven device lane) needs 12-15s; 16s lane cap + margin.
+            // nv best-settings 4.24.0 (netmirror v13): 10s overall cap - the
+            // Alpha lane serves at 9s, NewTV/VidSpark at 6s, and the full late
+            // result is late-cached for the next open of the sheet.
             r = Promise.race([r, new Promise(function (res) {
-              var dl = setTimeout(function () { res([]); }, 17000);
+              var dl = setTimeout(function () { res([]); }, 10000);
               if (dl && typeof dl.unref === "function") dl.unref();
             })]);
           }

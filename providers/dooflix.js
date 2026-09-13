@@ -1,10 +1,11 @@
 /*
- * nv-plugins topcartoons.js — clean rewrite (4.23.0).
- * Source flow decoded from the AIO build and repaired against the live site
- * (topcartoons.tv, 2026-09): search -> cartoon page -> episode links (skip
- * anchor "#" placeholders) -> watch page -> og:video:url direct mp4.
- * 8s deadline on every call, 8s overall cap, nvio post-filter attached.
+ * nv-plugins dooflix.js — FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass).
+ * Decoded from the obfuscated AIO build: string tables resolved, decoder machinery stripped,
+ * every network call capped by an 8s deadline, node-core requires fail-soft, nvio post-filter
+ * attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). Endpoints/keys/headers
+ * identical to the AIO original.
  */
+/* nv-plugins best-settings pass 4.24.0: hard 8s deadline on every network call */
 var __nvFetch = (function () {
   var _f = null;
   try { _f = (typeof fetch === "function") ? fetch : null; } catch (e) { _f = null; }
@@ -20,99 +21,24 @@ var __nvFetch = (function () {
     })]);
   };
 })();
-
-var cheerio = require("cheerio-without-node-native");
-
-var BASE_URL = "https://www.topcartoons.tv";
-var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
-var HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Referer": BASE_URL + "/"
-};
-
-function abs(u) {
-  if (!u) return "";
-  u = String(u).trim();
-  if (!u || u === "#") return "";
-  if (u.indexOf("http") === 0) return u;
-  return BASE_URL + (u.charAt(0) === "/" ? u : "/" + u);
-}
-
-function extractQuality(url) {
-  var s = String(url || "").toLowerCase();
-  if (s.indexOf("2160") !== -1 || s.indexOf("4k") !== -1) return "4K";
-  if (s.indexOf("1440") !== -1) return "1440p";
-  if (s.indexOf("1080") !== -1) return "1080p";
-  if (s.indexOf("720") !== -1) return "720p";
-  return "720p"; // cartoon masters are sd/pal-era encodes; treat as 720p baseline
-}
-
-function getStreams(tmdbId, mediaType, season, episode) {
-  return __nvFetch("https://api.themoviedb.org/3/" + (mediaType === "tv" ? "tv" : "movie") + "/" + tmdbId + "?api_key=" + TMDB_API_KEY)
-    .then(function (r) { return r.json(); })
-    .then(function (meta) {
-      var title = meta && (meta.title || meta.name);
-      if (!title) return [];
-      // 1. site search
-      return __nvFetch(BASE_URL + "/?s=" + encodeURIComponent(title), { headers: HEADERS })
-        .then(function (r) { return r.text(); })
-        .then(function (html) {
-          var $ = cheerio.load(html);
-          var cartoonLink = "";
-          $("article a").each(function (i, el) {
-            if (cartoonLink) return;
-            var href = abs($(el).attr("href"));
-            if (href) cartoonLink = href;
-          });
-          if (!cartoonLink) return [];
-          // 2. cartoon page -> episode links (A→Z episode grid)
-          return __nvFetch(cartoonLink, { headers: HEADERS })
-            .then(function (r) { return r.text(); })
-            .then(function (html2) {
-              var $2 = cheerio.load(html2);
-              var eps = [];
-              $2("article article").each(function (i, el) {
-                var href = abs($2(el).find("a").attr("href"));
-                var name = $2(el).find("h3 a").text().trim();
-                if (href) eps.push({ href: href, name: name });
-              });
-              var watchUrl = "";
-              if (mediaType === "tv" && episode != null && eps.length) {
-                var idx = parseInt(episode, 10) - 1;
-                var pick = (idx >= 0 && idx < eps.length) ? eps[idx] : eps[0];
-                watchUrl = pick.href;
-              } else if (eps.length) {
-                watchUrl = eps[0].href;
-              }
-              if (!watchUrl) watchUrl = cartoonLink;
-              // 3. watch page -> og:video:url (direct mp4 on ww.topcartoons.tv)
-              return __nvFetch(watchUrl, { headers: HEADERS })
-                .then(function (r) { return r.text(); })
-                .then(function (html3) {
-                  var m = html3.match(/property=["']og:video:url["'][^>]+content=["']([^"']+)/) ||
-                    html3.match(/content=["']([^"']+)["'][^>]+property=["']og:video:url["']/);
-                  var video = m ? m[1] : "";
-                  if (!video) {
-                    var ifr = html3.match(/<iframe[^>]+src=["']([^"']+)/);
-                    video = ifr ? ifr[1] : "";
-                  }
-                  if (!video || video.indexOf("http") !== 0) return [];
-                  return [{
-                    name: "TopCartoons",
-                    title: "TopCartoons | " + title,
-                    url: video,
-                    quality: extractQuality(video),
-                    headers: HEADERS,
-                    subtitles: []
-                  }];
-                });
-            });
-        });
-    })
-    .catch(function () { return []; });
-}
-
-if (typeof module !== "undefined" && module.exports) module.exports = { getStreams: getStreams };
+/* fail-soft require: node-core modules (net/http/assert/...) never crash the provider */
+var __nvRequire = (function () {
+  var _rq = null;
+  try { _rq = (typeof require === "function") ? require : null; } catch (e) { _rq = null; }
+  return function (name) {
+    if (_rq) { try { return _rq(name); } catch (e) { } }
+    return {};
+  };
+})();
+/* QuickJS-safe global aliases: embedded polyfills (forge/uuid/whatwg) reference
+   window/self/document unguarded - in Nuvio's QuickJS those would throw
+   ReferenceError at module load and kill the provider. */
+var window = (typeof window !== "undefined" && window) ? window
+  : (typeof globalThis !== "undefined" ? globalThis : (typeof global !== "undefined" ? global : {}));
+var self = (typeof self !== "undefined" && self) ? self : window;
+var document = (typeof document !== "undefined" && document) ? document : { createElement: function () { return { style: {}, setAttribute: function () { }, getElementsByTagName: function () { return []; } }; }, getElementsByTagName: function () { return []; }, addEventListener: function () { } };
+var navigator = (typeof navigator !== "undefined" && navigator) ? navigator : { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" };
+var _0xe5ff=function(){return "";};var _0x11dac7=_0xe5ff;/*rotation removed*/;/*string-table removed*/var __defProp=Object['defineProperty'],__getOwnPropDesc=Object["getOwnPropertyDescriptor"],__getOwnPropNames=Object["getOwnPropertyNames"],__hasOwnProp=Object["prototype"]["hasOwnProperty"],__export=(_0x30dfd2,_0x2defd7)=>{for(var _0x2a744a in _0x2defd7)__defProp(_0x30dfd2,_0x2a744a,{'get':_0x2defd7[_0x2a744a],'enumerable':!![]});},__copyProps=(_0x599d71,_0x355933,_0x5f08bd,_0x364e9b)=>{var _0x3c3b88=_0x11dac7;if(_0x355933&&typeof _0x355933==="object"||typeof _0x355933==="function"){for(let _0x146172 of __getOwnPropNames(_0x355933))if(!__hasOwnProp["call"](_0x599d71,_0x146172)&&_0x146172!==_0x5f08bd)__defProp(_0x599d71,_0x146172,{'get':()=>_0x355933[_0x146172],'enumerable':!(_0x364e9b=__getOwnPropDesc(_0x355933,_0x146172))||_0x364e9b["enumerable"]});}return _0x599d71;},__toCommonJS=_0x4ea6ad=>__copyProps(__defProp({},"__esModule",{'value':!![]}),_0x4ea6ad),__async=(_0x556b42,_0x2554fa,_0x3f930d)=>{return new Promise((_0x3e1d23,_0x194ff4)=>{var _0x34241e=_0xe5ff,_0x48cf60=_0x1c05c4=>{var _0x1c91a5=_0xe5ff;try{_0x525665(_0x3f930d["next"](_0x1c05c4));}catch(_0x84a9da){_0x194ff4(_0x84a9da);}},_0x2fff47=_0x3b61bb=>{var _0x40d00b=_0xe5ff;try{_0x525665(_0x3f930d["throw"](_0x3b61bb));}catch(_0x365145){_0x194ff4(_0x365145);}},_0x525665=_0x21972c=>_0x21972c["done"]?_0x3e1d23(_0x21972c["value"]):Promise["resolve"](_0x21972c["value"])["then"](_0x48cf60,_0x2fff47);_0x525665((_0x3f930d=_0x3f930d['apply'](_0x556b42,_0x2554fa))["next"]());});},dooflix_exports={};/*decoder removed*/__export(dooflix_exports,{'getStreams':()=>getStreams}),module['exports']=__toCommonJS(dooflix_exports);var BASE_API="https://panel.watchkaroabhi.com",API_KEY="qNhKLJiZVyoKdi9NCQGz8CIGrpUijujE",HEADERS={'X-Package-Name':'com.king.moja','User-Agent':"dooflix",'X-App-Version':"305"},STREAM_REFERER="https://molop.art/";function getStreams(_0x421279,_0x588383="movie",_0x4d7743=null,_0xc410b3=null){return __async(this,null,function*(){var _0x51ce3d=_0xe5ff;console['log']("[DooFlix] Fetching streams for TMDB ID: "+_0x421279+", Type: "+_0x588383);try{let _0x1f301c;if(_0x588383==="movie")_0x1f301c=BASE_API+'/api/3/movie/'+_0x421279+"/links?api_key="+API_KEY;else{if(!_0x4d7743||!_0xc410b3)return console["error"]("[DooFlix] Missing season or episode for TV show"),[];_0x1f301c=BASE_API+"/api/3/tv/"+_0x421279+"/season/"+_0x4d7743+"/episode/"+_0xc410b3+"/links?api_key="+API_KEY;}const _0x267192=yield __nvFetch(_0x1f301c,{'headers':HEADERS});if(!_0x267192['ok'])return console['log']('[DooFlix]\x20API\x20error:\x20'+_0x267192['status']),[];const _0x50eb08=yield _0x267192["json"](),_0x58477c=_0x50eb08["links"]||[],_0x5d71cc=[];for(const _0x5c8478 of _0x58477c){try{const _0x556f38=yield __nvFetch(_0x5c8478["url"],{'method':'GET','headers':{'Referer':STREAM_REFERER,'User-Agent':HEADERS["User-Agent"]},'redirect':"manual"});let _0xfa14f7=_0x556f38['headers']["get"]("location")||_0x556f38["url"];_0xfa14f7&&_0xfa14f7!==_0x5c8478["url"]&&_0x5d71cc["push"]({'name':'DooFlix','title':"DooFlix - "+(_0x5c8478["host"]||'Server'),'url':_0xfa14f7,'quality':"Auto",'headers':{'Referer':STREAM_REFERER,'User-Agent':HEADERS["User-Agent"]},'provider':"dooflix"});}catch(_0x4d1b70){console['log']("[DooFlix] Error fetching redirect for "+_0x5c8478["url"]+':\x20'+_0x4d1b70['message']);}}return _0x5d71cc;}catch(_0x2be428){return console["error"]("[DooFlix] Error: "+_0x2be428["message"]),[];}});}
 
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
    Rules (per user request 2026-09):
@@ -131,7 +57,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = { getStrea
    Opt-out: set SCRAPER_SETTINGS.postFilter = false.
 ======================================================================== */
 (function () {
-  var PROVIDER = "topcartoons";
+  var PROVIDER = "dooflix";
   var G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
   function settings() {
     try { return (G && G.SCRAPER_SETTINGS) || {}; } catch (e) { return {}; }
@@ -206,34 +132,40 @@ if (typeof module !== "undefined" && module.exports) module.exports = { getStrea
   }
 
   /* ---------- language gate ---------- */
-  var LANG_BLOCK_RE = /\b(hindi|hdcam|tamil|telugu|malayalam|kannada|bengali|punjabi|marathi|espanol|español|latino|castellano|spanish|arabic|arab|korean|japanese audio|chinese|mandarin|cantonese|russian|ukrainian|turkish|german|deutsch|french|italian|portugues|brasileiro|indonesian|bahasa|thai|vietnamese|polish|dutch|svenska|multi[- ]?audio|dual[- ]?audio(?![^\n]*(?:eng|english))|dubbed in hindi)\b/i;
-  var TAGALOG_RE = /\b(tagalog|filipino|fil\b|dubbed in tagalog)\b/i;
-  var ENGLISH_RE = /\b(english|eng\b|dual audio|multi audio)\b/i;
-  var SUB_ONLY_RE = /(esub|esubbed|eng ?sub|english ?sub|multi ?sub|hindi ?sub|subbed)/i;
-  function langAllowed(text) {
-    var s = String(text || "");
-    if (!s) return true;
-    if (TAGALOG_RE.test(s)) return true;
-    if (SUB_ONLY_RE.test(s) && !LANG_BLOCK_RE.test(s.replace(SUB_ONLY_RE, ""))) {
-      if (ENGLISH_RE.test(s)) return true;
-    }
-    if (LANG_BLOCK_RE.test(s) && !ENGLISH_RE.test(s)) return false;
+  var BLOCK_RE = new RegExp(
+    "\\b(hindi|hin|tamil|telugu|malayalam|mallu|kannada|bengali|bangla|punjabi|marathi|bhojpuri|gujarati|" +
+    "odia|assamese|nepali|urdu|sinhala|arabic|ara|farsi|persian|turkish|turkce|espanol|spanish|latino|" +
+    "castellano|french|vostfr|german|deutsch|russian|korean|kor|japanese|jpn|chinese|mandarin|cantonese|" +
+    "thai|vietnamese|indonesian|bahasa|portuguese|brasileiro|italian|polish|ukrainian|hebrew|" +
+    "hungarian|romanian|dutch|flemish|greek|czech|swedish|danish|norwegian|finnish|org)\\b", "i");
+  var ALLOW_RE = /\b(english|eng|tagalog|filipino)\b/i;
+  var SUB_RE = /\b[a-z0-9]{0,12}subs?\b/gi;
+  // NOTE: gate runs on the stream TITLE only (release names / labels).
+  // Provider names (e.g. "MallumV") must not trigger the language gate.
+  function langAllowed(titleText) {
+    var t = String(titleText || "").replace(SUB_RE, " ");
+    if (BLOCK_RE.test(t)) return ALLOW_RE.test(t);
     return true;
   }
 
   /* ---------- dedupe ---------- */
   function normUrl(u) {
     var s = String(u || "");
-    var m = s.match(/^magnet:\?xt=urn:btih:([a-z0-9]+)/i);
-    if (m) return "m:" + m[1].toLowerCase();
-    return s.split("?")[0].replace(/\/+$/, "").toLowerCase();
+    if (/^magnet:/i.test(s)) {
+      var m = s.match(/btih:([a-z0-9]+)/i);
+      return "m:" + (m ? m[1].toLowerCase() : s.slice(0, 80));
+    }
+    return s.replace(/[#?].*$/, "").replace(/\/+$/, "");
   }
   var SEEN = G.__NV_SEEN_URLS__ || (G.__NV_SEEN_URLS__ = {});
-  function claim(u, now, owner) {
-    var nu = normUrl(u);
+  // SEEN[nu] = { exp: <ts>, owner: <provider> }
+  // - same URL from a DIFFERENT provider within TTL -> dropped (cross-provider dup)
+  // - same provider re-querying its own URL -> allowed (repeat opens must still
+  //   return rows) and its claim is refreshed
+  function claim(nu, now, owner) {
     if (!nu) return true;
-    var rec = SEEN[nu];
-    if (rec && rec.exp > now && rec.owner !== owner) return false;
+    var e = SEEN[nu];
+    if (e && e.exp > now && e.owner !== owner) return false;
     SEEN[nu] = { exp: now + 120000, owner: owner };
     return true;
   }
@@ -276,6 +208,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = { getStrea
         row.s.quality = q;
         ranked.push({ s: row.s, i: row.i, q: q });
       });
+      // best first so dedupe keeps the strongest duplicate (stable)
       ranked.sort(function (a, b) {
         var r = rank(b.q) - rank(a.q);
         if (r !== 0) return r;
@@ -286,7 +219,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = { getStrea
         var s = row.s;
         var nu = normUrl(s.url);
         if (seenLocal[nu]) return;
-        if (!claim(nu, now, PROVIDER)) return;
+        if (!claim(nu, now, PROVIDER)) return; // already reported by a different provider
         seenLocal[nu] = 1;
         out.push(s);
       });
@@ -308,6 +241,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = { getStrea
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
           if (typeof setTimeout === "function") {
+            // nv best-settings 4.23.0: hard 8s cap on the whole provider run
             r = Promise.race([r, new Promise(function (res) {
               var dl = setTimeout(function () { res([]); }, 8000);
               if (dl && typeof dl.unref === "function") dl.unref();

@@ -223,9 +223,9 @@ var _0x2bf8=function(){return "";};var _0x2a35f6=_0x2bf8;/*rotation removed*/;va
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
           if (typeof setTimeout === "function") {
-            // nv best-settings 4.23.0: hard 12s cap on the whole provider run
+            // nv best-settings 4.23.0: hard 8s cap on the whole provider run
             r = Promise.race([r, new Promise(function (res) {
-              var dl = setTimeout(function () { res([]); }, 12000);
+              var dl = setTimeout(function () { res([]); }, 8000);
               if (dl && typeof dl.unref === "function") dl.unref();
             })]);
           }

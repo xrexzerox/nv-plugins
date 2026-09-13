@@ -497,7 +497,7 @@ function stremioTorrents(sourceName, api, ctx) {
   return __async(this, null, function* () {
     const imdbId = ctx.imdbId, season = ctx.season, episode = ctx.episode, isTv = ctx.isTv;
     const path = !isTv ? "/stream/movie/" + imdbId + ".json" : "/stream/series/" + imdbId + ":" + season + ":" + episode + ".json";
-    const json = JSON.parse(yield fetchText(api + path, {}, 2e4));
+    const json = JSON.parse(yield fetchText(api + path, {}, 6e3));
     const streams = json && json.streams || [];
     const line1 = ctx.title || ctx.originalTitle ? headline(
       ctx.originalTitle || ctx.title,
@@ -592,7 +592,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
       const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
       const out = yield withTimeout(
         torrentSources(ctx.imdbId, ctx.season, ctx.episode, ctx.isTv, ctx),
-        2e4,
+        8e3,
         "torrents"
       );
       return presentStreams(dedupe(out), ctx);
@@ -815,9 +815,9 @@ module.exports = { getStreams, onSettings };
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
           if (typeof setTimeout === "function") {
-            // nv best-settings 4.23.0: hard 12s cap on the whole provider run
+            // nv best-settings 4.23.0: hard 8s cap on the whole provider run
             r = Promise.race([r, new Promise(function (res) {
-              var dl = setTimeout(function () { res([]); }, 12000);
+              var dl = setTimeout(function () { res([]); }, 8000);
               if (dl && typeof dl.unref === "function") dl.unref();
             })]);
           }
