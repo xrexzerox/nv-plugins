@@ -1,5 +1,34 @@
 # NV Plugins
 
+## v4.38.0 (2026-09-14) - Deobfuscation pass + MovieBlast/AnikotoTV device fixes
+
+Deobfuscated 11 providers to torrents.js-style readable source. Behavior is
+provably unchanged: baseline (4.37.0) vs deobfuscated (4.38.0) were run side by
+side in the device-fidelity sandbox (no timers, serialized blocking fetch) on
+TMDB 969681 (movie) + 125988 S1E1 (TV) - identical stream URL sets and identical
+fetch flows (16/16 exact, remainder both-empty upstream).
+
+- Deobfuscated: playimdb, cineby, castle, fibwatch, movieblast, movieshunt,
+  moviesdrive, peachify, videasy, vidlove, anikototv
+  - all _0x-mangled identifiers renamed; `!![]`-style boolean obfuscation,
+    hex literals and bracket-string member access resolved to readable form
+  - castle + videasy: leftover (dead) javascript-obfuscator string-table
+    machinery verified unreferenced and removed (~3.5-4 KB each)
+- DEVICE FIX movieblast 2.5.0: raw require("crypto-js") at top level crashed
+  the provider at load on the Nuvio QuickJS realm (no require) - the provider
+  had been dead on device since it entered the pack. Now guarded with a
+  validated pure-JS HMAC-SHA256/Base64 fallback + URL-constructor fallback,
+  so signed MovieBlast URLs work without crypto-js.
+- DEVICE FIX anikototv 1.4.0: crypto-js access crashed the provider at load
+  (same root cause) and the old waterfall cap() called setTimeout directly.
+  Now ships a pure-JS crypto-js-compatible fallback (SHA256 + AES-CTR +
+  WordArray encodings, 16/16 vectors vs node:crypto), a guarded loader and a
+  timer-safe cap. Note: upstream allanime may gate datacenter IPs
+  (NEED_CAPTCHA); device residential IPs are unaffected.
+- Untouched per standing rule: kisskh, asianhub, pinoyhub, tagalogtorrents,
+  miruro, pencuri, netmirror (English-only), cinemacity (Tagalog), vidlink /
+  vidfast / cinefreak / moviebox / cinemacity sources, cinejoy v3.0.0.
+
 Clean Nuvio provider collection migrated from the canonical NVV provider set.
 
 The import workflow keeps only the canonical provider implementations registered in `manifest.json`.

@@ -5,29 +5,39 @@
    ES2020 realm: no atob/btoa, no URLSearchParams, no TextDecoder, no timers.
    These polyfills are define-only-if-missing, so node/desktop runtimes are
    completely unaffected. ==================================================== */
-(function () {
+(function() {
   var G = typeof globalThis !== 'undefined' ? globalThis : (typeof global !== 'undefined' ? global : this);
   if (typeof G.atob !== 'function') {
     var _CH = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-    G.atob = function (s) {
+    G.atob = function(s) {
       s = String(s).replace(/[^A-Za-z0-9+\/]/g, '');
-      var out = '', bits = 0, acc = 0, i;
+      var out = '',
+        bits = 0,
+        acc = 0,
+        i;
       for (i = 0; i < s.length; i++) {
         acc = (acc << 6) | _CH.indexOf(s.charAt(i));
         bits += 6;
-        if (bits >= 8) { bits -= 8; out += String.fromCharCode((acc >> bits) & 0xff); }
+        if (bits >= 8) {
+          bits -= 8;
+          out += String.fromCharCode((acc >> bits) & 0xff);
+        }
       }
       return out;
     };
   }
   if (typeof G.btoa !== 'function') {
     var _CH2 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-    G.btoa = function (s) {
+    G.btoa = function(s) {
       s = String(s);
-      var out = '', i;
+      var out = '',
+        i;
       for (i = 0; i < s.length; i += 3) {
-        var b0 = s.charCodeAt(i), b1 = s.charCodeAt(i + 1), b2 = s.charCodeAt(i + 2);
-        var has1 = !(i + 1 >= s.length || isNaN(b1)), has2 = !(i + 2 >= s.length || isNaN(b2));
+        var b0 = s.charCodeAt(i),
+          b1 = s.charCodeAt(i + 1),
+          b2 = s.charCodeAt(i + 2);
+        var has1 = !(i + 1 >= s.length || isNaN(b1)),
+          has2 = !(i + 2 >= s.length || isNaN(b2));
         out += _CH2.charAt(b0 >> 2);
         out += _CH2.charAt(((b0 & 3) << 4) | (has1 ? b1 >> 4 : 0));
         out += has1 ? _CH2.charAt(((b1 & 15) << 2) | (has2 ? b2 >> 6 : 0)) : '=';
@@ -37,23 +47,34 @@
     };
   }
   if (typeof G.URLSearchParams !== 'function') {
-    var USP = function (init) {
+    var USP = function(init) {
       this._m = {};
       if (init && typeof init === 'object') {
-        for (var k in init) if (Object.prototype.hasOwnProperty.call(init, k)) this._m[k] = [String(init[k])];
+        for (var k in init)
+          if (Object.prototype.hasOwnProperty.call(init, k)) this._m[k] = [String(init[k])];
       }
     };
-    USP.prototype.append = function (k, v) { (this._m[k] = this._m[k] || []).push(String(v)); };
-    USP.prototype.set = function (k, v) { this._m[k] = [String(v)]; };
-    USP.prototype.get = function (k) { var a = this._m[k]; return a && a.length ? a[0] : null; };
-    USP.prototype.has = function (k) { return Object.prototype.hasOwnProperty.call(this._m, k); };
-    USP.prototype.toString = function () {
+    USP.prototype.append = function(k, v) {
+      (this._m[k] = this._m[k] || []).push(String(v));
+    };
+    USP.prototype.set = function(k, v) {
+      this._m[k] = [String(v)];
+    };
+    USP.prototype.get = function(k) {
+      var a = this._m[k];
+      return a && a.length ? a[0] : null;
+    };
+    USP.prototype.has = function(k) {
+      return Object.prototype.hasOwnProperty.call(this._m, k);
+    };
+    USP.prototype.toString = function() {
       var out = [];
       for (var k in this._m) {
         if (!Object.prototype.hasOwnProperty.call(this._m, k)) continue;
         var vs = this._m[k];
         for (var i = 0; i < vs.length; i++)
-          out.push(encodeURIComponent(k).replace(/%20/g, '+') + '=' + encodeURIComponent(vs[i]).replace(/%20/g, '+'));
+          out.push(encodeURIComponent(k).replace(/%20/g, '+') + '=' + encodeURIComponent(vs[i]).replace(
+            /%20/g, '+'));
       }
       return out.join('&');
     };
@@ -68,14 +89,17 @@
    Pkcs7 unpadding - pure JS, no TypedArray tricks beyond ES2020 core.
    Exposed as __nvCastleCryptoJs; the require("crypto-js") call site falls
    back to it when require is unavailable. =================================== */
-var __nvCastleCryptoJs = (function () {
+var __nvCastleCryptoJs = (function() {
   'use strict';
   /* AES tables */
-  var SBOX = new Uint8Array(256), INV = new Uint8Array(256);
-  (function () {
-    var p = 1, q = 1, x;
+  var SBOX = new Uint8Array(256),
+    INV = new Uint8Array(256);
+  (function() {
+    var p = 1,
+      q = 1,
+      x;
     /* generate sbox via GF(2^8) inverse + affine transform */
-    var mul = function (a, b) {
+    var mul = function(a, b) {
       var r = 0;
       while (b) {
         if (b & 1) r ^= a;
@@ -88,12 +112,21 @@ var __nvCastleCryptoJs = (function () {
     };
     SBOX[0] = 0x63;
     for (var i = 1; i < 256; i++) {
-      var inv = 1, t = i;
+      var inv = 1,
+        t = i;
       /* brute inverse */
-      for (var j = 1; j < 256; j++) { if (mul(i, j) === 1) { inv = j; break; } }
+      for (var j = 1; j < 256; j++) {
+        if (mul(i, j) === 1) {
+          inv = j;
+          break;
+        }
+      }
       x = inv;
       var s = x;
-      for (var k = 0; k < 4; k++) { s = ((s << 1) | (s >> 7)) & 0xff; x ^= s; }
+      for (var k = 0; k < 4; k++) {
+        s = ((s << 1) | (s >> 7)) & 0xff;
+        x ^= s;
+      }
       SBOX[i] = (x ^ 0x63) & 0xff;
     }
     for (var m = 0; m < 256; m++) INV[SBOX[m]] = m;
@@ -101,7 +134,10 @@ var __nvCastleCryptoJs = (function () {
   var RCON = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8];
 
   function keyExpansion(key) {
-    var nk = key.length / 4, nr = nk + 6, w = [], i, t;
+    var nk = key.length / 4,
+      nr = nk + 6,
+      w = [],
+      i, t;
     for (i = 0; i < nk; i++) {
       w[i] = (key[4 * i] << 24) | (key[4 * i + 1] << 16) | (key[4 * i + 2] << 8) | key[4 * i + 3];
     }
@@ -110,39 +146,65 @@ var __nvCastleCryptoJs = (function () {
       if (i % nk === 0) {
         t = ((t << 8) | (t >>> 24)) >>> 0;
         t = ((SBOX[(t >>> 24) & 0xff] << 24) | (SBOX[(t >>> 16) & 0xff] << 16) |
-             (SBOX[(t >>> 8) & 0xff] << 8) | SBOX[t & 0xff]) >>> 0;
+          (SBOX[(t >>> 8) & 0xff] << 8) | SBOX[t & 0xff]) >>> 0;
         t = (t ^ (RCON[i / nk - 1] << 24)) >>> 0;
       } else if (nk > 6 && i % nk === 4) {
         t = ((SBOX[(t >>> 24) & 0xff] << 24) | (SBOX[(t >>> 16) & 0xff] << 16) |
-             (SBOX[(t >>> 8) & 0xff] << 8) | SBOX[t & 0xff]) >>> 0;
+          (SBOX[(t >>> 8) & 0xff] << 8) | SBOX[t & 0xff]) >>> 0;
       }
       w[i] = (w[i - nk] ^ t) >>> 0;
     }
-    return { w: w, nr: nr };
+    return {
+      w: w,
+      nr: nr
+    };
   }
 
   function decryptBlock(ks, input) {
-    var w = ks.w, nr = ks.nr;
-    var s = [0, 0, 0, 0], i;
-    for (i = 0; i < 4; i++) s[i] = (input[4 * i] << 24) | (input[4 * i + 1] << 16) | (input[4 * i + 2] << 8) | input[4 * i + 3];
-    var m = function (x, y) { var r = 0; while (y) { if (y & 1) r ^= x; var hi = x & 0x80; x = (x << 1) & 0xff; if (hi) x ^= 0x1b; y >>= 1; } return r; };
-    var ark = function (r) { for (var c = 0; c < 4; c++) s[c] = (s[c] ^ w[r * 4 + c]) >>> 0; };
+    var w = ks.w,
+      nr = ks.nr;
+    var s = [0, 0, 0, 0],
+      i;
+    for (i = 0; i < 4; i++) s[i] = (input[4 * i] << 24) | (input[4 * i + 1] << 16) | (input[4 * i + 2] <<
+      8) | input[4 * i + 3];
+    var m = function(x, y) {
+      var r = 0;
+      while (y) {
+        if (y & 1) r ^= x;
+        var hi = x & 0x80;
+        x = (x << 1) & 0xff;
+        if (hi) x ^= 0x1b;
+        y >>= 1;
+      }
+      return r;
+    };
+    var ark = function(r) {
+      for (var c = 0; c < 4; c++) s[c] = (s[c] ^ w[r * 4 + c]) >>> 0;
+    };
     /* InvShiftRows + InvSubBytes: value at old (row,col) moves to (row,(col+row)%4) */
-    var invShiftSub = function () {
-      var st = new Uint8Array(16), o = new Uint8Array(16);
+    var invShiftSub = function() {
+      var st = new Uint8Array(16),
+        o = new Uint8Array(16);
       for (var k = 0; k < 4; k++) {
-        st[4 * k] = (s[k] >>> 24) & 0xff; st[4 * k + 1] = (s[k] >>> 16) & 0xff;
-        st[4 * k + 2] = (s[k] >>> 8) & 0xff; st[4 * k + 3] = s[k] & 0xff;
+        st[4 * k] = (s[k] >>> 24) & 0xff;
+        st[4 * k + 1] = (s[k] >>> 16) & 0xff;
+        st[4 * k + 2] = (s[k] >>> 8) & 0xff;
+        st[4 * k + 3] = s[k] & 0xff;
       }
       for (var idx = 0; idx < 16; idx++) {
-        var row = idx % 4, col = (idx - row) / 4;
+        var row = idx % 4,
+          col = (idx - row) / 4;
         o[((col + row) % 4) * 4 + row] = INV[st[idx]];
       }
-      for (var c2 = 0; c2 < 4; c2++) s[c2] = ((o[4 * c2] << 24) | (o[4 * c2 + 1] << 16) | (o[4 * c2 + 2] << 8) | o[4 * c2 + 3]) >>> 0;
+      for (var c2 = 0; c2 < 4; c2++) s[c2] = ((o[4 * c2] << 24) | (o[4 * c2 + 1] << 16) | (o[4 * c2 +
+        2] << 8) | o[4 * c2 + 3]) >>> 0;
     };
-    var invMix = function () {
+    var invMix = function() {
       for (var c = 0; c < 4; c++) {
-        var a0 = (s[c] >>> 24) & 0xff, a1 = (s[c] >>> 16) & 0xff, a2 = (s[c] >>> 8) & 0xff, a3 = s[c] & 0xff;
+        var a0 = (s[c] >>> 24) & 0xff,
+          a1 = (s[c] >>> 16) & 0xff,
+          a2 = (s[c] >>> 8) & 0xff,
+          a3 = s[c] & 0xff;
         var b0 = (m(a0, 14) ^ m(a1, 11) ^ m(a2, 13) ^ m(a3, 9)) & 0xff;
         var b1 = (m(a0, 9) ^ m(a1, 14) ^ m(a2, 11) ^ m(a3, 13)) & 0xff;
         var b2 = (m(a0, 13) ^ m(a1, 9) ^ m(a2, 14) ^ m(a3, 11)) & 0xff;
@@ -152,13 +214,19 @@ var __nvCastleCryptoJs = (function () {
     };
     /* FIPS-197 InvCipher: ARK(nr); for r=nr-1..1 { ISH,ISB,ARK(r),IMC }; ISH,ISB,ARK(0) */
     ark(nr);
-    for (var r = nr - 1; r >= 1; r--) { invShiftSub(); ark(r); invMix(); }
+    for (var r = nr - 1; r >= 1; r--) {
+      invShiftSub();
+      ark(r);
+      invMix();
+    }
     invShiftSub();
     ark(0);
     var out = new Uint8Array(16);
     for (i = 0; i < 4; i++) {
-      out[4 * i] = (s[i] >>> 24) & 0xff; out[4 * i + 1] = (s[i] >>> 16) & 0xff;
-      out[4 * i + 2] = (s[i] >>> 8) & 0xff; out[4 * i + 3] = s[i] & 0xff;
+      out[4 * i] = (s[i] >>> 24) & 0xff;
+      out[4 * i + 1] = (s[i] >>> 16) & 0xff;
+      out[4 * i + 2] = (s[i] >>> 8) & 0xff;
+      out[4 * i + 3] = s[i] & 0xff;
     }
     return out;
   }
@@ -180,19 +248,25 @@ var __nvCastleCryptoJs = (function () {
     if (!b.length) return b;
     var n = b[b.length - 1];
     if (n < 1 || n > 16) return b;
-    for (var i = b.length - n; i < b.length; i++) if (b[i] !== n) return b;
+    for (var i = b.length - n; i < b.length; i++)
+      if (b[i] !== n) return b;
     return b.subarray(0, b.length - n);
   }
 
   /* --- CryptoJS-compatible WordArray --- */
-  function WA(words, sigBytes) { this.words = words || []; this.sigBytes = sigBytes != null ? sigBytes : (this.words.length * 4); }
-  WA.prototype.clamp = function () {
-    if (this.sigBytes % 4) this.words[this.sigBytes >>> 2] &= (0xffffffff << (32 - (this.sigBytes % 4) * 8)) >>> 0;
+  function WA(words, sigBytes) {
+    this.words = words || [];
+    this.sigBytes = sigBytes != null ? sigBytes : (this.words.length * 4);
+  }
+  WA.prototype.clamp = function() {
+    if (this.sigBytes % 4) this.words[this.sigBytes >>> 2] &= (0xffffffff << (32 - (this.sigBytes % 4) *
+      8)) >>> 0;
     this.words.length = Math.ceil(this.sigBytes / 4);
     return this;
   };
-  WA.prototype.concat = function (wa2) {
-    var tw = wa2.words, ts = wa2.sigBytes;
+  WA.prototype.concat = function(wa2) {
+    var tw = wa2.words,
+      ts = wa2.sigBytes;
     this.clamp();
     if (ts % 4) {
       for (var i = 0; i < ts; i++) {
@@ -205,6 +279,7 @@ var __nvCastleCryptoJs = (function () {
     this.sigBytes += ts;
     return this;
   };
+
   function bytesToWords(b) {
     var w = [];
     for (var i = 0; i < b.length; i += 4) {
@@ -212,11 +287,13 @@ var __nvCastleCryptoJs = (function () {
     }
     return w;
   }
+
   function waToBytes(wa) {
     var out = new Uint8Array(wa.sigBytes);
     for (var i = 0; i < wa.sigBytes; i++) out[i] = (wa.words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
     return out;
   }
+
   function utf8ToBytes(s) {
     s = String(s);
     var out = [];
@@ -231,6 +308,7 @@ var __nvCastleCryptoJs = (function () {
     }
     return new Uint8Array(out);
   }
+
   function bytesToUtf8(b) {
     var s = '';
     var i = 0;
@@ -238,7 +316,8 @@ var __nvCastleCryptoJs = (function () {
       var c = b[i++];
       if (c < 0x80) s += String.fromCharCode(c);
       else if ((c & 0xe0) === 0xc0) s += String.fromCharCode(((c & 0x1f) << 6) | (b[i++] & 0x3f));
-      else if ((c & 0xf0) === 0xe0) s += String.fromCharCode(((c & 0x0f) << 12) | ((b[i++] & 0x3f) << 6) | (b[i++] & 0x3f));
+      else if ((c & 0xf0) === 0xe0) s += String.fromCharCode(((c & 0x0f) << 12) | ((b[i++] & 0x3f) << 6) |
+        (b[i++] & 0x3f));
       else if ((c & 0xf8) === 0xf0) {
         var cp = ((c & 0x07) << 18) | ((b[i++] & 0x3f) << 12) | ((b[i++] & 0x3f) << 6) | (b[i++] & 0x3f);
         cp -= 0x10000;
@@ -247,6 +326,7 @@ var __nvCastleCryptoJs = (function () {
     }
     return s;
   }
+
   function b64ToBytes(s) {
     var bin;
     if (typeof atob === 'function') bin = atob(s);
@@ -254,10 +334,15 @@ var __nvCastleCryptoJs = (function () {
       var CH = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
       bin = '';
       var clean = String(s).replace(/[^A-Za-z0-9+\/]/g, '');
-      var bits = 0, acc = 0;
+      var bits = 0,
+        acc = 0;
       for (var i = 0; i < clean.length; i++) {
-        acc = (acc << 6) | CH.indexOf(clean.charAt(i)); bits += 6;
-        if (bits >= 8) { bits -= 8; bin += String.fromCharCode((acc >> bits) & 0xff); }
+        acc = (acc << 6) | CH.indexOf(clean.charAt(i));
+        bits += 6;
+        if (bits >= 8) {
+          bits -= 8;
+          bin += String.fromCharCode((acc >> bits) & 0xff);
+        }
       }
     }
     var out = new Uint8Array(bin.length);
@@ -266,32 +351,56 @@ var __nvCastleCryptoJs = (function () {
   }
 
   var AES = {
-    decrypt: function (cipher, key, cfg) {
-      var ctBytes = (typeof cipher === 'string') ? b64ToBytes(cipher)
-        : (cipher && cipher.ciphertext ? waToBytes(cipher.ciphertext) : new Uint8Array(0));
+    decrypt: function(cipher, key, cfg) {
+      var ctBytes = (typeof cipher === 'string') ? b64ToBytes(cipher) :
+        (cipher && cipher.ciphertext ? waToBytes(cipher.ciphertext) : new Uint8Array(0));
       var keyBytes = waToBytes(key);
       var ivBytes = (cfg && cfg.iv) ? waToBytes(cfg.iv) : new Uint8Array(16);
       var pt = pkcs7Unpad(cbcDecrypt(keyBytes, ivBytes, ctBytes));
       var w = bytesToWords(pt);
       return {
-        sigBytes: pt.length, words: w,
+        sigBytes: pt.length,
+        words: w,
         ciphertext: new WA(w.slice(), pt.length),
-        toString: function () { return bytesToUtf8(pt); }
+        toString: function() {
+          return bytesToUtf8(pt);
+        }
       };
     }
   };
   return {
     AES: AES,
     enc: {
-      Base64: { parse: function (s) { var b = b64ToBytes(s); return new WA(bytesToWords(b), b.length); } },
+      Base64: {
+        parse: function(s) {
+          var b = b64ToBytes(s);
+          return new WA(bytesToWords(b), b.length);
+        }
+      },
       Utf8: {
-        parse: function (s) { var b = utf8ToBytes(s); return new WA(bytesToWords(b), b.length); },
-        stringify: function (wa) { return bytesToUtf8(waToBytes(wa)); }
+        parse: function(s) {
+          var b = utf8ToBytes(s);
+          return new WA(bytesToWords(b), b.length);
+        },
+        stringify: function(wa) {
+          return bytesToUtf8(waToBytes(wa));
+        }
       }
     },
-    lib: { WordArray: { create: function (words, sigBytes) { return new WA(words ? words.slice() : [], sigBytes != null ? sigBytes : (words ? words.length * 4 : 0)); } } },
-    mode: { CBC: {} },
-    pad: { Pkcs7: {} }
+    lib: {
+      WordArray: {
+        create: function(words, sigBytes) {
+          return new WA(words ? words.slice() : [], sigBytes != null ? sigBytes : (words ? words
+            .length * 4 : 0));
+        }
+      }
+    },
+    mode: {
+      CBC: {}
+    },
+    pad: {
+      Pkcs7: {}
+    }
   };
 })();
 /* ============================================================
@@ -300,35 +409,500 @@ var __nvCastleCryptoJs = (function () {
  * to literals, syntax-checked, live-verified against upstream.
  * Replaces the previous port whose extraction returned 0 rows.
  * ============================================================ */
-'use strict';const _0x476166=_0x44e1;(function(_0x67a31b,_0x2c404f){const _0x36a05f=_0x44e1,_0x470649=_0x67a31b();while(!![]){try{const _0x5137c2=-parseInt("571140LlKspr")/0x1+parseInt("566976foJrkR")/0x2+parseInt("768105Ikdufh")/0x3+-parseInt("2404224BRlCvr")/0x4+parseInt("2015wYozez")/0x5*(-parseInt("6978hXvUnR")/0x6)+parseInt("1078asQYgi")/0x7*(parseInt("39680INItLI")/0x8)+parseInt("6995403qlEomf")/0x9;if(_0x5137c2===_0x2c404f)break;else _0x470649['push'](_0x470649['shift']());}catch(_0xc250f2){_0x470649['push'](_0x470649['shift']());}}}(_0x576f,0x6b5c1));function _0x44e1(_0x5972df,_0x46299a){_0x5972df=_0x5972df-0x1e0;const _0x576fb9=_0x576f();let _0x44e170=_0x576fb9[_0x5972df];if(_0x44e1['WPBLul']===undefined){var _0x3b63c2=function(_0x5c6f09){const _0x445c29='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/=';let _0x1bd8fe='',_0x43a10c='';for(let _0x256223=0x0,_0x82eee6,_0x25a6e1,_0xf7c831=0x0;_0x25a6e1=_0x5c6f09['charAt'](_0xf7c831++);~_0x25a6e1&&(_0x82eee6=_0x256223%0x4?_0x82eee6*0x40+_0x25a6e1:_0x25a6e1,_0x256223++%0x4)?_0x1bd8fe+=String['fromCharCode'](0xff&_0x82eee6>>(-0x2*_0x256223&0x6)):0x0){_0x25a6e1=_0x445c29['indexOf'](_0x25a6e1);}for(let _0x56dc30=0x0,_0x4ed561=_0x1bd8fe['length'];_0x56dc30<_0x4ed561;_0x56dc30++){_0x43a10c+='%'+('00'+_0x1bd8fe['charCodeAt'](_0x56dc30)['toString'](0x10))['slice'](-0x2);}return decodeURIComponent(_0x43a10c);};_0x44e1['OchpKJ']=_0x3b63c2,_0x44e1['yHtRii']={},_0x44e1['WPBLul']=!![];}const _0x1e8776=_0x576fb9[0x0],_0x555aab=_0x5972df+_0x1e8776,_0x17a6f3=_0x44e1['yHtRii'][_0x555aab];return!_0x17a6f3?(_0x44e170=_0x44e1['OchpKJ'](_0x44e170),_0x44e1['yHtRii'][_0x555aab]=_0x44e170):_0x44e170=_0x17a6f3,_0x44e170;}var __defProp=Object['defineProperty'],__getOwnPropSymbols=Object['getOwnPropertySymbols'],__hasOwnProp=Object['prototype']["hasOwnProperty"],__propIsEnum=Object["prototype"]["propertyIsEnumerable"],__defNormalProp=(_0x1bd8fe,_0x43a10c,_0x256223)=>_0x43a10c in _0x1bd8fe?__defProp(_0x1bd8fe,_0x43a10c,{'enumerable':!![],'configurable':!![],'writable':!![],'value':_0x256223}):_0x1bd8fe[_0x43a10c]=_0x256223,__spreadValues=(_0x82eee6,_0x25a6e1)=>{const _0x57b9b7=_0x476166;for(var _0xf7c831 in _0x25a6e1||(_0x25a6e1={}))if(__hasOwnProp['call'](_0x25a6e1,_0xf7c831))__defNormalProp(_0x82eee6,_0xf7c831,_0x25a6e1[_0xf7c831]);if(__getOwnPropSymbols)for(var _0xf7c831 of __getOwnPropSymbols(_0x25a6e1)){if(__propIsEnum["call"](_0x25a6e1,_0xf7c831))__defNormalProp(_0x82eee6,_0xf7c831,_0x25a6e1[_0xf7c831]);}return _0x82eee6;},__async=(_0x56dc30,_0x4ed561,_0x267797)=>{return new Promise((_0x170526,_0x13dda8)=>{const _0x2a7b44=_0x44e1;var _0x5e18b1=_0x51d46c=>{const _0x3e6ab5=_0x44e1;try{_0x4b0257(_0x267797["next"](_0x51d46c));}catch(_0x478a26){_0x13dda8(_0x478a26);}},_0x5c517a=_0x4da371=>{const _0xddfc2a=_0x44e1;try{_0x4b0257(_0x267797["throw"](_0x4da371));}catch(_0x2893a0){_0x13dda8(_0x2893a0);}},_0x4b0257=_0x29e7e7=>_0x29e7e7['done']?_0x170526(_0x29e7e7["value"]):Promise["resolve"](_0x29e7e7['value'])["then"](_0x5e18b1,_0x5c517a);_0x4b0257((_0x267797=_0x267797["apply"](_0x56dc30,_0x4ed561))["next"]());});},TMDB_API_KEY='439c478a771f35c05022f9feabcca01c',TMDB_BASE_URL="https://api.themoviedb.org/3",CASTLE_BASE='https://api.hlowb.com',PKG="com.external.castle",CHANNEL="IndiaA",CLIENT='1',LANG='en-US',API_HEADERS={'User-Agent':"okhttp/4.9.3",'Accept':"application/json",'Accept-Language':"en-US,en;q=0.9",'Connection':"Keep-Alive",'Referer':CASTLE_BASE},PLAYBACK_HEADERS={'User-Agent':'Mozilla/5.0\x20(Windows\x20NT\x2010.0;\x20Win64;\x20x64)\x20AppleWebKit/537.36\x20(KHTML,\x20like\x20Gecko)\x20Chrome/137.0.0.0\x20Safari/537.36','Accept':'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5','Accept-Language':"en-US,en;q=0.9",'Accept-Encoding':"identity",'Connection':"keep-alive",'Sec-Fetch-Dest':'video','Sec-Fetch-Mode':"no-cors",'Sec-Fetch-Site':"cross-site",'DNT':'1'};function makeRequest(_0x1b363e){return __async(this,arguments,function*(_0x3d5cba,_0x27b3ee={}){const _0x455f3a=_0x44e1;try{const _0x1c6c59=yield fetch(_0x3d5cba,{'method':_0x27b3ee["method"]||"GET",'headers':__spreadValues(__spreadValues({},API_HEADERS),_0x27b3ee['headers']),'body':_0x27b3ee['body']});if(!_0x1c6c59['ok'])throw new Error("HTTP "+_0x1c6c59["status"]+':\x20'+_0x1c6c59["statusText"]);return _0x1c6c59;}catch(_0x1cd416){console["error"]("[Castle] Request failed for "+_0x3d5cba+':\x20'+_0x1cd416["message"]);throw _0x1cd416;}});}function extractCipherFromResponse(_0x409352){return __async(this,null,function*(){const _0x3ad6ed=_0x44e1,_0x3f740d=yield _0x409352["text"](),_0x4fa311=_0x3f740d["trim"]();if(!_0x4fa311)throw new Error("Empty response");try{const _0x2dc537=JSON["parse"](_0x4fa311);if(_0x2dc537&&_0x2dc537["data"]&&typeof _0x2dc537['data']==='string')return _0x2dc537["data"]["trim"]();}catch(_0x49255b){}return _0x4fa311;});}function extractDataBlock(_0x5c1776){const _0x20a912=_0x476166;if(_0x5c1776&&_0x5c1776["data"]&&typeof _0x5c1776['data']==="object")return _0x5c1776["data"];return _0x5c1776||{};}function getTMDBDetails(_0x45bec2,_0xd6d16b){return __async(this,null,function*(){const _0x44aa1b=_0x44e1,_0x1fa830=_0xd6d16b==='tv'?'tv':"movie",_0x4e7160=TMDB_BASE_URL+'/'+_0x1fa830+'/'+_0x45bec2+"?api_key="+TMDB_API_KEY+"&append_to_response=external_ids",_0x220bdb=yield makeRequest(_0x4e7160),_0x2565cd=yield _0x220bdb["json"](),_0xfa7224=_0xd6d16b==='tv'?_0x2565cd["name"]:_0x2565cd["title"],_0x23eea7=_0xd6d16b==='tv'?_0x2565cd["first_air_date"]:_0x2565cd["release_date"],_0x451860=_0x23eea7?parseInt(_0x23eea7['split']('-')[0x0]):null;return{'title':_0xfa7224,'year':_0x451860,'tmdbId':_0x45bec2};});}function decryptCastle(_0xc6ebf1,_0x4830a9){return __async(this,null,function*(){const _0x32c1f5=_0x44e1;console['log']("[Castle] Starting local AES-CBC decryption...");try{const _0x124330=(typeof require==="function")?(function(){try{return require("crypto-js");}catch(_nvE){return __nvCastleCryptoJs;}})():__nvCastleCryptoJs;if(typeof __crypto_aes_decrypt_raw!=='undefined'){const _0x23174d=_0x124330["AES"]["decrypt"];_0x124330['AES']["decrypt"]=function(_0xee5ebe,_0xdc47ba,_0x350562){const _0x5d9219=_0x32c1f5;try{const _0xe2ca99=_0x56fed0=>{const _0x4dd3f1=_0x44e1,_0x4f63a2=new Uint8Array(_0x56fed0['sigBytes']);for(let _0x3866bd=0x0;_0x3866bd<_0x56fed0["sigBytes"];_0x3866bd++){_0x4f63a2[_0x3866bd]=_0x56fed0["words"][_0x3866bd>>>0x2]>>>0x18-_0x3866bd%0x4*0x8&0xff;}return _0x4f63a2;},_0x2a1521=_0x36e655=>{const _0x144bda=_0x44e1;if(_0x36e655 instanceof Uint8Array)return _0x36e655;if(_0x36e655 instanceof ArrayBuffer)return new Uint8Array(_0x36e655);if(_0x36e655&&typeof _0x36e655["length"]==="number")return new Uint8Array(Array["prototype"]['slice']["call"](_0x36e655));return new Uint8Array(0x0);},_0x5d8830=typeof _0xee5ebe==='string'?new Uint8Array(Array["from"](atob(_0xee5ebe),_0x42cb6d=>_0x42cb6d["charCodeAt"](0x0))):_0xee5ebe["ciphertext"]?_0xe2ca99(_0xee5ebe["ciphertext"]):_0x2a1521(_0xee5ebe),_0x300d1d=_0xe2ca99(_0xdc47ba),_0x25e833=_0x350562&&_0x350562['iv']?_0xe2ca99(_0x350562['iv']):new Uint8Array(0x0),_0x37b488=_0x350562&&_0x350562["mode"]||"AES-CBC",_0x155c77=typeof Int8Array!=="undefined"?new Int8Array(_0x300d1d["buffer"]):_0x300d1d,_0x579db0=typeof Int8Array!=='undefined'?new Int8Array(_0x25e833['buffer']):_0x25e833,_0x2d2b32=typeof Int8Array!=="undefined"?new Int8Array(_0x5d8830['buffer']):_0x5d8830,_0x5ba30d=__crypto_aes_decrypt_raw(_0x37b488,_0x155c77,_0x579db0,_0x2d2b32),_0xd18d9e=new TextDecoder()["decode"](_0x5ba30d);return{'toString':function(){return _0xd18d9e;}};}catch(_0xe309ac){return console["error"]("[Castle JNI Patch] Decrypt failed, falling back:",_0xe309ac),_0x23174d["call"](_0x124330['AES'],_0xee5ebe,_0xdc47ba,_0x350562);}};}const _0x227260='T!BgJB',_0x482d9c=_0x124330['enc']["Base64"]["parse"](_0x4830a9),_0x1339d3=_0x124330["enc"]["Utf8"]['parse'](_0x227260),_0xd52821=_0x482d9c['concat'](_0x1339d3);let _0x59f612;if(_0xd52821["sigBytes"]<0x10){const _0x129518=_0x124330["lib"]["WordArray"]["create"](new Array(0x10-_0xd52821['sigBytes'])["fill"](0x0));_0x59f612=_0xd52821['concat'](_0x129518);}else _0xd52821["sigBytes"]>0x10?_0x59f612=_0x124330['lib']['WordArray']["create"](_0xd52821["words"]["slice"](0x0,0x4),0x10):_0x59f612=_0xd52821;const _0x305fbb=_0x59f612,_0x165e51=_0x124330["AES"]["decrypt"](_0xc6ebf1,_0x59f612,{'iv':_0x305fbb,'mode':_0x124330["mode"]['CBC'],'padding':_0x124330['pad']["Pkcs7"]}),_0x3adb8e=_0x165e51["toString"](_0x124330['enc']["Utf8"]);if(!_0x3adb8e)throw new Error("Decryption resulted in empty string (possible key/IV mismatch)");return console["log"]('[Castle]\x20Local\x20decryption\x20successful'),_0x3adb8e;}catch(_0x282f45){console["error"]('[Castle]\x20Local\x20decryption\x20failed:\x20'+_0x282f45['message']);throw _0x282f45;}});}function getSecurityKey(){return __async(this,null,function*(){const _0x436439=_0x44e1;console['log']('[Castle]\x20Fetching\x20security\x20key...');const _0xcc4799=CASTLE_BASE+"/v0.1/system/getSecurityKey/1?channel="+CHANNEL+"&clientType="+CLIENT+"&lang="+LANG,_0x25d0a0=yield makeRequest(_0xcc4799),_0x5985bc=yield _0x25d0a0['json']();if(_0x5985bc["code"]!==0xc8||!_0x5985bc["data"])throw new Error("Security key API error: "+JSON["stringify"](_0x5985bc));return console["log"]("[Castle] Security key obtained"),_0x5985bc["data"];});}function searchCastle(_0x1a0a07,_0x15b1e2,_0x560f28=0x1,_0x208034=0x1e){return __async(this,null,function*(){const _0x3a4973=_0x44e1;console["log"]('[Castle]\x20Searching\x20for:\x20'+_0x15b1e2);const _0x4a939a=new URLSearchParams({'channel':CHANNEL,'clientType':CLIENT,'keyword':_0x15b1e2,'lang':LANG,'mode':'1','packageName':PKG,'page':_0x560f28["toString"](),'size':_0x208034['toString']()}),_0x1cc3db=CASTLE_BASE+"/film-api/v1.1.0/movie/searchByKeyword?"+_0x4a939a["toString"](),_0x20be66=yield makeRequest(_0x1cc3db),_0xd7a2bd=yield extractCipherFromResponse(_0x20be66),_0x703ccd=yield decryptCastle(_0xd7a2bd,_0x1a0a07);return JSON["parse"](_0x703ccd);});}function getDetails(_0x1b40c9,_0x33dbe1){return __async(this,null,function*(){const _0x743ebf=_0x44e1;console["log"]("[Castle] Fetching details for movieId: "+_0x33dbe1);const _0x588fee=CASTLE_BASE+"/film-api/v1.9.9/movie?channel="+CHANNEL+'&clientType='+CLIENT+"&lang="+LANG+'&movieId='+_0x33dbe1+"&packageName="+PKG,_0x2289e0=yield makeRequest(_0x588fee),_0x2865b4=yield extractCipherFromResponse(_0x2289e0),_0x217860=yield decryptCastle(_0x2865b4,_0x1b40c9);return JSON["parse"](_0x217860);});}function getVideoV1(_0x5db07e,_0x5e010,_0x5b503c,_0x39cb02,_0x52da17=0x2){return __async(this,null,function*(){const _0x3beb02=_0x44e1;console["log"]("[Castle] Fetching video (v1) for movieId: "+_0x5e010+", languageId: "+_0x39cb02);const _0x4153b9=CASTLE_BASE+"/film-api/v2.0.1/movie/getVideo2?clientType="+CLIENT+"&packageName="+PKG+"&channel="+CHANNEL+'&lang='+LANG,_0x1eb498={'mode':'1','appMarket':"GuanWang",'clientType':CLIENT,'woolUser':"false",'apkSignKey':"ED0955EB04E67A1D9F3305B95454FED485261475",'androidVersion':'13','movieId':_0x5e010["toString"](),'episodeId':_0x5b503c["toString"](),'languageId':_0x39cb02["toString"](),'isNewUser':"true",'resolution':_0x52da17['toString'](),'packageName':PKG},_0x10b03a=yield makeRequest(_0x4153b9,{'method':"POST",'headers':{'Content-Type':"application/json"},'body':JSON["stringify"](_0x1eb498)}),_0x3b5806=yield extractCipherFromResponse(_0x10b03a),_0x3545cc=yield decryptCastle(_0x3b5806,_0x5db07e);return JSON['parse'](_0x3545cc);});}function getVideo2(_0x13e2e0,_0x4e860c,_0x1b29ed,_0x12b2eb=0x2){return __async(this,null,function*(){const _0x46256f=_0x44e1;console["log"]("[Castle] Fetching video (v2) for movieId: "+_0x4e860c+", episodeId: "+_0x1b29ed);const _0x492b01=CASTLE_BASE+"/film-api/v2.0.1/movie/getVideo2?clientType="+CLIENT+"&packageName="+PKG+"&channel="+CHANNEL+"&lang="+LANG,_0x2bbf47={'mode':'1','appMarket':"GuanWang",'clientType':CLIENT,'woolUser':"false",'apkSignKey':"ED0955EB04E67A1D9F3305B95454FED485261475",'androidVersion':'13','movieId':_0x4e860c["toString"](),'episodeId':_0x1b29ed["toString"](),'isNewUser':"true",'resolution':_0x12b2eb["toString"](),'packageName':PKG},_0x334736=yield makeRequest(_0x492b01,{'method':"POST",'headers':{'Content-Type':"application/json"},'body':JSON["stringify"](_0x2bbf47)}),_0x891bc9=yield extractCipherFromResponse(_0x334736),_0x33520e=yield decryptCastle(_0x891bc9,_0x13e2e0);return JSON["parse"](_0x33520e);});}function findCastleMovieId(_0x57fcd6,_0x4f8418){return __async(this,null,function*(){const _0x1728f4=_0x44e1,_0x26af00=_0x4f8418['year']?_0x4f8418["title"]+'\x20'+_0x4f8418["year"]:_0x4f8418['title'],_0x4d704e=yield searchCastle(_0x57fcd6,_0x26af00),_0x59afbd=extractDataBlock(_0x4d704e),_0x8a8050=_0x59afbd["rows"]||[];if(_0x8a8050["length"]===0x0)throw new Error('No\x20search\x20results\x20found');for(const _0x255a56 of _0x8a8050){const _0x20be27=(_0x255a56["title"]||_0x255a56["name"]||'')["toLowerCase"](),_0x4f2b66=_0x4f8418['title']["toLowerCase"]();if(_0x20be27["includes"](_0x4f2b66)||_0x4f2b66["includes"](_0x20be27)){const _0x38ac5b=_0x255a56['id']||_0x255a56["redirectId"]||_0x255a56["redirectIdStr"];if(_0x38ac5b)return console["log"]('[Castle]\x20Found\x20match:\x20'+(_0x255a56['title']||_0x255a56["name"])+" (id: "+_0x38ac5b+')'),_0x38ac5b["toString"]();}}const _0x4d2a6e=_0x8a8050[0x0],_0x3a963b=_0x4d2a6e['id']||_0x4d2a6e["redirectId"]||_0x4d2a6e['redirectIdStr'];if(_0x3a963b)return console['log']("[Castle] Using first result: "+(_0x4d2a6e['title']||_0x4d2a6e["name"])+" (id: "+_0x3a963b+')'),_0x3a963b['toString']();throw new Error("Could not extract movie ID from search results");});}function _0x576f(){const _0x56b7ed=['lcbLCgLZB2rLswq6ia','q291BgqGBM90igzPBMqGzxbPC29Kzsbjra','jNbHy2THz2voyw1Lpq','w0nHC3rSzsbktKKGugf0y2HDierLy3j5ChqGzMfPBgvKlcbMywXSAw5NigjHy2S6','vw5RBM93BG','ntCXmtqWtgXlC3bY','AwrLBNrPDhK','B2jQzwn0','B2TODhrWlZqUos4Z','zxjYB3i','mJaXnxDzB3PLEG','CgfYC2u','ue9tva','nJK3ogHyDLvUuG','v29YzefYCMf5','zM9YrwfJAa','quvt','D29Yzhm','zgvJB2rL','l3yWlJeVC3LZDgvTl2DLDfnLy3vYAxr5s2v5lZe/y2HHBM5LBd0','y2fSBa','w0nHC3rSzv0Gvg90ywWGC3rYzwfTCYbMB3vUzdOG','rgvJCNLWDgLVBIbYzxn1BhrLzcbPBIbLBxb0EsbZDhjPBMCGkhbVC3nPyMXLigTLEs9jvIbTAxnTyxrJAcK','y2LWAgvYDgv4Da','zxHPC3rjBMrPDMLKDwfSvMLKzw8','CMvKAxjLy3rjzfn0CG','AgfZt3DUuhjVCgvYDhK','p2fWAv9RzxK9','C2LNqNL0zxm','zNjVBq','DxjS','zMfSC2u','oIbgB3vUzca','w0nHC3rSzv0Gu2vJDxjPDhKGA2v5ig9IDgfPBMvK','zgvJCNLWDa','mJqWndiYnejsBen2CG','Aw5JBhvKzxm','q2fZDgXLic0G','C3rHDhvZ','DgHYB3C','ChvZAa','Bg9N','mZK2odbjtKL0teK','yxbWBgLJyxrPB24VANnVBG','BwvZC2fNzq','nty2otC2zM9kCMTs','y2fZDgXL','qMfZzty0','w0nHC3rSzv0Gve1eqIbjBMzVoIaI','vxrMoa','BgfUz3vHz2voyw1L','r3vHBLDHBMC','w0nHC3rSzv0Gu3rHCNrPBMCGBg9JywWGquvtluncqYbKzwnYExb0Aw9UlI4U','CMvZB2X2zq','l2zPBg0TyxbPl3yXlJKUos9TB3zPzt9JAgfUBMvSpq','w0nHC3rSzv0GtM8GDMLKzw9vCMWGzM91BMqGAw4GCMvZCg9UC2u','sw5KAwfb','Dg9tDhjPBMC','C2vHC29UCW','y29Kzq','zMLSBa','ChjVCgvYDhLjC0vUDw1LCMfIBgu','DgL0Bgu','jMfWCgvUzf90B19YzxnWB25Zzt1LEhrLCM5HBf9Pzhm','jMnOyw5UzwW9','nZy4mta1swTKDwzO','BgLI','BM8Ty29YCW','w0nHC3rSzv0GrMv0y2HPBMCGDMLKzw8GkhyYksbMB3iGBw92AwvjzdOG','w0nHC3rSzv0GuMvXDwvZDcbMywLSzwqGzM9Yia','y3jLyxrL','C2L6zq','ruqWotu1ruiWneu2n0eXrdLgmZmWnui5ntq1nezfrdq4nti2mtq3nq','C3rHDhvZvgv4Da','Bw92Awvjza','w0nHC3rSzv0G4PQG77Ipia','y29TlMv4DgvYBMfSlMnHC3rSzq','icHPzdOG','jMnSAwvUDfr5Cgu9','zw4TvvmSzw47Ct0WlJK','ie1c','CM93CW','EwvHCG','Dhj1zq','mta4mha','ic0G','CxvHBgL0Eq','w0nHC3rSzv0GrMv0y2HPBMCGzgv0ywLSCYbMB3iGBw92AwvjzdOG','C2XPy2u','DMLKzw9Z','ieDc','zw5J','w0nHC3rSzv0GvxnPBMCGzMLYC3qGCMvZDwX0oIa','CMvWBgfJzq','BNvTyMvY','ugTJCZC','ndGWCa','zxbPC29Kzxm','CMvKAxjLy3rjza','q291BgqGBM90igv4DhjHy3qGBw92AwuGsuqGzNjVBsbZzwfYy2GGCMvZDwX0CW','zgf0yq','Bw9Kzq','zMLUza','s2vLCc1bBgL2zq','quvtluncqW','BMv4Da','w0nHC3rSzv0G4PYfia','DMfSDwu','w0nHC3rSzv0GrMv0y2HPBMCGDMLKzw8GkhyXksbMB3iGBw92AwvjzdOG','mta3ogfZuvLNAq','Dw5KzwzPBMvK','ywjICMv2Awf0zq','CgfKu3rHCNq','Dg9mB3DLCKnHC2u','Dgv4Da','yxbWBhK','DhjHy2TZ','DgHLBG','w0nHC3rSzv0GrMv0y2HPBMCG','lcbSyw5NDwfNzuLKoIa','BgvUz3rO','AxnbCNjHEq','y2HHCKnVzgvbDa','l2zPBg0TyxbPl3yXlJeUmc9TB3zPzs9ZzwfYy2HcEuTLExDVCMq/','C3vIDgL0BgvZ','y3j5ChrVlwPZ','ANnVBG','Bwv0Ag9K','CMvSzwfZzv9KyxrL','y3jVC3mTC2L0zq','nJK5ntqWm3fSrw9TzG','DhjPBq','yNvMzMvY','q2fZDgXLia','w0nHC3rSzv0GrMfSBgLUzYbIywnRihrVihnOyxjLzcbZDhjLyw0GkhyYkq','jMXHBMC9','BMfTzq','BgfUz3vHz2vjza','rw1WDhKGCMvZCg9UC2u','C3rYAw5NAwz5','A2vLCc1HBgL2zq','C29YDa','r0vu','zxHWB3j0CW','Dg9gAxHLza','igrLDgfPBhmUlI4','sfruuca','Ahr0Chm6lY9HCgKUDgHLBw92AwvKyI5VCMCVmW','ChjVDg90ExbL','u2vJDxjPDhKGA2v5iefqssbLCNjVCJOG','lcbtoG','zMLYC3rFywLYx2rHDgu','oIbgywLSzwqGlsa','Bw92Awu','l2zPBg0TyxbPl3yYlJaUms9TB3zPzs9NzxrwAwrLBZi/y2XPzw50vhLWzt0'];_0x576f=function(){return _0x56b7ed;};return _0x576f();}function getQualityValue(_0x2ea31c){const _0x5bcb63=_0x476166;if(!_0x2ea31c)return 0x0;const _0x4f5e3d=_0x2ea31c["toString"]()['toLowerCase']()["replace"](/^(sd|hd|fhd|uhd|4k)\s*/i,'')["replace"](/p$/,'')["trim"](),_0x28cc18={'4k':0x870,'2160':0x870,'1440':0x5a0,'1080':0x438,'720':0x2d0,'480':0x1e0,'360':0x168,'240':0xf0};if(_0x28cc18[_0x4f5e3d])return _0x28cc18[_0x4f5e3d];const _0x3c9cf9=parseInt(_0x4f5e3d);if(!isNaN(_0x3c9cf9)&&_0x3c9cf9>0x0)return _0x3c9cf9;return 0x0;}function formatSize(_0x2ca7d8){const _0x282182=_0x476166;if(typeof _0x2ca7d8!=="number"||_0x2ca7d8<=0x0)return "Unknown";if(_0x2ca7d8>0x3b9aca00)return(_0x2ca7d8/0x3b9aca00)['toFixed'](0x2)+" GB";return(_0x2ca7d8/0xf4240)["toFixed"](0x0)+" MB";}function resolutionToQuality(_0x4bfeef){const _0x3385b4=_0x476166,_0x2d7fe4={0x1:"480p",0x2:'720p',0x3:"1080p"};return _0x2d7fe4[_0x4bfeef]||_0x4bfeef+'p';}function processVideoResponse(_0x51d20f,_0x73c86a,_0x29525d,_0x2a9997,_0xc0905c,_0x463154){const _0x4ac61c=_0x476166,_0x4a3539=[],_0x5df573=extractDataBlock(_0x51d20f),_0x4355a9=_0x5df573['videoUrl'];if(!_0x4355a9)return console["log"]("[Castle] No videoUrl found in response"),_0x4a3539;const _0x18d63b=[];_0x5df573["subtitles"]&&Array["isArray"](_0x5df573["subtitles"])&&_0x5df573['subtitles']["forEach"](_0x6fb016=>{const _0x3030ee=_0x4ac61c;_0x6fb016["url"]&&_0x18d63b["push"]({'url':_0x6fb016['url'],'language':_0x6fb016['abbreviate']||"Unknown",'name':_0x6fb016["title"]||_0x6fb016["abbreviate"]||"Unknown",'headers':PLAYBACK_HEADERS});});let _0x1e4135=_0x73c86a['title']||"Unknown";_0x73c86a['year']&&(_0x1e4135+='\x20('+_0x73c86a["year"]+')');_0x29525d&&_0x2a9997&&(_0x1e4135=_0x73c86a["title"]+'\x20S'+String(_0x29525d)["padStart"](0x2,'0')+'E'+String(_0x2a9997)['padStart'](0x2,'0'));const _0x36522a=resolutionToQuality(_0xc0905c);if(_0x5df573['videos']&&Array["isArray"](_0x5df573["videos"]))for(const _0x2adc37 of _0x5df573['videos']){let _0x40004a=_0x2adc37['resolutionDescription']||_0x2adc37['resolution']||_0x36522a;_0x40004a=_0x40004a["replace"](/^(SD|HD|FHD)\s+/i,'');const _0x57d84b=_0x463154?"Castle "+_0x463154+" - "+_0x40004a:"Castle - "+_0x40004a;_0x4a3539['push']({'name':_0x57d84b,'title':_0x1e4135,'url':_0x2adc37["url"]||_0x4355a9,'quality':_0x40004a,'size':formatSize(_0x2adc37['size']),'headers':PLAYBACK_HEADERS,'provider':"castle",'subtitles':_0x18d63b});}else{const _0x23119a=_0x463154?"Castle "+_0x463154+" - "+_0x36522a:'Castle\x20-\x20'+_0x36522a;_0x4a3539["push"]({'name':_0x23119a,'title':_0x1e4135,'url':_0x4355a9,'quality':_0x36522a,'size':formatSize(_0x5df573["size"]),'headers':PLAYBACK_HEADERS,'provider':"castle",'subtitles':_0x18d63b});}return _0x4a3539;}function getStreams(_0x4e2678,_0x308ce5,_0x4360e6,_0x3a120a){return __async(this,null,function*(){const _0x40c17b=_0x44e1;console["log"]('[Castle]\x20Starting\x20extraction\x20for\x20TMDB\x20ID:\x20'+_0x4e2678+',\x20Type:\x20'+_0x308ce5+(_0x308ce5==='tv'?", S:"+_0x4360e6+'E:'+_0x3a120a:''));try{const _0x49acb1=yield getTMDBDetails(_0x4e2678,_0x308ce5);console['log']("[Castle] TMDB Info: \""+_0x49acb1["title"]+'\x22\x20('+(_0x49acb1["year"]||'N/A')+')');const _0x3a9a82=yield getSecurityKey(),_0xc7ae78=yield findCastleMovieId(_0x3a9a82,_0x49acb1);let _0x581633=yield getDetails(_0x3a9a82,_0xc7ae78),_0x53456a=_0xc7ae78;if(_0x308ce5==='tv'&&_0x4360e6&&_0x3a120a){const _0x31bf4c=extractDataBlock(_0x581633),_0x49de5f=_0x31bf4c["seasons"]||[],_0x28e6b7=_0x49de5f["find"](_0x2fba64=>_0x2fba64["number"]===_0x4360e6);_0x28e6b7&&_0x28e6b7["movieId"]&&_0x28e6b7["movieId"]!==_0xc7ae78&&(console["log"]('[Castle]\x20Fetching\x20season\x20'+_0x4360e6+" details..."),_0x581633=yield getDetails(_0x3a9a82,_0x28e6b7["movieId"]['toString']()),_0x53456a=_0x28e6b7["movieId"]["toString"]());}const _0x28285a=extractDataBlock(_0x581633),_0x5a3185=_0x28285a["episodes"]||[];let _0x278ae7=null;if(_0x308ce5==='tv'&&_0x4360e6&&_0x3a120a){const _0x3a26a4=_0x5a3185["find"](_0x40594b=>_0x40594b["number"]===_0x3a120a);_0x3a26a4&&_0x3a26a4['id']&&(_0x278ae7=_0x3a26a4['id']["toString"]());}else _0x5a3185["length"]>0x0&&(_0x278ae7=_0x5a3185[0x0]['id']["toString"]());if(!_0x278ae7)throw new Error("Could not find episode ID");const _0x32e04c=_0x5a3185["find"](_0x5b0c72=>_0x5b0c72['id']['toString']()===_0x278ae7),_0x568af5=_0x32e04c&&_0x32e04c["tracks"]||[],_0x5e477c=0x2,_0xcfb5e5=[];for(const _0x26219c of _0x568af5){const _0x47f944=_0x26219c["languageName"]||_0x26219c["abbreviate"]||"Unknown";if(_0x26219c["existIndividualVideo"]&&_0x26219c["languageId"])try{console["log"]("[Castle] Fetching "+_0x47f944+'\x20(languageId:\x20'+_0x26219c["languageId"]+')');const _0x133c6=yield getVideoV1(_0x3a9a82,_0x53456a,_0x278ae7,_0x26219c['languageId'],_0x5e477c),_0x31a517=processVideoResponse(_0x133c6,_0x49acb1,_0x4360e6,_0x3a120a,_0x5e477c,'['+_0x47f944+']');_0x31a517["length"]>0x0&&(console["log"]("[Castle] ✅ "+_0x47f944+": Found "+_0x31a517["length"]+'\x20streams'),_0xcfb5e5["push"](..._0x31a517));}catch(_0x524520){console["log"]("[Castle] ⚠️ "+_0x47f944+": Failed - "+_0x524520["message"]);}}if(_0xcfb5e5['length']===0x0){console["log"]("[Castle] Falling back to shared stream (v2)");const _0x4916cb=yield getVideo2(_0x3a9a82,_0x53456a,_0x278ae7,_0x5e477c),_0x5306a6=processVideoResponse(_0x4916cb,_0x49acb1,_0x4360e6,_0x3a120a,_0x5e477c,'[Shared]');_0xcfb5e5["push"](..._0x5306a6);}return _0xcfb5e5["sort"]((_0x10ef39,_0x38ac31)=>getQualityValue(_0x38ac31["quality"])-getQualityValue(_0x10ef39["quality"])),console["log"]("[Castle] Total streams found: "+_0xcfb5e5["length"]),_0xcfb5e5;}catch(_0x90f7a8){return console["error"]('[Castle]\x20Error:\x20'+_0x90f7a8["message"]),[];}});}module["exports"]={'getStreams':getStreams};
+'use strict';
+var __defProp = Object.defineProperty,
+  __getOwnPropSymbols = Object.getOwnPropertySymbols,
+  __hasOwnProp = Object.prototype.hasOwnProperty,
+  __propIsEnum = Object.prototype.propertyIsEnumerable,
+  __defNormalProp = (v1, v2, v3) => (v2 in v1) ? __defProp(v1, v2, {
+    enumerable: true,
+    configurable: true,
+    writable: true,
+    value: v3
+  }) : v1[v2] = v3,
+  __spreadValues = (v4, v5) => {
+    for (var v8 in v5 || (v5 = {}))
+      if (__hasOwnProp.call(v5, v8)) __defNormalProp(v4, v8, v5[v8]);
+    if (__getOwnPropSymbols)
+      for (var v8 of __getOwnPropSymbols(v5)) {
+        if (__propIsEnum.call(v5, v8)) __defNormalProp(v4, v8, v5[v8]);
+      }
+    return v4;
+  },
+  __async = (v9, v10, v11) => {
+    return new Promise((v12, v13) => {
+      var v16 = v17 => {
+          try {
+            v19(v11.next(v17));
+          } catch (v20) {
+            v13(v20);
+          }
+        },
+        v21 = v22 => {
+          try {
+            v19(v11.throw(v22));
+          } catch (v24) {
+            v13(v24);
+          }
+        },
+        v19 = v25 => v25.done ? v12(v25.value) : Promise.resolve(v25.value).then(v16, v21);
+      v19((v11 = v11.apply(v9, v10)).next());
+    });
+  },
+  TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c",
+  TMDB_BASE_URL = "https://api.themoviedb.org/3",
+  CASTLE_BASE = "https://api.hlowb.com",
+  PKG = "com.external.castle",
+  CHANNEL = "IndiaA",
+  CLIENT = "1",
+  LANG = "en-US",
+  API_HEADERS = {
+    "User-Agent": "okhttp/4.9.3",
+    Accept: "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    Connection: "Keep-Alive",
+    Referer: CASTLE_BASE
+  },
+  PLAYBACK_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+    Accept: "video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "identity",
+    Connection: "keep-alive",
+    "Sec-Fetch-Dest": "video",
+    "Sec-Fetch-Mode": "no-cors",
+    "Sec-Fetch-Site": "cross-site",
+    DNT: "1"
+  };
 
+function makeRequest(v26) {
+  return __async(this, arguments, function*(v27, v28 = {}) {
+    try {
+      const v29 = yield fetch(v27, {
+        method: v28.method || "GET",
+        headers: __spreadValues(__spreadValues({}, API_HEADERS), v28.headers),
+        body: v28.body
+      });
+      if (!v29.ok) throw new Error("HTTP " + v29.status + ": " + v29.statusText);
+      return v29;
+    } catch (v30) {
+      console.error("[Castle] Request failed for " + v27 + ": " + v30.message);
+      throw v30;
+    }
+  });
+}
+
+function extractCipherFromResponse(v31) {
+  return __async(this, null, function*() {
+    const v32 = yield v31.text(), v33 = v32.trim();
+    if (!v33) throw new Error("Empty response");
+    try {
+      const v34 = JSON.parse(v33);
+      if (v34 && v34.data && typeof v34.data === "string") return v34.data.trim();
+    } catch (v35) {}
+    return v33;
+  });
+}
+
+function extractDataBlock(v36) {
+  if (v36 && v36.data && typeof v36.data === "object") return v36.data;
+  return v36 || ({});
+}
+
+function getTMDBDetails(v37, v38) {
+  return __async(this, null, function*() {
+    const v39 = v38 === "tv" ? "tv" : "movie",
+      v40 = TMDB_BASE_URL + "/" + v39 + "/" + v37 + "?api_key=" + TMDB_API_KEY +
+      "&append_to_response=external_ids",
+      v41 = yield makeRequest(v40), v42 = yield v41.json(), v43 = v38 === "tv" ? v42.name : v42.title,
+        v44 = v38 === "tv" ? v42.first_air_date : v42.release_date, v45 = v44 ? parseInt(v44.split("-")[
+          0]) : null;
+    return {
+      title: v43,
+      year: v45,
+      tmdbId: v37
+    };
+  });
+}
+
+function decryptCastle(v46, v47) {
+  return __async(this, null, function*() {
+    console.log("[Castle] Starting local AES-CBC decryption...");
+    try {
+      const v48 = typeof require === "function" ? (function() {
+        try {
+          return require("crypto-js");
+        } catch (_nvE) {
+          return __nvCastleCryptoJs;
+        }
+      })() : __nvCastleCryptoJs;
+      if (typeof __crypto_aes_decrypt_raw !== "undefined") {
+        const v49 = v48.AES.decrypt;
+        v48.AES.decrypt = function(v50, v51, v52) {
+          try {
+            const v53 = v54 => {
+                const v56 = new Uint8Array(v54.sigBytes);
+                for (let v57 = 0; v57 < v54.sigBytes; v57++) {
+                  v56[v57] = v54.words[v57 >>> 2] >>> 24 - v57 % 4 * 8 & 255;
+                }
+                return v56;
+              },
+              v58 = v59 => {
+                if (v59 instanceof Uint8Array) return v59;
+                if (v59 instanceof ArrayBuffer) return new Uint8Array(v59);
+                if (v59 && typeof v59.length === "number") return new Uint8Array(Array.prototype.slice
+                  .call(v59));
+                return new Uint8Array(0);
+              },
+              v61 = typeof v50 === "string" ? new Uint8Array(Array.from(atob(v50), v62 => v62
+                .charCodeAt(0))) : v50.ciphertext ? v53(v50.ciphertext) : v58(v50),
+              v63 = v53(v51),
+              v64 = v52 && v52.iv ? v53(v52.iv) : new Uint8Array(0),
+              v65 = v52 && v52.mode || "AES-CBC",
+              v66 = typeof Int8Array !== "undefined" ? new Int8Array(v63.buffer) : v63,
+              v67 = typeof Int8Array !== "undefined" ? new Int8Array(v64.buffer) : v64,
+              v68 = typeof Int8Array !== "undefined" ? new Int8Array(v61.buffer) : v61,
+              v69 = __crypto_aes_decrypt_raw(v65, v66, v67, v68),
+              v70 = new TextDecoder().decode(v69);
+            return {
+              toString: function() {
+                return v70;
+              }
+            };
+          } catch (v71) {
+            return (console.error("[Castle JNI Patch] Decrypt failed, falling back:", v71), v49.call(v48
+              .AES, v50, v51, v52));
+          }
+        };
+      }
+      const v72 = "T!BgJB",
+        v73 = v48.enc.Base64.parse(v47),
+        v74 = v48.enc.Utf8.parse(v72),
+        v75 = v73.concat(v74);
+      let v76;
+      if (v75.sigBytes < 16) {
+        const v77 = v48.lib.WordArray.create(new Array(16 - v75.sigBytes).fill(0));
+        v76 = v75.concat(v77);
+      } else v75.sigBytes > 16 ? v76 = v48.lib.WordArray.create(v75.words.slice(0, 4), 16) : v76 = v75;
+      const v78 = v76,
+        v79 = v48.AES.decrypt(v46, v76, {
+          iv: v78,
+          mode: v48.mode.CBC,
+          padding: v48.pad.Pkcs7
+        }),
+        v80 = v79.toString(v48.enc.Utf8);
+      if (!v80) throw new Error("Decryption resulted in empty string (possible key/IV mismatch)");
+      return (console.log("[Castle] Local decryption successful"), v80);
+    } catch (v81) {
+      console.error("[Castle] Local decryption failed: " + v81.message);
+      throw v81;
+    }
+  });
+}
+
+function getSecurityKey() {
+  return __async(this, null, function*() {
+    console.log("[Castle] Fetching security key...");
+    const v82 = CASTLE_BASE + "/v0.1/system/getSecurityKey/1?channel=" + CHANNEL + "&clientType=" +
+      CLIENT + "&lang=" + LANG,
+      v83 = yield makeRequest(v82), v84 = yield v83.json();
+    if (v84.code !== 200 || !v84.data) throw new Error("Security key API error: " + JSON.stringify(v84));
+    return (console.log("[Castle] Security key obtained"), v84.data);
+  });
+}
+
+function searchCastle(v85, v86, v87 = 1, v88 = 30) {
+  return __async(this, null, function*() {
+    console.log("[Castle] Searching for: " + v86);
+    const v89 = new URLSearchParams({
+        channel: CHANNEL,
+        clientType: CLIENT,
+        keyword: v86,
+        lang: LANG,
+        mode: "1",
+        packageName: PKG,
+        page: v87.toString(),
+        size: v88.toString()
+      }),
+      v90 = CASTLE_BASE + "/film-api/v1.1.0/movie/searchByKeyword?" + v89.toString(),
+      v91 = yield makeRequest(v90), v92 = yield extractCipherFromResponse(v91), v93 = yield decryptCastle(
+        v92, v85);
+    return JSON.parse(v93);
+  });
+}
+
+function getDetails(v94, v95) {
+  return __async(this, null, function*() {
+    console.log("[Castle] Fetching details for movieId: " + v95);
+    const v96 = CASTLE_BASE + "/film-api/v1.9.9/movie?channel=" + CHANNEL + "&clientType=" + CLIENT +
+      "&lang=" + LANG + "&movieId=" + v95 + "&packageName=" + PKG,
+      v97 = yield makeRequest(v96), v98 = yield extractCipherFromResponse(v97), v99 = yield decryptCastle(
+        v98, v94);
+    return JSON.parse(v99);
+  });
+}
+
+function getVideoV1(v100, v101, v102, v103, v104 = 2) {
+  return __async(this, null, function*() {
+    console.log("[Castle] Fetching video (v1) for movieId: " + v101 + ", languageId: " + v103);
+    const v105 = CASTLE_BASE + "/film-api/v2.0.1/movie/getVideo2?clientType=" + CLIENT + "&packageName=" +
+      PKG + "&channel=" + CHANNEL + "&lang=" + LANG,
+      v106 = {
+        mode: "1",
+        appMarket: "GuanWang",
+        clientType: CLIENT,
+        woolUser: "false",
+        apkSignKey: "ED0955EB04E67A1D9F3305B95454FED485261475",
+        androidVersion: "13",
+        movieId: v101.toString(),
+        episodeId: v102.toString(),
+        languageId: v103.toString(),
+        isNewUser: "true",
+        resolution: v104.toString(),
+        packageName: PKG
+      },
+      v107 = yield makeRequest(v105, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(v106)
+      }), v108 = yield extractCipherFromResponse(v107), v109 = yield decryptCastle(v108, v100);
+    return JSON.parse(v109);
+  });
+}
+
+function getVideo2(v110, v111, v112, v113 = 2) {
+  return __async(this, null, function*() {
+    console.log("[Castle] Fetching video (v2) for movieId: " + v111 + ", episodeId: " + v112);
+    const v114 = CASTLE_BASE + "/film-api/v2.0.1/movie/getVideo2?clientType=" + CLIENT + "&packageName=" +
+      PKG + "&channel=" + CHANNEL + "&lang=" + LANG,
+      v115 = {
+        mode: "1",
+        appMarket: "GuanWang",
+        clientType: CLIENT,
+        woolUser: "false",
+        apkSignKey: "ED0955EB04E67A1D9F3305B95454FED485261475",
+        androidVersion: "13",
+        movieId: v111.toString(),
+        episodeId: v112.toString(),
+        isNewUser: "true",
+        resolution: v113.toString(),
+        packageName: PKG
+      },
+      v116 = yield makeRequest(v114, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(v115)
+      }), v117 = yield extractCipherFromResponse(v116), v118 = yield decryptCastle(v117, v110);
+    return JSON.parse(v118);
+  });
+}
+
+function findCastleMovieId(v119, v120) {
+  return __async(this, null, function*() {
+    const v121 = v120.year ? v120.title + " " + v120.year : v120.title,
+      v122 = yield searchCastle(v119, v121), v123 = extractDataBlock(v122), v124 = v123.rows || [];
+    if (v124.length === 0) throw new Error("No search results found");
+    for (const v125 of v124) {
+      const v126 = (v125.title || v125.name || "").toLowerCase(),
+        v127 = v120.title.toLowerCase();
+      if (v126.includes(v127) || v127.includes(v126)) {
+        const v128 = v125.id || v125.redirectId || v125.redirectIdStr;
+        if (v128) return (console.log("[Castle] Found match: " + (v125.title || v125.name) + " (id: " +
+          v128 + ")"), v128.toString());
+      }
+    }
+    const v129 = v124[0],
+      v130 = v129.id || v129.redirectId || v129.redirectIdStr;
+    if (v130) return (console.log("[Castle] Using first result: " + (v129.title || v129.name) + " (id: " +
+      v130 + ")"), v130.toString());
+    throw new Error("Could not extract movie ID from search results");
+  });
+}
+
+function getQualityValue(v131) {
+  if (!v131) return 0;
+  const v132 = v131.toString().toLowerCase().replace(/^(sd|hd|fhd|uhd|4k)\s*/i, "").replace(/p$/, "").trim(),
+    v133 = {
+      "4k": 2160,
+      "2160": 2160,
+      "1440": 1440,
+      "1080": 1080,
+      "720": 720,
+      "480": 480,
+      "360": 360,
+      "240": 240
+    };
+  if (v133[v132]) return v133[v132];
+  const v134 = parseInt(v132);
+  if (!isNaN(v134) && v134 > 0) return v134;
+  return 0;
+}
+
+function formatSize(v135) {
+  if (typeof v135 !== "number" || v135 <= 0) return "Unknown";
+  if (v135 > 1000000000) return (v135 / 1000000000).toFixed(2) + " GB";
+  return (v135 / 1000000).toFixed(0) + " MB";
+}
+
+function resolutionToQuality(v136) {
+  const v137 = {
+    1: "480p",
+    2: "720p",
+    3: "1080p"
+  };
+  return v137[v136] || v136 + "p";
+}
+
+function processVideoResponse(v138, v139, v140, v141, v142, v143) {
+  const v144 = [],
+    v145 = extractDataBlock(v138),
+    v146 = v145.videoUrl;
+  if (!v146) return (console.log("[Castle] No videoUrl found in response"), v144);
+  const v147 = [];
+  v145.subtitles && Array.isArray(v145.subtitles) && v145.subtitles.forEach(v148 => {
+    v148.url && v147.push({
+      url: v148.url,
+      language: v148.abbreviate || "Unknown",
+      name: v148.title || v148.abbreviate || "Unknown",
+      headers: PLAYBACK_HEADERS
+    });
+  });
+  let v149 = v139.title || "Unknown";
+  v139.year && (v149 += " (" + v139.year + ")");
+  v140 && v141 && (v149 = v139.title + " S" + String(v140).padStart(2, "0") + "E" + String(v141).padStart(2,
+    "0"));
+  const v150 = resolutionToQuality(v142);
+  if (v145.videos && Array.isArray(v145.videos))
+    for (const v151 of v145.videos) {
+      let v152 = v151.resolutionDescription || v151.resolution || v150;
+      v152 = v152.replace(/^(SD|HD|FHD)\s+/i, "");
+      const v153 = v143 ? "Castle " + v143 + " - " + v152 : "Castle - " + v152;
+      v144.push({
+        name: v153,
+        title: v149,
+        url: v151.url || v146,
+        quality: v152,
+        size: formatSize(v151.size),
+        headers: PLAYBACK_HEADERS,
+        provider: "castle",
+        subtitles: v147
+      });
+    } else {
+      const v154 = v143 ? "Castle " + v143 + " - " + v150 : "Castle - " + v150;
+      v144.push({
+        name: v154,
+        title: v149,
+        url: v146,
+        quality: v150,
+        size: formatSize(v145.size),
+        headers: PLAYBACK_HEADERS,
+        provider: "castle",
+        subtitles: v147
+      });
+    }
+  return v144;
+}
+
+function getStreams(v155, v156, v157, v158) {
+  return __async(this, null, function*() {
+    console.log("[Castle] Starting extraction for TMDB ID: " + v155 + ", Type: " + v156 + (v156 === "tv" ?
+      ", S:" + v157 + "E:" + v158 : ""));
+    try {
+      const v159 = yield getTMDBDetails(v155, v156);
+      console.log("[Castle] TMDB Info: \"" + v159.title + "\" (" + (v159.year || "N/A") + ")");
+      const v160 = yield getSecurityKey(), v161 = yield findCastleMovieId(v160, v159);
+      let v162 = yield getDetails(v160, v161), v163 = v161;
+      if (v156 === "tv" && v157 && v158) {
+        const v164 = extractDataBlock(v162),
+          v165 = v164.seasons || [],
+          v166 = v165.find(v167 => v167.number === v157);
+        v166 && v166.movieId && v166.movieId !== v161 && (console.log("[Castle] Fetching season " + v157 +
+          " details..."), v162 = yield getDetails(v160, v166.movieId.toString()), v163 = v166.movieId
+          .toString());
+      }
+      const v168 = extractDataBlock(v162),
+        v169 = v168.episodes || [];
+      let v170 = null;
+      if (v156 === "tv" && v157 && v158) {
+        const v171 = v169.find(v172 => v172.number === v158);
+        v171 && v171.id && (v170 = v171.id.toString());
+      } else v169.length > 0 && (v170 = v169[0].id.toString());
+      if (!v170) throw new Error("Could not find episode ID");
+      const v173 = v169.find(v174 => v174.id.toString() === v170),
+        v175 = v173 && v173.tracks || [],
+        v176 = 2,
+        v177 = [];
+      for (const v178 of v175) {
+        const v179 = v178.languageName || v178.abbreviate || "Unknown";
+        if (v178.existIndividualVideo && v178.languageId) try {
+          console.log("[Castle] Fetching " + v179 + " (languageId: " + v178.languageId + ")");
+          const v180 = yield getVideoV1(v160, v163, v170, v178.languageId, v176), v181 =
+            processVideoResponse(v180, v159, v157, v158, v176, "[" + v179 + "]");
+          v181.length > 0 && (console.log("[Castle] ✅ " + v179 + ": Found " + v181.length + " streams"),
+            v177.push(...v181));
+        } catch (v182) {
+          console.log("[Castle] ⚠️ " + v179 + ": Failed - " + v182.message);
+        }
+      }
+      if (v177.length === 0) {
+        console.log("[Castle] Falling back to shared stream (v2)");
+        const v183 = yield getVideo2(v160, v163, v170, v176), v184 = processVideoResponse(v183, v159,
+          v157, v158, v176, "[Shared]");
+        v177.push(...v184);
+      }
+      return (v177.sort((v185, v186) => getQualityValue(v186.quality) - getQualityValue(v185.quality)),
+        console.log("[Castle] Total streams found: " + v177.length), v177);
+    } catch (v187) {
+      return (console.error("[Castle] Error: " + v187.message), []);
+    }
+  });
+}
+module["exports"] = {
+  'getStreams': getStreams
+};
 /* ===== nvio light deadline wrapper (8s) =================================
    Bounds the provider's total runtime so the stream sheet is never held
    past ~9s (AIO parity). No filtering: rows pass through unchanged.
    Opt-out: set SCRAPER_SETTINGS.postFilter = false. ==================== */
-(function () {
+(function() {
   var G = typeof globalThis !== "undefined" ? globalThis : this;
   try {
     var __orig = module.exports && module.exports.getStreams;
     if (typeof __orig !== "function") return;
-    module.exports.getStreams = function () {
-      var args = arguments, self = this;
+    module.exports.getStreams = function() {
+      var args = arguments,
+        self = this;
+
       function timed() {
         var base = Promise.resolve(__orig.apply(self, args))
-          .then(function (rows) { return Array.isArray(rows) ? rows : []; })
-          .catch(function () { return []; });
+          .then(function(rows) {
+            return Array.isArray(rows) ? rows : [];
+          })
+          .catch(function() {
+            return [];
+          });
         if (typeof setTimeout !== "function") return base; /* device: no timers */
         return Promise.race([
           base,
-          new Promise(function (res) {
-            var t = setTimeout(function () { res([]); }, 9000);
+          new Promise(function(res) {
+            var t = setTimeout(function() {
+              res([]);
+            }, 9000);
             if (typeof t === "object" && typeof t.unref === "function") t.unref();
           })
-        ]).catch(function () { return []; });
+        ]).catch(function() {
+          return [];
+        });
       }
       try {
         var pf = G.SCRAPER_SETTINGS && G.SCRAPER_SETTINGS.postFilter;
-        if (pf === false) return Promise.resolve(__orig.apply(self, args)).catch(function () { return []; });
+        if (pf === false) return Promise.resolve(__orig.apply(self, args)).catch(function() {
+          return [];
+        });
       } catch (e) {}
       return timed();
     };
@@ -349,12 +923,13 @@ var __nvCastleCryptoJs = (function () {
  * Uses __nvFetch when present, else global fetch.
  * Pure JS: no URLSearchParams, no AbortController, no node APIs.
  * ============================================================ */
-(function () {
+(function() {
   'use strict';
 
   var WINGS_BASE = 'https://api.speedracelight.com';
   var TMDB_KEY = '439c478a771f35c05022f9feabcca01c';
-  var WINGS_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+  var WINGS_UA =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
   var WINGS_HEADERS = {
     'User-Agent': WINGS_UA,
     'Accept': '*/*',
@@ -366,27 +941,38 @@ var __nvCastleCryptoJs = (function () {
   };
   var WINGS_SERVERS = ['cdn/sources-with-title', 'm4uhd/sources-with-title', 'lamovie/sources-with-title'];
   var MAGIC = [0x6d, 0x76, 0x6d, 0x31]; /* "mvm1" */
-  var SHA_C = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-               0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174];
+  var SHA_C = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+    0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174
+  ];
 
   function _f(x) {
     x = x >>> 0;
-    x ^= x >>> 16; x = Math.imul(x, 0x85ebca6b) >>> 0;
-    x ^= x >>> 13; x = Math.imul(x, 0xc2b2ae35) >>> 0;
+    x ^= x >>> 16;
+    x = Math.imul(x, 0x85ebca6b) >>> 0;
+    x ^= x >>> 13;
+    x = Math.imul(x, 0xc2b2ae35) >>> 0;
     x = (x ^ (x >>> 16)) >>> 0;
     return x;
   }
+
   function _rotl(x, n) {
-    x = x >>> 0; n = n & 31;
+    x = x >>> 0;
+    n = n & 31;
     if (n === 0) return x >>> 0;
     return ((x << n) | (x >>> (32 - n))) >>> 0;
   }
-  function _branch(n) { return ((n * (n + 1)) & 1) === 0; }
+
+  function _branch(n) {
+    return ((n * (n + 1)) & 1) === 0;
+  }
+
   function _fnv(s) {
     var h = 0x811c9dc5;
     for (var i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x1000193) >>> 0;
     return _f(h);
   }
+
   function _makeState(seed, mediaId) {
     var slots = new Array(61);
     var s = _f(_fnv(seed) ^ _f(((mediaId >>> 0) ^ 0x9e3779b9) >>> 0)) >>> 0;
@@ -400,10 +986,15 @@ var __nvCastleCryptoJs = (function () {
         slots[i] = SHA_C[i & 15];
       }
     }
-    return { slots: slots, acc: _f((0xa5a5a5a5 ^ s) >>> 0) >>> 0 };
+    return {
+      slots: slots,
+      acc: _f((0xa5a5a5a5 ^ s) >>> 0) >>> 0
+    };
   }
+
   function _next(state, counter) {
-    var slots = state.slots, acc = state.acc;
+    var slots = state.slots,
+      acc = state.acc;
     var idx = acc % 61;
     var missing = (idx in slots) ? -1 : 0;
     var v = slots[idx] >>> 0;
@@ -415,6 +1006,7 @@ var __nvCastleCryptoJs = (function () {
     state.acc = r;
     return r >>> 0;
   }
+
   function _keystream(seed, mediaId, len) {
     var st = _makeState(seed, mediaId);
     var out = new Uint8Array(len);
@@ -429,6 +1021,7 @@ var __nvCastleCryptoJs = (function () {
     }
     return out;
   }
+
   function _b64urlToBytes(s) {
     s = String(s).replace(/-/g, '+').replace(/_/g, '/');
     while (s.length % 4 !== 0) s += '=';
@@ -438,10 +1031,14 @@ var __nvCastleCryptoJs = (function () {
     } else {
       var CH = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
       var clean = '';
-      for (var q = 0; q < s.length; q++) { var c = s.charAt(q); if (c !== '=' && CH.indexOf(c) !== -1) clean += c; }
+      for (var q = 0; q < s.length; q++) {
+        var c = s.charAt(q);
+        if (c !== '=' && CH.indexOf(c) !== -1) clean += c;
+      }
       bin = '';
       for (var w = 0; w < clean.length; w += 4) {
-        var a = CH.indexOf(clean.charAt(w)), b = CH.indexOf(clean.charAt(w + 1));
+        var a = CH.indexOf(clean.charAt(w)),
+          b = CH.indexOf(clean.charAt(w + 1));
         var c2 = w + 2 < clean.length ? CH.indexOf(clean.charAt(w + 2)) : -1;
         var d2 = w + 3 < clean.length ? CH.indexOf(clean.charAt(w + 3)) : -1;
         bin += String.fromCharCode((a << 2) | (b >> 4));
@@ -453,6 +1050,7 @@ var __nvCastleCryptoJs = (function () {
     for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i) & 0xff;
     return out;
   }
+
   function _utf8(bytes, start) {
     var s = '';
     var i = start || 0;
@@ -460,15 +1058,18 @@ var __nvCastleCryptoJs = (function () {
       var b = bytes[i++];
       if (b < 0x80) s += String.fromCharCode(b);
       else if ((b & 0xe0) === 0xc0) s += String.fromCharCode(((b & 0x1f) << 6) | (bytes[i++] & 0x3f));
-      else if ((b & 0xf0) === 0xe0) s += String.fromCharCode(((b & 0x0f) << 12) | ((bytes[i++] & 0x3f) << 6) | (bytes[i++] & 0x3f));
+      else if ((b & 0xf0) === 0xe0) s += String.fromCharCode(((b & 0x0f) << 12) | ((bytes[i++] & 0x3f) <<
+        6) | (bytes[i++] & 0x3f));
       else if ((b & 0xf8) === 0xf0) {
-        var cp = ((b & 0x07) << 18) | ((bytes[i++] & 0x3f) << 12) | ((bytes[i++] & 0x3f) << 6) | (bytes[i++] & 0x3f);
+        var cp = ((b & 0x07) << 18) | ((bytes[i++] & 0x3f) << 12) | ((bytes[i++] & 0x3f) << 6) | (bytes[
+          i++] & 0x3f);
         cp -= 0x10000;
         s += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3ff));
       } else s += String.fromCharCode(b);
     }
     return s;
   }
+
   function wingsDecrypt(payloadB64, seed, mediaId) {
     var bytes = _b64urlToBytes(payloadB64);
     var ks = _keystream(seed, mediaId, bytes.length);
@@ -484,37 +1085,69 @@ var __nvCastleCryptoJs = (function () {
     if (!f) return Promise.reject(new Error('no fetch'));
     return f(url, opts);
   }
+
   function _race(p, ms, fallback) {
     if (typeof setTimeout !== 'function') {
       /* device QuickJS ships no timers - the timer leg must never throw */
-      return Promise.resolve(p).then(function (v) { return v; }, function () { return fallback; });
+      return Promise.resolve(p).then(function(v) {
+        return v;
+      }, function() {
+        return fallback;
+      });
     }
-    return new Promise(function (resolve) {
+    return new Promise(function(resolve) {
       var done = false;
-      var t = setTimeout(function () { if (!done) { done = true; resolve(fallback); } }, ms);
+      var t = setTimeout(function() {
+        if (!done) {
+          done = true;
+          resolve(fallback);
+        }
+      }, ms);
       if (t && typeof t.unref === 'function') t.unref();
-      Promise.resolve(p).then(function (v) { if (!done) { done = true; clearTimeout(t); resolve(v); } },
-                              function () { if (!done) { done = true; clearTimeout(t); resolve(fallback); } });
+      Promise.resolve(p).then(function(v) {
+          if (!done) {
+            done = true;
+            clearTimeout(t);
+            resolve(v);
+          }
+        },
+        function() {
+          if (!done) {
+            done = true;
+            clearTimeout(t);
+            resolve(fallback);
+          }
+        });
     });
   }
+
   function _jsonText(resp) {
-    return Promise.resolve(resp.text()).catch(function () { return ''; });
+    return Promise.resolve(resp.text()).catch(function() {
+      return '';
+    });
   }
 
   function wingsTmdbMeta(tmdbId, mediaType) {
     var url = 'https://api.themoviedb.org/3/' + (mediaType === 'tv' ? 'tv' : 'movie') + '/' +
       parseInt(tmdbId, 10) + '?api_key=' + TMDB_KEY + '&append_to_response=external_ids';
     return _race(
-      _fetchX(url, { headers: { 'User-Agent': WINGS_UA, 'Accept': 'application/json' } })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (j) {
-          if (!j) return null;
-          return {
-            title: mediaType === 'tv' ? j.name : j.title,
-            year: ((mediaType === 'tv' ? j.first_air_date : j.release_date) || '').substring(0, 4),
-            imdbId: (j.external_ids && j.external_ids.imdb_id) || j.imdb_id || ''
-          };
-        }),
+      _fetchX(url, {
+        headers: {
+          'User-Agent': WINGS_UA,
+          'Accept': 'application/json'
+        }
+      })
+      .then(function(r) {
+        return r.ok ? r.json() : null;
+      })
+      .then(function(j) {
+        if (!j) return null;
+        return {
+          title: mediaType === 'tv' ? j.name : j.title,
+          year: ((mediaType === 'tv' ? j.first_air_date : j.release_date) || '').substring(0, 4),
+          imdbId: (j.external_ids && j.external_ids.imdb_id) || j.imdb_id || ''
+        };
+      }),
       6000, null);
   }
 
@@ -527,9 +1160,14 @@ var __nvCastleCryptoJs = (function () {
       '&tmdbId=' + String(tmdbId) +
       '&imdbId=' + encodeURIComponent(meta.imdbId || '') +
       '&enc=2&seed=' + encodeURIComponent(seed);
-    return _fetchX(WINGS_BASE + '/' + serverPath + '?' + params, { headers: WINGS_HEADERS })
-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-      .then(function (txt) {
+    return _fetchX(WINGS_BASE + '/' + serverPath + '?' + params, {
+        headers: WINGS_HEADERS
+      })
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      })
+      .then(function(txt) {
         if (!txt || !txt.length) throw new Error('empty');
         var json = wingsDecrypt(txt, seed, parseInt(tmdbId, 10));
         var obj = JSON.parse(json);
@@ -558,58 +1196,90 @@ var __nvCastleCryptoJs = (function () {
       var tmdbId = parseInt(String(opts.tmdbId || '').replace(/\D/g, ''), 10);
       if (!tmdbId) return Promise.resolve([]);
       var mediaType = opts.mediaType === 'tv' || opts.mediaType === 'series' ? 'tv' : 'movie';
-      return wingsTmdbMeta(tmdbId, mediaType).then(function (meta) {
+      return wingsTmdbMeta(tmdbId, mediaType).then(function(meta) {
         if (!meta || !meta.title) return [];
-        return _fetchX(WINGS_BASE + '/seed?mediaId=' + tmdbId, { headers: WINGS_HEADERS })
-          .then(function (r) {
+        return _fetchX(WINGS_BASE + '/seed?mediaId=' + tmdbId, {
+            headers: WINGS_HEADERS
+          })
+          .then(function(r) {
             if (r.ok) return r.json();
             if (r.status === 429 || r.status === 503) {
               /* seed endpoint rate-limits bursts; on the serialized device bridge
                  the immediate retry lands past the burst window */
-              return _fetchX(WINGS_BASE + '/seed?mediaId=' + tmdbId, { headers: WINGS_HEADERS })
-                .then(function (r2) { return r2.ok ? r2.json() : null; }, function () { return null; });
+              return _fetchX(WINGS_BASE + '/seed?mediaId=' + tmdbId, {
+                  headers: WINGS_HEADERS
+                })
+                .then(function(r2) {
+                  return r2.ok ? r2.json() : null;
+                }, function() {
+                  return null;
+                });
             }
             return null;
           })
-          .then(function (j) {
+          .then(function(j) {
             if (!j || !j.seed) throw new Error('no seed');
             var seed = j.seed;
-            var jobs = WINGS_SERVERS.map(function (sp) {
-              return wingsQueryServer(sp, seed, meta, mediaType, opts.season, opts.episode, tmdbId)
-                .then(function (o) { return o; }, function () { return null; });
+            var jobs = WINGS_SERVERS.map(function(sp) {
+              return wingsQueryServer(sp, seed, meta, mediaType, opts.season, opts.episode,
+                  tmdbId)
+                .then(function(o) {
+                  return o;
+                }, function() {
+                  return null;
+                });
             });
             /* collect PARTIAL results: never gate on the slowest server.
              * undefined = still pending, null = failed, object = success. */
-            return new Promise(function (resolve) {
+            return new Promise(function(resolve) {
               var results = new Array(jobs.length);
               var done = false;
               var t = null;
               if (typeof setTimeout === 'function') {
                 /* device QuickJS ships no timers - guard every timer use */
-                t = setTimeout(function () { if (!done) { done = true; resolve(results); } }, Math.max(6000, timeoutMs - 2500));
+                t = setTimeout(function() {
+                  if (!done) {
+                    done = true;
+                    resolve(results);
+                  }
+                }, Math.max(6000, timeoutMs - 2500));
                 if (t && typeof t.unref === 'function') t.unref();
               }
               var pending = jobs.length;
-              var settle = function () {
-                if (!done) { done = true; if (t) clearTimeout(t); resolve(results); }
+              var settle = function() {
+                if (!done) {
+                  done = true;
+                  if (t) clearTimeout(t);
+                  resolve(results);
+                }
               };
-              jobs.forEach(function (jp, idx) {
-                Promise.resolve(jp).then(function (obj) {
-                  results[idx] = obj; pending--; if (pending <= 0) settle();
-                }, function () {
-                  results[idx] = null; pending--; if (pending <= 0) settle();
+              jobs.forEach(function(jp, idx) {
+                Promise.resolve(jp).then(function(obj) {
+                  results[idx] = obj;
+                  pending--;
+                  if (pending <= 0) settle();
+                }, function() {
+                  results[idx] = null;
+                  pending--;
+                  if (pending <= 0) settle();
                 });
               });
-            }).then(function (results) {
+            }).then(function(results) {
               results = results || [];
               var seen = {};
               var rows = [];
               for (var i = 0; i < results.length; i++) {
                 var obj = results[i];
                 if (!obj) continue;
-                var subs = (obj.subtitles || []).filter(function (s) { return s && s.url; })
-                  .map(function (s) {
-                    return { url: s.url, language: s.lang || s.language || 'en', name: s.language || s.lang || 'English' };
+                var subs = (obj.subtitles || []).filter(function(s) {
+                    return s && s.url;
+                  })
+                  .map(function(s) {
+                    return {
+                      url: s.url,
+                      language: s.lang || s.language || 'en',
+                      name: s.language || s.lang || 'English'
+                    };
                   });
                 var srcs = obj.sources || [];
                 for (var k = 0; k < srcs.length; k++) {
@@ -620,7 +1290,8 @@ var __nvCastleCryptoJs = (function () {
                   var q = wingsNormQuality(src.quality);
                   rows.push({
                     name: label + ' | ' + q,
-                    title: label + ' ' + q + (mediaType === 'tv' ? ' S' + (opts.season || 1) + 'E' + (opts.episode || 1) : ''),
+                    title: label + ' ' + q + (mediaType === 'tv' ? ' S' + (opts.season || 1) +
+                      'E' + (opts.episode || 1) : ''),
                     url: src.url,
                     quality: q,
                     headers: {
@@ -632,20 +1303,28 @@ var __nvCastleCryptoJs = (function () {
                   });
                 }
               }
-              rows.sort(function (a, b) {
-                var order = { '4K': 4, '1440p': 3, '1080p': 2, '720p': 1 };
+              rows.sort(function(a, b) {
+                var order = {
+                  '4K': 4,
+                  '1440p': 3,
+                  '1080p': 2,
+                  '720p': 1
+                };
                 return (order[b.quality] || 0) - (order[a.quality] || 0);
               });
               return rows;
             });
           });
-      }).catch(function () { return []; });
-    } catch (e) { return Promise.resolve([]); }
+      }).catch(function() {
+        return [];
+      });
+    } catch (e) {
+      return Promise.resolve([]);
+    }
   }
 
   if (typeof globalThis !== 'undefined') globalThis.__nvWingsStreams = __nvWingsStreams;
 })();
-
 /* ===== nv-plugins device waterfall merge v2.0.0 (pack 4.37.0, 2026-09-14) ======
    Device truth (NuvioMobile PluginRuntime.kt + quickjs-kt 1.0.5-nuvio AAR):
    no timers in the realm (every Promise.race cap was inert or threw
@@ -656,48 +1335,91 @@ var __nvCastleCryptoJs = (function () {
    v2.0.0: sequential waterfall bounded by fetch count, fail-soft both lanes.
      __WINGS_FIRST = false : native first, WINGS lane as fallback
    ========================================================================== */
-(function () {
+(function() {
   'use strict';
   var __LABEL = 'Castle';
   var __WINGS_FIRST = false;
   var __ALT_NAME = '__nvWingsStreams';
-  function __junk(u) { return /tungtungtungsahur\.cfd|\/api\?d=/i.test(String(u || '')); }
+
+  function __junk(u) {
+    return /tungtungtungsahur\.cfd|\/api\?d=/i.test(String(u || ''));
+  }
   var __orig = null;
-  try { __orig = module.exports && module.exports.getStreams; } catch (e) { __orig = null; }
+  try {
+    __orig = module.exports && module.exports.getStreams;
+  } catch (e) {
+    __orig = null;
+  }
   if (typeof __orig !== 'function') return;
+
   function runAlt(args, self) {
     var f = null;
-    try { f = (typeof globalThis !== 'undefined' && globalThis) ? globalThis[__ALT_NAME] : null; } catch (e) { f = null; }
+    try {
+      f = (typeof globalThis !== 'undefined' && globalThis) ? globalThis[__ALT_NAME] : null;
+    } catch (e) {
+      f = null;
+    }
     if (typeof f !== 'function') return Promise.resolve([]);
     try {
-      var r = f({ tmdbId: args[0], mediaType: args[1], season: args[2], episode: args[3], label: __LABEL });
-      return Promise.resolve(r).then(function (v) { return Array.isArray(v) ? v : []; }, function () { return []; });
-    } catch (e) { return Promise.resolve([]); }
+      var r = f({
+        tmdbId: args[0],
+        mediaType: args[1],
+        season: args[2],
+        episode: args[3],
+        label: __LABEL
+      });
+      return Promise.resolve(r).then(function(v) {
+        return Array.isArray(v) ? v : [];
+      }, function() {
+        return [];
+      });
+    } catch (e) {
+      return Promise.resolve([]);
+    }
   }
+
   function runNative(args, self) {
     try {
       var r = __orig.apply(self, args);
-      return Promise.resolve(r).then(function (v) { return Array.isArray(v) ? v : []; }, function () { return []; });
-    } catch (e) { return Promise.resolve([]); }
+      return Promise.resolve(r).then(function(v) {
+        return Array.isArray(v) ? v : [];
+      }, function() {
+        return [];
+      });
+    } catch (e) {
+      return Promise.resolve([]);
+    }
   }
-  module.exports.getStreams = function () {
-    var args = Array.prototype.slice.call(arguments), self = this;
+  module.exports.getStreams = function() {
+    var args = Array.prototype.slice.call(arguments),
+      self = this;
+
     function clean(v) {
-      var seen = {}, out = [];
-      (v || []).forEach(function (r) {
+      var seen = {},
+        out = [];
+      (v || []).forEach(function(r) {
         if (!r || !r.url || __junk(r.url)) return;
         var k = String(r.url);
         if (seen[k]) return;
-        seen[k] = 1; out.push(r);
+        seen[k] = 1;
+        out.push(r);
       });
       return out;
     }
-    function laneA() { return __WINGS_FIRST ? runAlt(args, self) : runNative(args, self); }
-    function laneB() { return __WINGS_FIRST ? runNative(args, self) : runAlt(args, self); }
-    return Promise.resolve().then(laneA).then(function (rows) {
+
+    function laneA() {
+      return __WINGS_FIRST ? runAlt(args, self) : runNative(args, self);
+    }
+
+    function laneB() {
+      return __WINGS_FIRST ? runNative(args, self) : runAlt(args, self);
+    }
+    return Promise.resolve().then(laneA).then(function(rows) {
       rows = clean(rows);
       if (rows.length) return rows;
-      return Promise.resolve().then(laneB).then(function (rows2) { return clean(rows2); });
+      return Promise.resolve().then(laneB).then(function(rows2) {
+        return clean(rows2);
+      });
     });
   };
 })();
