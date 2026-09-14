@@ -1,3 +1,65 @@
+/* nv-plugins pack 4.37.0 (2026-09-14): device-fidelity fix. The Nuvio QuickJS realm ships NO timers - every unguarded setTimeout race in 4.33.0-4.36.0 (wings _race, wings partial collector, merge-wrapper cap(), native lanes, light deadline wrappers) threw ReferenceError on device and returned 0 rows on every call. All sites are guarded now and the merge wrapper is a fetch-count-bounded waterfall (verified WINGS text lane first/fallback + native lane, fail-soft, URL-deduped). Pure-JS polyfills for atob/URLSearchParams attached.
+ */
+/* ===== nv-plugins device polyfills v1.0.0 (pack 4.37.0, 2026-09-14) ============
+   The Nuvio QuickJS plugin runtime (quickjs-kt 1.0.5-nuvio AAR) is a bare
+   ES2020 realm: no atob/btoa, no URLSearchParams, no TextDecoder, no timers.
+   These polyfills are define-only-if-missing, so node/desktop runtimes are
+   completely unaffected. ==================================================== */
+(function () {
+  var G = typeof globalThis !== 'undefined' ? globalThis : (typeof global !== 'undefined' ? global : this);
+  if (typeof G.atob !== 'function') {
+    var _CH = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    G.atob = function (s) {
+      s = String(s).replace(/[^A-Za-z0-9+\/]/g, '');
+      var out = '', bits = 0, acc = 0, i;
+      for (i = 0; i < s.length; i++) {
+        acc = (acc << 6) | _CH.indexOf(s.charAt(i));
+        bits += 6;
+        if (bits >= 8) { bits -= 8; out += String.fromCharCode((acc >> bits) & 0xff); }
+      }
+      return out;
+    };
+  }
+  if (typeof G.btoa !== 'function') {
+    var _CH2 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    G.btoa = function (s) {
+      s = String(s);
+      var out = '', i;
+      for (i = 0; i < s.length; i += 3) {
+        var b0 = s.charCodeAt(i), b1 = s.charCodeAt(i + 1), b2 = s.charCodeAt(i + 2);
+        var has1 = !(i + 1 >= s.length || isNaN(b1)), has2 = !(i + 2 >= s.length || isNaN(b2));
+        out += _CH2.charAt(b0 >> 2);
+        out += _CH2.charAt(((b0 & 3) << 4) | (has1 ? b1 >> 4 : 0));
+        out += has1 ? _CH2.charAt(((b1 & 15) << 2) | (has2 ? b2 >> 6 : 0)) : '=';
+        out += has2 ? _CH2.charAt(b2 & 63) : '=';
+      }
+      return out;
+    };
+  }
+  if (typeof G.URLSearchParams !== 'function') {
+    var USP = function (init) {
+      this._m = {};
+      if (init && typeof init === 'object') {
+        for (var k in init) if (Object.prototype.hasOwnProperty.call(init, k)) this._m[k] = [String(init[k])];
+      }
+    };
+    USP.prototype.append = function (k, v) { (this._m[k] = this._m[k] || []).push(String(v)); };
+    USP.prototype.set = function (k, v) { this._m[k] = [String(v)]; };
+    USP.prototype.get = function (k) { var a = this._m[k]; return a && a.length ? a[0] : null; };
+    USP.prototype.has = function (k) { return Object.prototype.hasOwnProperty.call(this._m, k); };
+    USP.prototype.toString = function () {
+      var out = [];
+      for (var k in this._m) {
+        if (!Object.prototype.hasOwnProperty.call(this._m, k)) continue;
+        var vs = this._m[k];
+        for (var i = 0; i < vs.length; i++)
+          out.push(encodeURIComponent(k).replace(/%20/g, '+') + '=' + encodeURIComponent(vs[i]).replace(/%20/g, '+'));
+      }
+      return out.join('&');
+    };
+    G.URLSearchParams = USP;
+  }
+})();
 /* nv-plugins vidlink.js v1.5.0 (pack 4.33.0, 2026-09-13): playback fix - the vidlink media CDN (bcdnxw.hakunaymatata.com) 429s "vidlink.pro" referers; per the API each quality carries its own filmboom.top referer, now applied. Plus the 4.33.0 verified WINGS lane appended as an independent fallback lane. */
 /* ============================================================
  * nv-plugins WINGS lane v1.0.0 (pack 4.33.0, 2026-09-13)
@@ -150,6 +212,10 @@
     return f(url, opts);
   }
   function _race(p, ms, fallback) {
+    if (typeof setTimeout !== 'function') {
+      /* device QuickJS ships no timers - the timer leg must never throw */
+      return Promise.resolve(p).then(function (v) { return v; }, function () { return fallback; });
+    }
     return new Promise(function (resolve) {
       var done = false;
       var t = setTimeout(function () { if (!done) { done = true; resolve(fallback); } }, ms);
@@ -222,7 +288,16 @@
       return wingsTmdbMeta(tmdbId, mediaType).then(function (meta) {
         if (!meta || !meta.title) return [];
         return _fetchX(WINGS_BASE + '/seed?mediaId=' + tmdbId, { headers: WINGS_HEADERS })
-          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (r) {
+            if (r.ok) return r.json();
+            if (r.status === 429 || r.status === 503) {
+              /* seed endpoint rate-limits bursts; on the serialized device bridge
+                 the immediate retry lands past the burst window */
+              return _fetchX(WINGS_BASE + '/seed?mediaId=' + tmdbId, { headers: WINGS_HEADERS })
+                .then(function (r2) { return r2.ok ? r2.json() : null; }, function () { return null; });
+            }
+            return null;
+          })
           .then(function (j) {
             if (!j || !j.seed) throw new Error('no seed');
             var seed = j.seed;
@@ -235,8 +310,12 @@
             return new Promise(function (resolve) {
               var results = new Array(jobs.length);
               var done = false;
-              var t = setTimeout(function () { if (!done) { done = true; resolve(results); } }, Math.max(6000, timeoutMs - 2500));
-              if (t && typeof t.unref === 'function') t.unref();
+              var t = null;
+              if (typeof setTimeout === 'function') {
+                /* device QuickJS ships no timers - guard every timer use */
+                t = setTimeout(function () { if (!done) { done = true; resolve(results); } }, Math.max(6000, timeoutMs - 2500));
+                if (t && typeof t.unref === 'function') t.unref();
+              }
               var pending = jobs.length;
               var settle = function () {
                 if (!done) { done = true; if (t) clearTimeout(t); resolve(results); }
@@ -1002,71 +1081,59 @@ module.exports = { getStreams };
   }
 })();
 
-/* ===== nv 4.33.0 verified-lane merge (auto-injected) ==================
-   Adds an independent, live-verified extraction lane beside the native one.
-   Policy: native rows first (headers fixed), WINGS rows after
-   - Junk VidAPI relay rows (tungtungtungsahur.cfd YT-rip lane) are dropped.
-   - Never rejects; every lane is capped; QuickJS-safe (no AbortController). */
+
+/* ===== nv-plugins device waterfall merge v2.0.0 (pack 4.37.0, 2026-09-14) ======
+   Device truth (NuvioMobile PluginRuntime.kt + quickjs-kt 1.0.5-nuvio AAR):
+   no timers in the realm (every Promise.race cap was inert or threw
+   ReferenceError), each fetch is one BLOCKING host call (lanes run
+   sequentially regardless of Promise.all), app kills the call at 60s. The
+   old 4.33.0 merge ran BOTH lanes on every call and its cap() called
+   setTimeout DIRECTLY -> the whole provider rejected -> 0 rows.
+   v2.0.0: sequential waterfall bounded by fetch count, fail-soft both lanes.
+     __WINGS_FIRST = false : native first, WINGS lane as fallback
+   ========================================================================== */
 (function () {
   'use strict';
   var __LABEL = 'Vidlink';
-  var __ALT_FIRST = false;
-  var __DROP_JUNK = true;
+  var __WINGS_FIRST = false;
   var __ALT_NAME = '__nvWingsStreams';
-  var __ALT_CAP = 20000;
-  var __NATIVE_CAP = 20000;
   function __junk(u) { return /tungtungtungsahur\.cfd|\/api\?d=/i.test(String(u || '')); }
   var __orig = null;
   try { __orig = module.exports && module.exports.getStreams; } catch (e) { __orig = null; }
   if (typeof __orig !== 'function') return;
+  function runAlt(args, self) {
+    var f = null;
+    try { f = (typeof globalThis !== 'undefined' && globalThis) ? globalThis[__ALT_NAME] : null; } catch (e) { f = null; }
+    if (typeof f !== 'function') return Promise.resolve([]);
+    try {
+      var r = f({ tmdbId: args[0], mediaType: args[1], season: args[2], episode: args[3], label: __LABEL });
+      return Promise.resolve(r).then(function (v) { return Array.isArray(v) ? v : []; }, function () { return []; });
+    } catch (e) { return Promise.resolve([]); }
+  }
+  function runNative(args, self) {
+    try {
+      var r = __orig.apply(self, args);
+      return Promise.resolve(r).then(function (v) { return Array.isArray(v) ? v : []; }, function () { return []; });
+    } catch (e) { return Promise.resolve([]); }
+  }
   module.exports.getStreams = function () {
     var args = Array.prototype.slice.call(arguments), self = this;
-    function cap(p, ms) {
-      return new Promise(function (res) {
-        var done = false;
-        var t = setTimeout(function () { if (!done) { done = true; res([]); } }, ms);
-        if (t && typeof t.unref === 'function') t.unref();
-        Promise.resolve(p).then(function (v) {
-          if (!done) { done = true; if (t) clearTimeout(t); res(Array.isArray(v) ? v : []); }
-        }, function () {
-          if (!done) { done = true; if (t) clearTimeout(t); res([]); }
-        });
-      });
-    }
-    function runNative() {
-      try {
-        var r = __orig.apply(self, args);
-        return Promise.resolve(r).then(function (v) { return Array.isArray(v) ? v : []; }, function () { return []; });
-      } catch (e) { return Promise.resolve([]); }
-    }
-    function runAlt() {
-      var f = null;
-      try { f = (typeof globalThis !== 'undefined' && globalThis) ? globalThis[__ALT_NAME] : null; } catch (e) { f = null; }
-      if (typeof f !== 'function') return Promise.resolve([]);
-      try {
-        var r = (__ALT_NAME === '__nvWingsStreams')
-          ? f({ tmdbId: args[0], mediaType: args[1], season: args[2], episode: args[3], label: __LABEL })
-          : f(args[0], args[1], args[2], args[3]);
-        return Promise.resolve(r).then(function (v) { return Array.isArray(v) ? v : []; }, function () { return []; });
-      } catch (e) { return Promise.resolve([]); }
-    }
-    var natP = cap(runNative(), __NATIVE_CAP);
-    var altP = cap(runAlt(), __ALT_CAP);
-    return Promise.all([natP, altP]).then(function (rs) {
-      var nat = rs[0] || [], alt = rs[1] || [];
-      if (__DROP_JUNK) nat = nat.filter(function (r) { return r && r.url && !__junk(r.url); });
-      alt = alt.filter(function (r) { return r && r.url && !__junk(r.url); });
+    function clean(v) {
       var seen = {}, out = [];
-      var order = __ALT_FIRST ? [alt, nat] : [nat, alt];
-      for (var i = 0; i < order.length; i++) {
-        for (var k = 0; k < order[i].length; k++) {
-          var r = order[i][k];
-          if (!r || !r.url || seen[r.url]) continue;
-          seen[r.url] = 1; out.push(r);
-        }
-      }
+      (v || []).forEach(function (r) {
+        if (!r || !r.url || __junk(r.url)) return;
+        var k = String(r.url);
+        if (seen[k]) return;
+        seen[k] = 1; out.push(r);
+      });
       return out;
+    }
+    function laneA() { return __WINGS_FIRST ? runAlt(args, self) : runNative(args, self); }
+    function laneB() { return __WINGS_FIRST ? runNative(args, self) : runAlt(args, self); }
+    return Promise.resolve().then(laneA).then(function (rows) {
+      rows = clean(rows);
+      if (rows.length) return rows;
+      return Promise.resolve().then(laneB).then(function (rows2) { return clean(rows2); });
     });
   };
 })();
-

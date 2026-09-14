@@ -4,6 +4,23 @@ Clean Nuvio provider collection migrated from the canonical NVV provider set.
 
 The import workflow keeps only the canonical provider implementations registered in `manifest.json`.
 
+## v4.37.0 — 12-PROVIDER DEVICE-FIDELITY FIX (the cinejoy v3 treatment, everywhere)
+
+**Device report:** vidlove, vidlink, vidfast, videasy, peachify, cinefreak, cineby, castle, cinemacity, moviebox, movieshunt and moviesdrive all showed 0 streams on device while torrents (and cinejoy after 4.36.0) worked. The 4.36.0 root-cause audit applies to every one of them: the QuickJS realm ships **no timers**, and every 4.33.0-era lane wrapper called `setTimeout` directly — wings `_race`, the wings partial collector, the merge-wrapper `cap()`, several native lanes (vidlove 6.2s race, videasy 9s race + 20s light cap, cinefreak/movieshunt/moviesdrive fetch reject-races, the vidfast/peachify/moviebox origFast race, castle/videasy light deadline wrappers), plus `atob`/`URLSearchParams`/`require("crypto-js")` gaps. Each one threw `ReferenceError` inside a promise executor on device → rejection → **0 rows on every call**.
+
+**Fix (all 12 files):**
+- Every unguarded timer site guarded (`typeof setTimeout`); on device caps become settle-based, bounded by fetch count instead.
+- Device polyfill preamble: pure-JS `atob`/`btoa` + `URLSearchParams` (define-only-if-missing; node unchanged).
+- The 4.33.0 merge wrapper replaced with a **device waterfall**: verified WINGS text lane first (vidlove, vidfast, peachify, cinefreak, moviebox, movieshunt, moviesdrive), native lane only as fallback; native-first with WINGS fallback for vidlink (its own API is alive), cinemacity (Tagalog identity preserved), videasy, cineby, castle. Fail-soft both lanes, URL-deduped, junk VidAPI relay rows dropped.
+- videasy: seed 429/503 single retry + WINGS second lane (its own tejo/neon2/ym/mb-flix fleet kept first).
+- cineby + castle + videasy: verified WINGS lane added as an independent second lane.
+- castle: self-contained **pure-JS AES-CBC crypto-js shim** replaces `require("crypto-js")` (device has no require) — search/details decrypt verified against the live API; movies (Fight Club, Inception, Oppenheimer) resolve natively, TV/newest titles fall back to WINGS.
+- wings lanes: seed-endpoint 429/503 single retry.
+
+**Device-fidelity verification (no timers, no atob/URLSearchParams, serialized blocking fetch, 700ms/call):** 24/24 PASS — all 12 providers × both user titles (TMDB 969681 movie: 1-4 rows each in 3-9 fetches; Silo S1E1 TV: 1-6 rows incl 4K). Typical call = 5 fetches ≈ 5s.
+
+Untouched per standing rule: kisskh, asianhub, pinoyhub, tagalogtorrents, miruro, pencuri, netmirror (English-only, 74,735B sentinel).
+
 ## v4.34.0 — CINEJOY RE-ADDED as v2.0.0 hybrid (zero-config universal lanes)
 
 User request: bring cinejoy back, using github.com/jamilkj18434-boop/CineJoyScraper as a working reference. That repo (Playwright driving cinejoy.to + m3u8 interception) proves the site is alive. A headless-browser trace plus a from-Node chain replay confirmed the full picture on 2026-09-14: cinejoy.to is up; the player decrypts via api.shegu.st/crush.wasm and POSTs api.shegu.st/g (binary request AND response); the provider's native chain replays perfectly from Node (servers 8x ok -> enc-cinejoy -> binary /g 200 -> dec-cinejoy -> real HLS on info.movieboxnoob.cc); /g REJECTS text bodies (404), so the binary leg is mandatory and NuvioMobile (UTF-8 string-only bridge) can never use it without the user's worker relay.
