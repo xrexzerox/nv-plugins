@@ -1,5 +1,36 @@
 # NV Plugins
 
+## v4.43.0 (2026-09-15) - eclipsia swap-in (13 replaced, 10 added; 32 -> 42 providers)
+
+User directive: replace the listed providers with the codeberg eclipsia/nuvio-plugin sources and
+add the ones that do not exist yet, all device-killer-free, all readable like netmirror.js, with
+English/Tagalog subtitles surfaced and dual-audio labels kept.
+
+- Replaced (13): anikototv (zyrvael), playimdb (zevran), purstream (wrenok), moviesdrive (vornix),
+  cinemacity (svartok - same Tagalog/Filipino upstream), vidfast (nyxora), cinefreak (novus),
+  moviebox (mavonyx), movieshunt (kryxalia), castle (karnis), movieblast (jyniq), 4khdhub (hexion),
+  vidlink (haylox).
+- Added (10): bingr (xandril), vegamovies (solunix), showbox (pynvix - needs a FebBox uiToken in
+  settings), reanime (praxiel), animeworld (onyxia), vidcore (lenyr), animesalt (gravix),
+  vidking (fendrix), vidrock (evyrith), ctgmovies (durnel).
+- Device fixes (the only deviations from the eclipsia sources): guarded globalThis.atob;
+  require("crypto-js") -> embedded pure-JS crypto (castle AES subset device-proven since 4.39;
+  movieblast HMAC-SHA256 and showbox TripleDES-CBC parity-verified against node:crypto);
+  require("cheerio") -> embedded nv cheerio-lite v2 (parity-tested against real cheerio on every
+  selector these files use); URLSearchParams -> nvQs; TextDecoder -> nvUtf8Decode; retry sleeps
+  guarded (realm timers optional). Also repaired 7 corrupted a-href selectors in the eclipsia
+  sources themselves - those lanes silently returned nothing even upstream.
+- Subtitles: pass through exactly as upstream emits them (English/Tagalog kept when provided);
+  dual-audio rows keep their language labels (ctgmovies, animesalt, animeworld, moviebox dubs).
+- Sandbox (datacenter IP): 50/50 calls fail-soft, 0 crashes/timeouts; live rows from playimdb,
+  bingr, purstream, vidfast (2160p), movieblast, 4khdhub (4K), vidlink, vidking, animeworld.
+  Empty-from-datacenter lanes are the documented DC blocklist pattern - retail/device IPs reach
+  the same upstreams directly (device-verified in earlier rounds).
+- Untouched (byte-identical to 4.42.0, md5-verified in the package step): netmirror (verbatim
+  soryn), torrents/torrentio merge + seeders>=5 floor, kisskh, asianhub, pinoyhub,
+  tagalogtorrents, cinejoy, miruro, pencuri, nakios, topcartoons, animotvslash, hdhub4u,
+  videasy, vidlove, peachify, cineby, fibwatch, xpass.
+
 ## v4.42.0 (2026-09-15) - netmirror v17.0.0 "verbatim pasted code"
 
 User directive: "please replace netmirror with pasted code" - the pasted readable netmirror
