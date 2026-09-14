@@ -1,5 +1,41 @@
 # NV Plugins
 
+## v4.40.0 (2026-09-14) - "ALL PROVIDERS READABLE" - 16 providers rebuilt clean, zero device killers
+
+User directive: "i want all providers readable and no device killer fix them all", with the
+eclipsia/nuvio-plugin repo (Codeberg) as the readability reference (soryn.js = Netmirror).
+
+16 unreadable providers were fully rebuilt with semantic names, machine code (vNNN / _0x)
+eliminated from the entire pack:
+
+- netmirror v15.0.0 - soryn-style flat rebuild: Alpha (user-validated) + net27 + NewTV lanes
+  kept, VidSpark relay lane dropped (the on-device-failing relay class the user already
+  rejected); English-only + all caps intact. 74,735B -> 59,339B.
+- Eclipsia-based ports: castle v6.0.0 (karnis flow + the device-proven pure-JS castle AES
+  crypto + WINGS), movieshunt v6.0.0 (kryxalia + WINGS), moviesdrive v6.0.0 (vornix,
+  cheerio -> pure-JS loader), cinefreak v6.0.0 (novus, cheerio -> pure-JS loader),
+  moviebox v6.0.0 (mavonyx + timer-guarded retries + pure-JS HMAC-MD5), movieblast v5.0.0
+  (jyniq + pure-JS HMAC-SHA256, node:crypto parity-verified), hdhub4u v5.0.0 (hexion),
+  anikototv v8.0.0 (zyrvael + device-proven AES for the encrypted current API).
+- Hand rebuilds from v1.7.0 lineage: playimdb v6.0.0 (zevran/VAplayer port), cineby v7.0.0
+  (mvm1 keystream cipher named + fixed single-url branch bug), vidlove v7.0.0 (fixed the
+  undefined apQualityToStream() that silently killed single-url sources), videasy v7.0.0
+  (10-server fan, shared mvm1 cipher), peachify v6.0.0 (verbatim NIST-verified AES-GCM
+  machinery + clean flow), fibwatch v5.0.0 (regex parsing replaces cheerio-without-node-native
+  - a silent device zero-row killer), nakios v2.0.0 (French-market source, VF/MULTI/VOSTFR).
+
+Verification: node --check all 32; strict device-fidelity sandbox (bare QuickJS realm, no
+timers/atob/URLSearchParams, serialized 700ms fetches) - 10 PASS, 6 EMPTY-UPSTREAM with zero
+killer signatures (playimdb/fibwatch/nakios/movieblast/hdhub4u/anikototv upstreams rate-limit
+datacenter IPs; all returned live rows in the open-network tests). Live regression titles:
+TMDB 969681 (movie) and 125988 S1E1 (tv) both return rows from the rebuilt lanes.
+The other 16 providers are BYTE-IDENTICAL to 4.39.0 (verified md5): kisskh, asianhub,
+pinoyhub, tagalogtorrents, miruro, pencuri, cinemacity (Tagalog/Filipino), netmirror-exempt
+list intact, torrents/torrentio merge filters untouched.
+
+USER ACTION: upload this zip's contents to GitHub, then in Nuvio REMOVE + RE-ADD the plugins
+to evict cached JS. No CF worker redeploy needed.
+
 ## v4.39.0 (2026-09-14) - FULL device-killer sweep (all 32 providers audited)
 
 Every provider was audited two ways: (1) a static sweep for the known device-killer

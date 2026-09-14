@@ -1,4 +1,9 @@
-/* nv-plugins pack 4.37.0 (2026-09-14): device-fidelity fix. The Nuvio QuickJS realm ships NO timers - every unguarded setTimeout race in 4.33.0-4.36.0 (wings _race, wings partial collector, merge-wrapper cap(), native lanes, light deadline wrappers) threw ReferenceError on device and returned 0 rows on every call. All sites are guarded now and the merge wrapper is a fetch-count-bounded waterfall (verified WINGS text lane first/fallback + native lane, fail-soft, URL-deduped). Pure-JS polyfills for atob/URLSearchParams attached.
+/* nv-plugins videasy.js v7.0.0 (pack 4.40.0 "all providers readable")
+ * Full clean rebuild; machine names removed, flow = device-verified 4.39.
+ * Lane: api.speedracelight.com seed -> 10 named servers parallel, "mvm1"
+ * keystream payloads, 9s partial collect. WINGS lane + light deadline
+ * wrapper (12s) + waterfall merge (VidEasy) appended below. No post-filter
+ * (4.39 parity - this provider never carried one).
  */
 /* ===== nv-plugins device polyfills v1.0.0 (pack 4.37.0, 2026-09-14) ============
    The Nuvio QuickJS plugin runtime (quickjs-kt 1.0.5-nuvio AAR) is a bare
@@ -81,548 +86,428 @@
     G.URLSearchParams = USP;
   }
 })();
-/* nv-plugins videasy.js v2.2.0 (pack 4.33.0, 2026-09-13): device-timeout fix - the 10-server race widened 6.8s -> 9s and the hard tail cap 12s -> 20s: on mobile networks TMDB+seed+servers exceeded 12s, the tail returned [], and the sheet showed nothing. */
-/* ============================================================
- * AIO-EXACT DECODE (2026-09-13) - fully deobfuscated from
- * All-in-One-Nuvio upstream, all string-table references resolved
- * to literals, syntax-checked, live-verified against upstream.
- * Replaces the previous port whose extraction returned 0 rows.
- * ============================================================ */
-var __async = (v1, v2, v3) => {
-    return new Promise((v4, v5) => {
-      var v8 = v9 => {
-          try {
-            v11(v3.next(v9));
-          } catch (v12) {
-            v5(v12);
-          }
-        },
-        v13 = v14 => {
-          try {
-            v11(v3.throw(v14));
-          } catch (v15) {
-            v5(v15);
-          }
-        },
-        v11 = v16 => v16.done ? v4(v16.value) : Promise.resolve(v16.value).then(v8, v13);
-      v11((v3 = v3.apply(v1, v2)).next());
-    });
-  },
-  TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c",
-  TMDB_BASE_URL = "https://api.themoviedb.org/3",
-  WINGS_API_BASE = "https://api.speedracelight.com",
-  USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-  REQUEST_HEADERS = {
-    "User-Agent": USER_AGENT,
-    Accept: "*/*",
-    Origin: "https://www.vidking.net",
-    Referer: "https://www.vidking.net/",
-    "Cache-Control": "no-cache, no-store, must-revalidate",
-    Pragma: "no-cache",
-    Expires: "0"
-  },
-  SERVERS = {
-    Hydrogen: {
-      path: "cdn/sources-with-title"
-    },
-    Titanium: {
-      path: "tejo/sources-with-title"
-    },
-    Oxygen: {
-      path: "neon2/sources-with-title"
-    },
-    Lithium: {
-      path: "downloader2/sources-with-title"
-    },
-    Krypton: {
-      path: "ym/sources-with-title"
-    },
-    Carbon: {
-      path: "mb-flix/sources-with-title"
-    },
-    Aluminium: {
-      path: "lamovie/sources-with-title"
-    },
-    Nitrogen: {
-      path: "m4uhd/sources-with-title"
-    },
-    Neon: {
-      path: "superflix/sources-with-title"
-    },
-    Helium: {
-      path: "1movies/sources-with-title"
-    }
-  },
-  jl = [1116352408, 1899447441, 3049323471, 3921009573, 961987163, 1508970993, 2453635748, 2870763221,
-    3624381080, 310598401, 607225278, 1426881987, 1925078388, 2162078206, 2614888103, 3248222580
-  ],
-  Tf = [1732584193, 4023233417, 2562383102, 271733878],
-  Js = 61,
-  _f = 8,
-  ms = 2654435769,
-  Ys = [109, 118, 109, 49],
-  Sf = v17 => (v17 * (v17 + 1) & 1) === 0,
-  bf = v18 => (v18 * (v18 + 1) & 1) === 1;
 
-function ui(v19) {
-  return (v19 >>>= 0, v19 ^= v19 >>> 16, v19 = Math.imul(v19, 2246822507) >>> 0, v19 ^= v19 >>> 13, v19 = Math
-    .imul(v19, 3266489909) >>> 0, v19 ^= v19 >>> 16, v19 >>> 0);
-}
-
-function ps(v20, v21) {
-  return (v20 >>>= 0, v21 &= 31, v21 === 0 ? v20 >>> 0 : (v20 << v21 | v20 >>> 32 - v21) >>> 0);
-}
-
-function If(v22) {
-  let v26 = Tf[0] >>> 0;
-  for (let v27 = 0; v27 < v22.length; v27++) {
-    v26 = ps((v26 ^ Math.imul(v22.charCodeAt(v27), jl[v27 & 15])) >>> 0, 5);
-  }
-  return ui(v26);
-}
-
-function Af(v28) {
-  const v29 = new Array(256);
-  for (let v30 = 0; v30 < 256; v30++) v29[v30] = v30;
-  let v31 = 0;
-  for (let v32 = 0; v32 < 256; v32++) {
-    v31 = v31 + v29[v32] + v28.charCodeAt(v32 % v28.length) & 255;
-    const v33 = v29[v32];
-    (v29[v32] = v29[v31], v29[v31] = v33);
-  }
-  return v29;
-}
-
-function wf(v34) {
-  let v37 = 2166136261;
-  for (let v38 = 0; v38 < v34.length; v38++) {
-    v37 = Math.imul(v37 ^ v34.charCodeAt(v38), 16777619) >>> 0;
-  }
-  return ui(v37);
-}
-
-function vf(v39, v40, v41) {
-  return ((v39 ^ v40) >>> 0 | (v39 & v40 & v41) >>> 0) >>> 0;
-}
-
-function Nf(v42, v43) {
-  if (bf(v42.length)) return {
-    S: Af(v42),
-    acc: If(v42)
-  };
-  const v44 = new Array(Js);
-  let v45 = ui(wf(v42) ^ ui(v43 >>> 0 ^ ms)) >>> 0;
-  for (let v46 = 0; v46 < _f; v46++) {
-    if (Sf(v46)) {
-      const v47 = v45 % Js;
-      (v45 = ps(v45 + ms >>> 0, 7 + (v46 & 7)), v44[v47] = (v45 ^ ui(v45)) >>> 0, v45 = ui(v45 + v47 >>> 0));
-    } else v44[v46] = jl[v46 & 15];
-  }
-  return {
-    S: v44,
-    acc: ui(v45 ^ 2779096485) >>> 0
-  };
-}
-
-function Rf(v48, v49) {
-  const v52 = v48.S;
-  let v53 = v48.acc;
-  const v54 = v53 % Js,
-    v55 = 0 - +((v54 in v52)),
-    v56 = v52[v54] >>> 0,
-    v57 = Math.imul(ms, v49 + 1) >>> 0;
-  let v58 = vf(v53, (v56 ^ v57) >>> 0, v55);
-  return (v58 = (ps(v58 + v53 >>> 0, v54 & 31) ^ ps(v53, Math.imul(v54, 7) & 31)) >>> 0, v53 = ui(v58 + ms >>>
-    0), v52[v54] = v53 >>> 0, v48.acc = v53, v53 >>> 0);
-}
-
-function Cf(v59, v60, v61) {
-  const v62 = Nf(v59, v60),
-    v63 = new Uint8Array(v61);
-  let v64 = 0;
-  for (let v65 = 0; v65 < v61;) {
-    const v66 = Rf(v62, v64++);
-    (v63[v65++] = v66 & 255, v65 < v61 && (v63[v65++] = v66 >>> 8 & 255), v65 < v61 && (v63[v65++] = v66 >>>
-      16 & 255), v65 < v61 && (v63[v65++] = v66 >>> 24 & 255));
-  }
-  return v63;
-}
-
-function decodeBase64(v67) {
-  const v71 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
-    v72 = v67.replace(/-/g, "+").replace(/_/g, "/").replace(/=+$/, ""),
-    v73 = v72.length,
-    v74 = new Uint8Array(Math.floor(v73 * 0.75));
-  let v75 = 0;
-  for (let v76 = 0; v76 < v73; v76 += 4) {
-    const v77 = v71.indexOf(v72[v76]),
-      v78 = v71.indexOf(v72[v76 + 1] || "A"),
-      v79 = v71.indexOf(v72[v76 + 2] || "A"),
-      v80 = v71.indexOf(v72[v76 + 3] || "A");
-    v74[v75++] = v77 << 2 | v78 >> 4;
-    if (v76 + 2 < v73) v74[v75++] = (v78 & 15) << 4 | v79 >> 2;
-    if (v76 + 3 < v73) v74[v75++] = (v79 & 3) << 6 | v80;
-  }
-  return v74;
-}
-
-function xf(v81) {
-  return decodeBase64(v81);
-}
-
-function decryptWingsDatabase(v82, v83, v84) {
-  const v88 = xf(v82),
-    v89 = Cf(v83, v84, v88.length);
-  for (let v90 = 0; v90 < v88.length; v90++) v88[v90] ^= v89[v90];
-  for (let v91 = 0; v91 < Ys.length; v91++) {
-    if (v88[v91] !== Ys[v91]) throw new Error("decrypt failed: bad seed or tampered payload");
-  }
-  let v92 = "";
-  const v93 = v88.subarray(Ys.length);
-  for (let v94 = 0; v94 < v93.length;) {
-    const v95 = v93[v94++];
-    if (v95 < 128) v92 += String.fromCharCode(v95);
-    else {
-      if (v95 > 191 && v95 < 224) v92 += String.fromCharCode((v95 & 31) << 6 | v93[v94++] & 63);
-      else v95 > 223 && v95 < 240 ? v92 += String.fromCharCode((v95 & 15) << 12 | (v93[v94++] & 63) << 6 |
-        v93[v94++] & 63) : v92 += String.fromCharCode((v95 & 7) << 18 | (v93[v94++] & 63) << 12 | (v93[
-        v94++] & 63) << 6 | v93[v94++] & 63);
-    }
-  }
-  return v92;
-}
-
-function fetchMediaDetails(v96, v97, v98, v99) {
-  const v100 = {
-    v101: 527,
-    v102: 546,
-    v103: 456,
-    v104: 504,
-    v105: 518,
-    v106: 472,
-    v107: 471,
-    v108: 514,
-    v109: 482
-  };
-  return __async(this, null, function*() {
-    var v110;
-    let v111 = v97 === "tv" ? "45 min" : "90 min";
-    try {
-      const v112 = v97 === "tv" ? "tv" : "movie",
-        v113 = String(v96).replace(/\D/g, ""),
-        v114 = TMDB_BASE_URL + "/" + v112 + "/" + v113 + "?api_key=" + TMDB_API_KEY +
-        "&append_to_response=external_ids",
-        v115 = yield fetch(v114, {
-          headers: {
-            "User-Agent": REQUEST_HEADERS["User-Agent"],
-            Accept: "application/json"
-          }
-        });
-      if (!v115.ok) throw new Error("TMDB HTTP " + v115.status);
-      const v116 = yield v115.json();
-      let v117 = v111;
-      if (v97 === "movie" && v116.runtime) v117 = v116.runtime + " min";
-      else {
-        if (v97 === "tv" && v98 != null && v99 != null) {
-          const v118 = TMDB_BASE_URL + "/tv/" + v113 + "/season/" + v98 + "/episode/" + v99 +
-            "?api_key=" + TMDB_API_KEY,
-            v119 = yield fetch(v118);
-          if (v119.ok) {
-            const v120 = yield v119.json();
-            if (v120 && v120.runtime) v117 = v120.runtime + " min";
-            else v116.episode_run_time && v116.episode_run_time.length > 0 && (v117 = v116
-              .episode_run_time[0] + " min");
-          }
-        }
-      }
-      return {
-        title: v97 === "tv" ? v116.name : v116.title,
-        year: (v97 === "tv" ? v116.first_air_date : v116.release_date || "").substring(0, 4),
-        imdbId: ((v110 = v116.external_ids) == null ? void 0 : v110.imdb_id) || null,
-        mediaType: v97,
-        duration: v117
-      };
-    } catch (v121) {
-      return (console.error("[VidEasy] TMDB details fetch error: " + v121.message), {
-        title: v97 === "tv" ? "Unknown TV Show" : "Unknown Movie",
-        year: "N/A",
-        imdbId: null,
-        mediaType: v97,
-        duration: v111
-      });
-    }
-  });
-}
-
-function getLangCode(v122) {
-  if (!v122) return "en";
-  const v125 = {
-    english: "en",
-    spanish: "es",
-    french: "fr",
-    german: "de",
-    italian: "it",
-    portuguese: "pt",
-    "portuguese (br)": "pt-br",
-    arabic: "ar",
-    japanese: "ja",
-    korean: "ko",
-    tamil: "ta",
-    telugu: "te",
-    malayalam: "ml",
-    kannada: "kn",
-    hindi: "hi",
-    polish: "pl",
-    greek: "el",
-    croatian: "hr",
-    ukrainian: "uk",
-    lithuanian: "lt",
-    thai: "th",
-    estonian: "et",
-    czech: "cs",
-    "zh-tw": "zh-tw",
-    "bokmål": "no",
-    dutch: "nl",
-    indonesian: "id",
-    sinhala: "si",
-    swedish: "sv",
-    romanian: "ro",
-    malay: "ms",
-    persian: "fa",
-    slovak: "sk",
-    bulgarian: "bg",
-    turkish: "tr",
-    danish: "da",
-    hebrew: "he",
-    serbian: "sr",
-    vietnamese: "vi",
-    hungarian: "hu",
-    icelandic: "is",
-    albanian: "sq",
-    bosnian: "bs",
-    slovenian: "sl",
-    bengali: "bn",
-    macedonian: "mk"
-  };
-  return v125[v122.toLowerCase().trim()] || "en";
-}
-
-function formatStreamsForNuvio(v126, v127, v128, v129, v130) {
-  const v134 = {
-    v135: 538,
-    v136: 546,
-    v137: 528,
-    v138: 553,
-    v139: 512,
-    v140: 468,
-    v141: 474,
-    v142: 532,
-    v143: 537,
-    v144: 479,
-    v145: 521,
-    v146: 512,
-    v147: 519,
-    v148: 512,
-    v149: 494,
-    v150: 534,
-    v151: 508,
-    v152: 454,
-    v153: 450,
-    v154: 523
-  };
+var __nvFetch = (function() {
+  var _f = null;
   try {
-    const v155 = JSON.parse(v126);
-    if (!v155 || typeof v155 !== "object") return [];
-    const v156 = {
-        Referer: "https://www.vidking.net/",
-        Origin: "https://www.vidking.net",
-        "User-Agent": USER_AGENT
-      },
-      v157 = (v155.subtitles || []).map(v158 => ({
-        url: v158.url,
-        language: getLangCode(v158.language || v158.lang),
-        name: v158.language || v158.lang || "English",
-        headers: v156
-      })),
-      v159 = {
-        Carbon: "💎",
-        Helium: "🎈",
-        Lithium: "🔋",
-        Oxygen: "💨",
-        Krypton: "🦸",
-        Titanium: "🛡️",
-        Hydrogen: "💧",
-        Nitrogen: "🌿",
-        Neon: "💡",
-        Aluminium: "💿"
-      },
-      v160 = v159[v127] || "🎬",
-      v161 = {
-        Hydrogen: "CDN",
-        Titanium: "Tejo",
-        Oxygen: "Neon2",
-        Lithium: "Downloader2",
-        Krypton: "YM",
-        Carbon: "MB-Flix",
-        Aluminium: "LaMovie",
-        Nitrogen: "M4UHD",
-        Neon: "SuperFlix",
-        Helium: "1Movies"
-      },
-      v162 = v161[v127] || v127,
-      v163 = [];
-    return ((v155.sources || []).forEach(v164 => {
-      if (!v164.url) return;
-      let v165 = v164.quality || "1080p",
-        v166 = v165.replace(/\s*server\s*2\s*$/gi, "").trim();
-      v127 === "Oxygen" && (v166 = "Auto");
-      let v167 = v166.toLowerCase(),
-        v168 = "⚡ " + v166;
-      if (v167.includes("2160") || v167.includes("4k")) v168 = "🌟 2160p";
-      else {
-        if (v167.includes("1080")) v168 = "🔥 1080p";
-        else {
-          if (v167.includes("720")) v168 = "⚡ 720p";
-          else v167 === "auto" && (v168 = "⚡ Auto");
-        }
-      }
-      let v169 = "Original Audio",
-        v170 = "🌍 Original Audio";
-      if (v127 === "Hydrogen" || v127 === "Krypton")(v169 = "Original Audio", v170 =
-        "🌍 Original Audio");
-      else {
-        if (v127 === "Oxygen")(v169 = "Multi-Audio", v170 = "🌍 Multi-Audio");
-        else {
-          if (v127 === "Aluminium")(v169 = "Dual-Audio", v170 = "🌍 Dual-Audio");
-          else {
-            if (v127 === "Magnesium") {
-              const v171 = (v164.title || "").toLowerCase();
-              v171.includes("bengali") || v171.includes("bangla") ? (v169 = "Bengali", v170 =
-                "🇧🇩 Bengali") : (v169 = "Normal Hindi", v170 = "🇮🇳 Hindi");
-            }
+    _f = (typeof fetch === "function") ? fetch : null;
+  } catch (e) {
+    _f = null;
+  }
+  if (!_f) return function() {
+    return Promise.reject(new Error("no fetch"));
+  };
+  var hasT = typeof setTimeout === "function";
+  return function(input, init) {
+    var p;
+    try {
+      p = _f.apply(this, arguments);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+    if (!hasT || !p || typeof p.then !== "function") return p;
+    return Promise.race([p, new Promise(function(_res, rej) {
+      var t = setTimeout(function() {
+        rej(new Error("nv deadline 8s"));
+      }, 8000);
+      if (t && typeof t.unref === "function") t.unref();
+    })]);
+  };
+})();
+
+/* ============================================================
+ * nv-plugins videasy.js v7.0.0 (pack 4.40.0 "all providers readable")
+ * ------------------------------------------------------------
+ * Clean readable rebuild of the VidEasy native lane. Machine names
+ * removed; flow identical to the device-verified 4.39 build.
+ *
+ * Lane: GET api.speedracelight.com/seed?mediaId={tmdbId} -> ten named
+ *   servers (Hydrogen/Titanium/Oxygen/Lithium/Krypton/Carbon/Aluminium/
+ *   Nitrogen/Neon/Helium) queried in parallel at /{path}?title=..&enc=2
+ *   &seed=.. -> each payload is base64url + "mvm1" keystream XOR ->
+ *   sources[] rows + subtitles[]; 9s partial collect, URL dedup.
+ * Device notes: timer-guarded __nvFetch, response.ok checks, fail-soft
+ *   per server, WINGS lane + light deadline wrapper + waterfall merge.
+ * ============================================================ */
+
+var WINGS_API_BASE = "https://api.speedracelight.com";
+var TMDB_BASE_URL = "https://api.themoviedb.org/3";
+var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+var USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+var REQUEST_HEADERS = {
+  "User-Agent": USER_AGENT,
+  "Accept": "*/*",
+  "Origin": "https://www.vidking.net",
+  "Referer": "https://www.vidking.net/",
+  "Cache-Control": "no-cache, no-store, must-revalidate",
+  "Pragma": "no-cache"
+};
+
+var SERVERS = {
+  Hydrogen: { path: "cdn/sources-with-title" },
+  Titanium: { path: "tejo/sources-with-title" },
+  Oxygen: { path: "neon2/sources-with-title" },
+  Lithium: { path: "downloader2/sources-with-title" },
+  Krypton: { path: "ym/sources-with-title" },
+  Carbon: { path: "mb-flix/sources-with-title" },
+  Aluminium: { path: "lamovie/sources-with-title" },
+  Nitrogen: { path: "m4uhd/sources-with-title" },
+  Neon: { path: "superflix/sources-with-title" },
+  Helium: { path: "1movies/sources-with-title" }
+};
+
+var SERVER_EMOJI = {
+  Hydrogen: "💧", Titanium: "🛡️", Oxygen: "💨", Lithium: "🔋", Krypton: "🦸",
+  Carbon: "💎", Aluminium: "💿", Nitrogen: "🌿", Neon: "💡", Helium: "🎈"
+};
+var SERVER_LABEL = {
+  Hydrogen: "CDN", Titanium: "Tejo", Oxygen: "Neon2", Lithium: "Downloader2",
+  Krypton: "YM", Carbon: "MB-Flix", Aluminium: "LaMovie", Nitrogen: "M4UHD",
+  Neon: "SuperFlix", Helium: "1Movies"
+};
+var SERVER_AUDIO = {
+  Hydrogen: ["Original Audio", "🌍 Original Audio"],
+  Krypton: ["Original Audio", "🌍 Original Audio"],
+  Oxygen: ["Multi-Audio", "🌍 Multi-Audio"],
+  Aluminium: ["Dual-Audio", "🌍 Dual-Audio"]
+};
+
+function getLangCode(name) {
+  var s = String(name || "").toLowerCase();
+  if (s.indexOf("english") !== -1 || s === "en") return "en";
+  if (s.indexOf("spanish") !== -1 || s.indexOf("espanol") !== -1 || s === "es") return "es";
+  if (s.indexOf("french") !== -1 || s.indexOf("fran") !== -1 || s === "fr") return "fr";
+  if (s.indexOf("german") !== -1 || s === "de") return "de";
+  if (s.indexOf("hindi") !== -1 || s === "hi") return "hi";
+  if (s.indexOf("arabic") !== -1 || s === "ar") return "ar";
+  if (s.indexOf("tagalog") !== -1 || s.indexOf("filipino") !== -1) return "fil";
+  return String(name || "en").slice(0, 3).toLowerCase();
+}
+
+/* ---- "mvm1" keystream cipher (same family as cineby - shared helpers) ---- */
+
+var VD_SHA256_CONSTANTS = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174
+];
+var VD_MAGIC_BYTES = [109, 118, 109, 49]; // "mvm1"
+var VD_BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+function vdFmix32(h) {
+  h = h >>> 0;
+  h ^= h >>> 16;
+  h = Math.imul(h, 2246822507) >>> 0;
+  h ^= h >>> 13;
+  h = Math.imul(h, 3266489909) >>> 0;
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+function vdRotl32(x, n) {
+  x = x >>> 0;
+  n &= 31;
+  if (n === 0) return x >>> 0;
+  return ((x << n) | (x >>> (32 - n))) >>> 0;
+}
+
+function vdFnv1a32(text) {
+  var hash = 2166136261;
+  for (var i = 0; i < text.length; i++) {
+    hash = Math.imul(hash ^ text.charCodeAt(i), 16777619) >>> 0;
+  }
+  return vdFmix32(hash);
+}
+
+function vdBase64UrlToBytes(text) {
+  var normalized = text.replace(/-/g, "+").replace(/_/g, "/");
+  while (normalized.length % 4) normalized += "=";
+  var raw = "";
+  try { if (typeof atob === "function") raw = atob(normalized); } catch (e) { raw = ""; }
+  if (!raw) {
+    var stripped = "";
+    for (var s = 0; s < text.length; s++) {
+      var ch = text.charAt(s);
+      if (ch !== "=" && VD_BASE64_CHARS.indexOf(ch) !== -1) stripped += ch;
+    }
+    for (var b = 0; b < stripped.length; b += 4) {
+      var c1 = VD_BASE64_CHARS.indexOf(stripped.charAt(b));
+      var c2 = VD_BASE64_CHARS.indexOf(stripped.charAt(b + 1));
+      var c3 = b + 2 < stripped.length ? VD_BASE64_CHARS.indexOf(stripped.charAt(b + 2)) : -1;
+      var c4 = b + 3 < stripped.length ? VD_BASE64_CHARS.indexOf(stripped.charAt(b + 3)) : -1;
+      raw += String.fromCharCode((c1 << 2) | (c2 >> 4));
+      if (c3 !== -1) raw += String.fromCharCode(((c2 & 15) << 4) | (c3 >> 2));
+      if (c4 !== -1) raw += String.fromCharCode(((c3 & 3) << 6) | c4);
+    }
+  }
+  var bytes = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+
+function vdMakeKeystreamState(seedText, mediaId) {
+  var slots = new Array(61);
+  var state = vdFmix32(vdFnv1a32(seedText) ^ vdFmix32((mediaId >>> 0) ^ 2654435769)) >>> 0;
+  for (var i = 0; i < 8; i++) {
+    if ((i * (i + 1) & 1) === 0) {
+      var slotIndex = state % 61;
+      state = vdRotl32((state + 2654435769) >>> 0, 7 + (7 & i));
+      slots[slotIndex] = (state ^ vdFmix32(state)) >>> 0;
+      state = vdFmix32((state + slotIndex) >>> 0);
+    } else {
+      slots[i] = VD_SHA256_CONSTANTS[15 & i];
+    }
+  }
+  return { slots: slots, acc: vdFmix32(2779096485 ^ state) >>> 0 };
+}
+
+function vdNextKeystreamWord(ks, step) {
+  var slots = ks.slots;
+  var acc = ks.acc;
+  var idx = acc % 61;
+  var missing = (idx in slots) ? -1 : 0;
+  var prev = slots[idx] >>> 0;
+  var mixed = (prev ^ Math.imul(2654435769, step + 1)) >>> 0;
+  var comb = (((acc ^ mixed) >>> 0) | ((acc & mixed & missing) >>> 0)) >>> 0;
+  var spun = vdRotl32((comb + acc) >>> 0, 31 & idx) ^ vdRotl32(acc, 31 & Math.imul(idx, 7));
+  var word = vdFmix32((spun + 2654435769) >>> 0);
+  slots[idx] = word >>> 0;
+  ks.acc = word;
+  return word >>> 0;
+}
+
+function vdGenerateKeystream(seedText, mediaId, length) {
+  var ks = vdMakeKeystreamState(seedText, mediaId);
+  var out = new Uint8Array(length);
+  var o = 0, step = 0;
+  while (o < length) {
+    var word = vdNextKeystreamWord(ks, step++);
+    out[o++] = word & 255;
+    if (o < length) out[o++] = (word >>> 8) & 255;
+    if (o < length) out[o++] = (word >>> 16) & 255;
+    if (o < length) out[o++] = (word >>> 24) & 255;
+  }
+  return out;
+}
+
+function vdUtf8BytesToString(bytes) {
+  var out = "", i = 0;
+  while (i < bytes.length) {
+    var b0 = bytes[i++];
+    if (b0 < 128) {
+      out += String.fromCharCode(b0);
+    } else if ((b0 & 224) === 192) {
+      out += String.fromCharCode(((b0 & 31) << 6) | (bytes[i++] & 63));
+    } else if ((b0 & 240) === 224) {
+      var b1 = bytes[i++], b2 = bytes[i++];
+      out += String.fromCharCode(((b0 & 15) << 12) | ((b1 & 63) << 6) | (b2 & 63));
+    } else if ((b0 & 248) === 240) {
+      var u1 = bytes[i++], u2 = bytes[i++], u3 = bytes[i++];
+      var cp = ((b0 & 7) << 18) | ((u1 & 63) << 12) | ((u2 & 63) << 6) | (u3 & 63);
+      cp -= 65536;
+      out += String.fromCharCode(55296 + (cp >> 10), 56320 + (cp & 1023));
+    } else {
+      out += String.fromCharCode(b0);
+    }
+  }
+  return out;
+}
+
+/** Decrypt a server payload; throws when the seed does not match. */
+function decryptWingsPayload(payloadB64Url, seed, mediaId) {
+  var cipher = vdBase64UrlToBytes(payloadB64Url);
+  var keystream = vdGenerateKeystream(String(seed), mediaId, cipher.length);
+  var plain = new Uint8Array(cipher.length);
+  for (var i = 0; i < cipher.length; i++) plain[i] = cipher[i] ^ keystream[i];
+  for (var m = 0; m < VD_MAGIC_BYTES.length; m++) {
+    if (plain[m] !== VD_MAGIC_BYTES[m]) throw new Error("decrypt failed: bad seed or tampered payload");
+  }
+  return vdUtf8BytesToString(plain.subarray(VD_MAGIC_BYTES.length));
+}
+
+/* ---- TMDB meta ---- */
+
+function fetchMediaDetails(tmdbId, mediaType) {
+  var type = mediaType === "tv" ? "tv" : "movie";
+  var id = String(tmdbId == null ? "" : tmdbId).replace(/\D/g, "");
+  var url = TMDB_BASE_URL + "/" + type + "/" + id + "?api_key=" + TMDB_API_KEY +
+    "&append_to_response=external_ids";
+  return __nvFetch(url, {
+    headers: { "User-Agent": REQUEST_HEADERS["User-Agent"], "Accept": "application/json" }
+  }).then(function (res) {
+    if (!res.ok) throw new Error("TMDB HTTP " + res.status);
+    return res.json().then(function (data) {
+      var title = type === "tv" ? data.name : data.title;
+      var date = type === "tv" ? data.first_air_date : data.release_date;
+      var duration = type === "tv" ? "45 min" : "90 min";
+      if (type === "movie" && data.runtime) duration = data.runtime + " min";
+      if (type === "tv" && data.episode_run_time && data.episode_run_time[0]) duration = data.episode_run_time[0] + " min";
+      return {
+        title: title,
+        year: date ? String(date).split("-")[0] : "",
+        duration: duration,
+        imdbId: (data.external_ids && data.external_ids.imdb_id) || "",
+        mediaType: type
+      };
+    }).catch(function () { return null; });
+  }).catch(function () { return null; });
+}
+
+/* ---- per-server fetch + row dressing ---- */
+
+function formatServerStreams(payloadJson, serverKey, meta, season, episode) {
+  var data;
+  try { data = JSON.parse(payloadJson); } catch (e) { return []; }
+  if (!data || typeof data !== "object") return [];
+
+  var subHeaders = {
+    "Referer": "https://www.vidking.net/",
+    "Origin": "https://www.vidking.net",
+    "User-Agent": USER_AGENT
+  };
+  var subtitles = (data.subtitles || []).map(function (s) {
+    return {
+      url: s.url,
+      language: getLangCode(s.language || s.lang),
+      name: s.language || s.lang || "English",
+      headers: subHeaders
+    };
+  });
+
+  var emoji = SERVER_EMOJI[serverKey] || "🎬";
+  var label = SERVER_LABEL[serverKey] || serverKey;
+  var audio = SERVER_AUDIO[serverKey] || ["Original Audio", "🌍 Original Audio"];
+
+  var rows = [];
+  var sources = data.sources || [];
+  for (var i = 0; i < sources.length; i++) {
+    var src = sources[i];
+    if (!src || !src.url) continue;
+
+    var quality = src.quality || "1080p";
+    quality = quality.replace(/\s*server\s*2\s*$/gi, "").trim();
+    if (serverKey === "Oxygen") quality = "Auto";
+
+    var qEmoji = "⚡ " + quality;
+    var qLower = quality.toLowerCase();
+    if (qLower.indexOf("2160") !== -1 || qLower.indexOf("4k") !== -1) qEmoji = "🌟 2160p";
+    else if (qLower.indexOf("1080") !== -1) qEmoji = "🔥 1080p";
+    else if (qLower.indexOf("720") !== -1) qEmoji = "⚡ 720p";
+    else if (qLower === "auto") qEmoji = "⚡ Auto";
+
+    var format = src.url.indexOf(".m3u8") !== -1 ? "M3U8" : (src.url.indexOf(".mp4") !== -1 ? "MP4" : "MKV");
+    var withEpisode = meta.title + (meta.mediaType === "tv" ? " S" + season + "E" + episode : "");
+    var serverName = serverKey === "Krypton" ? serverKey.replace(/\s*(1080p\s+)?server\s*2\s*$/gi, "").trim() : serverKey;
+    var title = "🎬 " + withEpisode + " - (" + meta.year + ")\n" +
+      qEmoji + " | " + audio[1] + " | 🎧 AAC\n" +
+      "🎞️ " + format + " | ⏱️ " + meta.duration + "\n" +
+      emoji + " " + serverName + " | 🔗 Provider: " + label;
+
+    rows.push({
+      name: "VidEasy | " + quality + " | " + audio[0],
+      title: title,
+      size: title,
+      description: title,
+      url: src.url,
+      quality: quality === "Auto" ? "Auto" : quality,
+      headers: subHeaders,
+      subtitles: subtitles
+    });
+  }
+  return rows;
+}
+
+function fetchFromWingsServer(serverKey, serverConf, mediaType, tmdbId, meta, seed, season, episode) {
+  var params = {
+    title: meta.title,
+    mediaType: mediaType,
+    year: String(meta.year),
+    episodeId: String(episode || 1),
+    seasonId: String(season || 1),
+    tmdbId: String(tmdbId),
+    imdbId: meta.imdbId || "",
+    enc: "2",
+    seed: seed
+  };
+  var query = [];
+  for (var k in params) {
+    if (params[k] !== undefined) query.push(encodeURIComponent(k) + "=" + encodeURIComponent(params[k]));
+  }
+  var url = WINGS_API_BASE + "/" + serverConf.path + "?" + query.join("&");
+
+  return __nvFetch(url, { headers: REQUEST_HEADERS }).then(function (res) {
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res.text().then(function (body) {
+      if (!body || !body.trim()) throw new Error("Empty response");
+      var plain = decryptWingsPayload(body, seed, Number(tmdbId));
+      var rows = formatServerStreams(plain, serverKey, meta, season, episode);
+      console.log("[VidEasy] " + serverKey + ": " + rows.length + " stream(s)");
+      return rows;
+    }).catch(function (e) {
+      console.warn("[VidEasy] " + serverKey + " parse: " + e.message);
+      return [];
+    });
+  }).catch(function (e) {
+    console.warn("[VidEasy] " + serverKey + ": " + e.message);
+    return [];
+  });
+}
+
+/* ---- entry: meta -> seed -> 10-server fan, 9s partial collect ---- */
+
+function getStreams(tmdbId, mediaType, season, episode) {
+  console.log("[VidEasy] start " + mediaType + " " + tmdbId +
+    (mediaType === "tv" ? " S:" + season + "E:" + episode : ""));
+  return fetchMediaDetails(tmdbId, mediaType).then(function (meta) {
+    if (!meta || !meta.title) {
+      console.error("[VidEasy] TMDB meta failed");
+      return [];
+    }
+    var seedUrl = WINGS_API_BASE + "/seed?mediaId=" + encodeURIComponent(String(tmdbId).replace(/\D/g, ""));
+    return __nvFetch(seedUrl, { headers: REQUEST_HEADERS }).then(function (res) {
+      if (!res.ok) throw new Error("Seed HTTP " + res.status);
+      return res.json().then(function (seedData) {
+        var seed = seedData && seedData.seed;
+        if (!seed) throw new Error("No seed returned from API");
+
+        var lanes = [];
+        for (var key in SERVERS) {
+          if (Object.prototype.hasOwnProperty.call(SERVERS, key)) {
+            lanes.push(fetchFromWingsServer(key, SERVERS[key], mediaType, tmdbId, meta, seed, season, episode));
           }
         }
-      }
-      const v172 = v164.url.includes(".m3u8") ? "M3U8" : v164.url.includes(".mp4") ? "MP4" : "MKV",
-        v173 = v128.title + (v128.mediaType === "tv" ? " S" + v129 + "E" + v130 : "");
-      let v174 = v127;
-      v174 === "Krypton" && (v174 = v174.replace(/\s*(1080p\s+)?server\s*2\s*$/gi, "").trim());
-      const v175 = "🎬 " + v173 + " - (" + v128.year + ")\n" + v168 + " | " + v170 + " | 🎧 AAC\n🎞️ " +
-        v172 + " | ⏱️ " + v128.duration + "\n" + v160 + " " + v174 + " | 🔗 Provider: " + v162;
-      v163.push({
-        name: "VidEasy | " + v166 + " | " + v169,
-        title: v175,
-        size: v175,
-        description: v175,
-        url: v164.url,
-        quality: "",
-        language: "",
-        headers: v156,
-        subtitles: v157,
-        provider: "videasy",
-        _is4k: v167.includes("2160") || v167.includes("4k"),
-        _serverName: v127
-      });
-    }), v163);
-  } catch (v176) {
-    return (console.error("[VidEasy] Formatting error: " + v176.message), []);
-  }
-}
 
-function fetchFromWingsServer(v177, v178, v179, v180, v181, v182, v183, v184) {
-  return __async(this, null, function*() {
-    const v190 = {
-        title: v181.title,
-        mediaType: v179,
-        year: String(v181.year),
-        episodeId: String(v184 || 1),
-        seasonId: String(v183 || 1),
-        tmdbId: String(v180),
-        imdbId: v181.imdbId || "",
-        enc: "2",
-        seed: v182
-      },
-      v191 = Object.keys(v190).map(v192 => encodeURIComponent(v192) + "=" + encodeURIComponent(v190[
-        v192])).join("&"),
-      v193 = WINGS_API_BASE + "/" + v178.path + "?" + v191;
-    console.log("[VidEasy] Querying server " + v177 + ": " + v193);
-    try {
-      const v194 = yield fetch(v193, {
-        headers: REQUEST_HEADERS
-      });
-      if (!v194.ok) throw new Error("HTTP " + v194.status);
-      const v195 = yield v194.text();
-      if (!v195 || v195.trim() === "") throw new Error("Empty response");
-      const v196 = decryptWingsDatabase(v195, v182, Number(v180));
-      if (!v196) return [];
-      const v197 = formatStreamsForNuvio(v196, v177, v181, v183, v184);
-      return (console.log("[VidEasy] ✅ Found " + v197.length + " stream(s) from " + v177), v197);
-    } catch (v198) {
-      return (console.warn("[VidEasy] ❌ Error from " + v177 + ": " + v198.message), []);
-    }
-  });
-}
+        var collected = [];
+        var push = function (rows) { if (Array.isArray(rows)) collected = collected.concat(rows); };
+        lanes.forEach(function (p) { p.then(push).catch(function () {}); });
 
-function getStreams(v199, v200, v201 = null, v202 = null) {
-  return __async(this, null, function*() {
-    console.log("[VidEasy] Starting extraction for TMDB ID: " + v199 + ", Type: " + v200 + (v200 ===
-      "tv" ? ", S:" + v201 + "E:" + v202 : ""));
-    try {
-      const v217 = yield fetchMediaDetails(v199, v200, v201, v202);
-      if (!v217) return (console.error("[VidEasy] Failed to fetch media details from TMDB."), []);
-      console.log("[VidEasy] Media Details: \"" + v217.title + "\" (" + v217.year + ") | Duration: " +
-        v217.duration);
-      const v218 = WINGS_API_BASE + "/seed?mediaId=" + v199;
-      console.log("[VidEasy] Fetching seed from: " + v218);
-      var v219 = yield fetch(v218, {
-        headers: REQUEST_HEADERS
-      });
-      if (!v219.ok && (v219.status === 429 || v219.status === 503)) {
-        v219 = yield fetch(v218, {
-          headers: REQUEST_HEADERS
+        var settled = typeof setTimeout === "function"
+          ? Promise.race([
+              Promise.all(lanes),
+              new Promise(function (r) {
+                var t = setTimeout(function () { r(1); }, 9000);
+                if (t && typeof t.unref === "function") t.unref();
+              })
+            ])
+          : Promise.all(lanes);
+
+        return settled.then(function () {
+          var seen = {}, out = [];
+          for (var i = 0; i < collected.length; i++) {
+            var r = collected[i];
+            if (r && r.url && !seen[r.url]) { seen[r.url] = 1; out.push(r); }
+          }
+          console.log("[VidEasy] total unique streams: " + out.length);
+          return out;
         });
-      }
-      if (!v219.ok) throw new Error("Seed HTTP " + v219.status);
-      const v220 = yield v219.json(), v221 = v220.seed;
-      if (!v221) throw new Error("No seed returned from API");
-      console.log("[VidEasy] Seed successfully retrieved: " + v221);
-      const v222 = Object.keys(SERVERS).map(v223 => {
-          const v224 = SERVERS[v223];
-          return fetchFromWingsServer(v223, v224, v200, v199, v217, v221, v201, v202).catch(() => []);
-        }),
-        v225 = [];
-      var _0xpushPartial = v226 => {
-        if (Array.isArray(v226)) v225.push.apply(v225, v226);
-      };
-      v222.forEach(v226 => {
-        v226.then(_0xpushPartial).catch(() => {});
-      });
-      yield typeof setTimeout === "function" ? Promise.race([Promise.all(v222), new Promise(_0xdlRes => {
-        var _0xdlT = setTimeout(() => _0xdlRes(1), 9000);
-        if (_0xdlT && typeof _0xdlT.unref === "function") _0xdlT.unref();
-      })]) : Promise.all(v222);
-      const v227 = [],
-        v228 = new Set();
-      v225.forEach(v229 => {
-        !v228.has(v229.url) && (v228.add(v229.url), v227.push(v229));
-      });
-      const v230 = Object.keys(SERVERS);
-      return (v227.sort((v231, v232) => {
-        if (v231._is4k && !v232._is4k) return -1;
-        if (!v231._is4k && v232._is4k) return 1;
-        const v233 = v230.indexOf(v231._serverName),
-          v234 = v230.indexOf(v232._serverName);
-        return v233 - v234;
-      }), console.log("[VidEasy] Total unique streams found: " + v227.length), v227);
-    } catch (v235) {
-      return (console.error("[VidEasy] Error in getStreams: " + v235.message), []);
-    }
+      }).catch(function (e) { console.error("[VidEasy] seed json: " + e.message); return []; });
+    }).catch(function (e) { console.error("[VidEasy] seed: " + e.message); return []; });
+  }).catch(function (e) {
+    console.error("[VidEasy] error: " + e.message);
+    return [];
   });
 }
-module["exports"] = {
-  'getStreams': getStreams
-};
+
+module.exports = { getStreams: getStreams };
+
 /* ===== nvio light deadline wrapper (12s) =================================
    Bounds the provider's total runtime so the stream sheet is never held
    past ~9s (AIO parity). No filtering: rows pass through unchanged.
@@ -670,6 +555,7 @@ module["exports"] = {
 /* ============================================================
  * nv-plugins WINGS lane v1.0.0 (pack 4.33.0, 2026-09-13)
  * ------------------------------------------------------------
+
  * Self-contained extraction lane for the vidking/speedracelight
  * backend (same backend the VidEasy/Cineby providers use), ported
  * from the verified cineby.js decryptor and videasy.js request
@@ -1084,6 +970,7 @@ module["exports"] = {
 
   if (typeof globalThis !== 'undefined') globalThis.__nvWingsStreams = __nvWingsStreams;
 })();
+
 /* ===== nv-plugins device waterfall merge v2.0.0 (pack 4.37.0, 2026-09-14) ======
    Device truth (NuvioMobile PluginRuntime.kt + quickjs-kt 1.0.5-nuvio AAR):
    no timers in the realm (every Promise.race cap was inert or threw

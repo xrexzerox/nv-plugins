@@ -1,4 +1,9 @@
-/* nv-plugins pack 4.37.0 (2026-09-14): device-fidelity fix. The Nuvio QuickJS realm ships NO timers - every unguarded setTimeout race in 4.33.0-4.36.0 (wings _race, wings partial collector, merge-wrapper cap(), native lanes, light deadline wrappers) threw ReferenceError on device and returned 0 rows on every call. All sites are guarded now and the merge wrapper is a fetch-count-bounded waterfall (verified WINGS text lane first/fallback + native lane, fail-soft, URL-deduped). Pure-JS polyfills for atob/URLSearchParams attached.
+/* nv-plugins vidlove.js v7.0.0 (pack 4.40.0 "all providers readable")
+ * Full clean rebuild; machine names removed, flow = device-verified 4.39.
+ * Fixed: 4.39's undefined apQualityToStream() silently killed single-url
+ * sources; URLSearchParams use made deterministic.
+ * Lanes: WINGS text lane first (waterfall), native api.vidlove.cc 5-source
+ * parallel fan (6.2s partial collect) fallback. Post-filter tail appended.
  */
 /* ===== nv-plugins device polyfills v1.0.0 (pack 4.37.0, 2026-09-14) ============
    The Nuvio QuickJS plugin runtime (quickjs-kt 1.0.5-nuvio AAR) is a bare
@@ -81,7 +86,35 @@
     G.URLSearchParams = USP;
   }
 })();
-/* nv-plugins vidlove.js v2.1.0 (pack 4.33.0, 2026-09-13): streams fix - same 4.33.0 treatment: verified WINGS lane merged first, junk VidAPI relay rows dropped, native api.vidlove.cc rows kept when real. */
+
+var __nvFetch = (function() {
+  var _f = null;
+  try {
+    _f = (typeof fetch === "function") ? fetch : null;
+  } catch (e) {
+    _f = null;
+  }
+  if (!_f) return function() {
+    return Promise.reject(new Error("no fetch"));
+  };
+  var hasT = typeof setTimeout === "function";
+  return function(input, init) {
+    var p;
+    try {
+      p = _f.apply(this, arguments);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+    if (!hasT || !p || typeof p.then !== "function") return p;
+    return Promise.race([p, new Promise(function(_res, rej) {
+      var t = setTimeout(function() {
+        rej(new Error("nv deadline 8s"));
+      }, 8000);
+      if (t && typeof t.unref === "function") t.unref();
+    })]);
+  };
+})();
+
 /* ============================================================
  * nv-plugins WINGS lane v1.0.0 (pack 4.33.0, 2026-09-13)
  * ------------------------------------------------------------
@@ -499,353 +532,299 @@
 
   if (typeof globalThis !== 'undefined') globalThis.__nvWingsStreams = __nvWingsStreams;
 })();
-/*
- * nv-plugins vidlove.js v2.0.0 (4.32.0): re-pointed to the live player API api.vidlove.cc
- * (routes recovered from the player.vidlove.cc app bundle; player and 111movies.com share the
- * same app - the old ballerinacappuccinalovestungtungtungsahur.com lane is dead).
- * Decoded from the obfuscated AIO build: string tables resolved, decoder machinery stripped,
- * every network call capped by an 8s deadline, node-core requires fail-soft, nvio post-filter
- * attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). Endpoints/keys/headers
- * identical to the AIO original.
- */
-/* nv-plugins best-settings pass 4.24.0: hard 8s deadline on every network call */
-var __nvFetch = (function() {
-  var _f = null;
-  try {
-    _f = (typeof fetch === "function") ? fetch : null;
-  } catch (e) {
-    _f = null;
-  }
-  if (!_f) return function() {
-    return Promise.reject(new Error("no fetch"));
-  };
-  var hasT = typeof setTimeout === "function";
-  return function(input, init) {
-    var p;
-    try {
-      p = _f.apply(this, arguments);
-    } catch (e) {
-      return Promise.reject(e);
-    }
-    if (!hasT || !p || typeof p.then !== "function") return p;
-    return Promise.race([p, new Promise(function(_res, rej) {
-      var t = setTimeout(function() {
-        rej(new Error("nv deadline 8s"));
-      }, 8000);
-      if (t && typeof t.unref === "function") t.unref();
-    })]);
-  };
-})();
-/* fail-soft require: node-core modules (net/http/assert/...) never crash the provider */
-var __nvRequire = (function() {
-  var _rq = null;
-  try {
-    _rq = (typeof require === "function") ? require : null;
-  } catch (e) {
-    _rq = null;
-  }
-  return function(name) {
-    if (_rq) {
-      try {
-        return _rq(name);
-      } catch (e) {}
-    }
-    return {};
-  };
-})();
-/* QuickJS-safe global aliases: embedded polyfills (forge/uuid/whatwg) reference
-   window/self/document unguarded - in Nuvio's QuickJS those would throw
-   ReferenceError at module load and kill the provider. */
-var window = (typeof window !== "undefined" && window) ? window :
-  (typeof globalThis !== "undefined" ? globalThis : (typeof global !== "undefined" ? global : {}));
-var self = (typeof self !== "undefined" && self) ? self : window;
-var document = (typeof document !== "undefined" && document) ? document : {
-  createElement: function() {
-    return {
-      style: {},
-      setAttribute: function() {},
-      getElementsByTagName: function() {
-        return [];
-      }
-    };
-  },
-  getElementsByTagName: function() {
-    return [];
-  },
-  addEventListener: function() {}
-};
-var navigator = (typeof navigator !== "undefined" && navigator) ? navigator : {
-  userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
-};
-var v1 = function() {
-  return "";
-};
-'use strict';
-var __async = (v3, v4, v5) => {
-    return new Promise((v8, v9) => {
-      var v13 = v14 => {
-          try {
-            v16(v5.next(v14));
-          } catch (v17) {
-            v9(v17);
-          }
-        },
-        v18 = v19 => {
-          try {
-            v16(v5.throw(v19));
-          } catch (v20) {
-            v9(v20);
-          }
-        },
-        v16 = v21 => v21.done ? v8(v21.value) : Promise.resolve(v21.value).then(v13, v18);
-      v16((v5 = v5.apply(v3, v4)).next());
-    });
-  },
-  BASE_URL = "https://api.vidlove.cc",
-  REFERER = "https://player.vidlove.cc/",
-  TMDB_BASE = "https://api.themoviedb.org/3",
-  TMDB_KEY = "307b7b8ef035c6aa336900aef4e203bd",
-  MIN_QUALITY = 1080,
-  DEFAULT_QUALITY = "1080p",
-  USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  PROVIDERS = ["vidapi", "cinefreak", "warden", "tcloud", "megaknight"],
-  DEFAULT_HEADERS = {
-    accept: "application/json",
-    "accept-language": "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7",
-    "sec-ch-ua": "\"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"150\", \"Google Chrome\";v=\"150\"",
-    Referer: REFERER,
-    "User-Agent": USER_AGENT
-  };
 
-function getInvertedSortTag(v22, v23 = 999999) {
-  const v28 = Math.max(0, parseInt(v22, 10) || 0),
-    v29 = Math.max(0, v23 - v28),
-    v30 = v29.toString(2).padStart(20, "0");
-  return v30.split("").map(v31 => v31 === "1" ? "﻿" : "​").join("");
+/* ============================================================
+ * nv-plugins vidlove.js v7.0.0 (pack 4.40.0 "all providers readable")
+ * ------------------------------------------------------------
+ * Clean readable rebuild of the VidLove native lane. Machine names
+ * removed; flow identical to the device-verified 4.39 build, plus two
+ * fixes: (1) the 4.39 single-url branch called an undefined
+ * apQualityToStream() -> ReferenceError silently killed every source
+ * that answered {url,quality} without a qualities[] array - now mapped
+ * correctly; (2) URLSearchParams replaced with deterministic manual
+ * query encoding.
+ *
+ * Lane: GET api.vidlove.cc/{src}?id={tmdbId}&mode=json&sources={src}
+ *   &hevc=1[&season=&episode=] for src in vidapi/cinefreak/warden/
+ *   tcloud/megaknight, all five in parallel with a 6.2s partial
+ *   collect; rows below 1080p dropped (MIN_QUALITY), URL-deduped.
+ * Device notes: timer-guarded __nvFetch, zero-width sort tag kept for
+ *   sheet ordering parity, WINGS lane + waterfall + post-filter tail.
+ * ============================================================ */
+
+var BASE_URL = "https://api.vidlove.cc";
+var REFERER = "https://player.vidlove.cc/";
+var TMDB_BASE = "https://api.themoviedb.org/3";
+var TMDB_KEY = "307b7b8ef035c6aa336900aef4e203bd";
+var MIN_QUALITY = 1080;
+var DEFAULT_QUALITY = "1080p";
+var USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+var PROVIDERS = ["vidapi", "cinefreak", "warden", "tcloud", "megaknight"];
+var DEFAULT_HEADERS = {
+  "accept": "application/json",
+  "accept-language": "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7",
+  "sec-ch-ua": "\"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"150\", \"Google Chrome\";v=\"150\"",
+  "Referer": REFERER,
+  "User-Agent": USER_AGENT
+};
+
+/** Zero-width inverted sort tag (4.39 parity): higher quality sorts first. */
+function getInvertedSortTag(rank, max) {
+  if (max === undefined) max = 999999;
+  var value = Math.max(0, parseInt(rank, 10) || 0);
+  var inverted = Math.max(0, max - value);
+  var bits = inverted.toString(2);
+  while (bits.length < 20) bits = "0" + bits;
+  var tag = "";
+  for (var i = 0; i < bits.length; i++) tag += bits.charAt(i) === "1" ? "\uFEFF" : "\u200B";
+  return tag;
 }
 
-function getResolutionEmoji(v32) {
-  const v33 = {
-      v34: 450,
-      v35: 437,
-      v36: 459,
-      v37: 429,
-      v38: 437,
-      v39: 438,
-      v40: 414,
-      v41: 413,
-      v42: 437,
-      v43: 408,
-      v44: 443
-    },
-    v46 = String(v32 || "").toLowerCase();
-  if (v46.includes("2160") || v46.includes("4k") || v46.includes("uhd")) return "🌟 4K";
-  if (v46.includes("1080") || v46.includes("fhd")) return "🔥 1080p";
-  if (v46.includes("720") || v46.includes("hd")) return "💎 720p";
-  if (v46.includes("480") || v46.includes("sd")) return "📱 480p";
-  return "📺 " + (v32 || "1080p");
+function getResolutionEmoji(quality) {
+  var s = String(quality || "").toLowerCase();
+  if (s.indexOf("2160") !== -1 || s.indexOf("4k") !== -1 || s.indexOf("uhd") !== -1) return "🌟 4K";
+  if (s.indexOf("1080") !== -1 || s.indexOf("fhd") !== -1) return "🔥 1080p";
+  if (s.indexOf("720") !== -1 || s.indexOf("hd") !== -1) return "💎 720p";
+  if (s.indexOf("480") !== -1 || s.indexOf("sd") !== -1) return "📱 480p";
+  return "📺 " + (quality || "1080p");
 }
 
-function qualityRank(v47) {
-  if ((/2160p|4k/i).test(v47)) return 4;
-  if ((/1080p/i).test(v47)) return 3;
-  if ((/720p/i).test(v47)) return 2;
-  if ((/480p/i).test(v47)) return 1;
+function qualityRank(q) {
+  if (/2160p|4k/i.test(String(q))) return 4;
+  if (/1080p/i.test(String(q))) return 3;
+  if (/720p/i.test(String(q))) return 2;
+  if (/480p/i.test(String(q))) return 1;
   return 0;
 }
-/*decoder removed*/
-var parseQuality = v51 => {
-    const v52 = String(v51 || "").match(/(\d+)/);
-    return v52 ? parseInt(v52[1], 10) : 0;
-  },
-  normalizeQuality = v53 => {
-    const v54 = String(v53 || "").trim();
-    return v54 ? v54 : DEFAULT_QUALITY;
-  },
-  isQualityAcceptable = v55 => {
-    return parseQuality(normalizeQuality(v55)) >= MIN_QUALITY;
-  };
 
-function fetchTmdbMeta(v56, v57, v58 = null, v59 = null) {
-  const v60 = {
-    v61: 447,
-    v62: 436,
-    v63: 467,
-    v64: 428,
-    v65: 460,
-    v66: 465,
-    v67: 445,
-    v68: 447,
-    v69: 442
+function parseQualityNumber(q) {
+  var m = String(q || "").match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+function normalizeQuality(q) {
+  var s = String(q || "").trim();
+  return s ? s : DEFAULT_QUALITY;
+}
+
+function isQualityAcceptable(q) {
+  return parseQualityNumber(normalizeQuality(q)) >= MIN_QUALITY;
+}
+
+function fetchTmdbMeta(tmdbId, type, season, episode) {
+  var url = TMDB_BASE + "/" + (type === "tv" ? "tv" : "movie") + "/" + encodeURIComponent(tmdbId) +
+    "?api_key=" + TMDB_KEY;
+  return __nvFetch(url, { headers: { "Accept": "application/json", "User-Agent": USER_AGENT } })
+    .then(function (res) {
+      if (!res.ok) throw new Error("meta http " + res.status);
+      return res.json();
+    })
+    .then(function (data) {
+      var title = data.name || data.title || "Unknown";
+      var date = data.first_air_date || data.release_date || "";
+      var year = date ? date.split("-")[0] : null;
+
+      var episodeTitleP = Promise.resolve("");
+      if (type === "tv" && season && episode) {
+        episodeTitleP = __nvFetch(TMDB_BASE + "/tv/" + encodeURIComponent(tmdbId) + "/season/" +
+          parseInt(season, 10) + "?api_key=" + TMDB_KEY, {
+            headers: { "Accept": "application/json", "User-Agent": USER_AGENT }
+          }).then(function (r) {
+            if (!r.ok) return "";
+            return r.json().then(function (sd) {
+              var want = parseInt(episode, 10);
+              var ep = (sd && sd.episodes && sd.episodes.filter(function (e) { return e.episode_number === want; })[0]) || null;
+              return (ep && ep.name) || "";
+            }).catch(function () { return ""; });
+          }).catch(function () { return ""; });
+      }
+
+      return episodeTitleP.then(function (episodeTitle) {
+        return { title: title, year: year, episodeTitle: episodeTitle };
+      });
+    })
+    .catch(function () { return { title: "Unknown", year: null, episodeTitle: "" }; });
+}
+
+function buildEndpointUrl(sourceKey, tmdbId, sourceParam, season, episode) {
+  var pairs = [
+    ["id", tmdbId], ["mode", "json"], ["sources", sourceParam], ["hevc", "1"]
+  ];
+  if (season != null) pairs.push(["season", season]);
+  if (episode != null) pairs.push(["episode", episode]);
+  var query = [];
+  for (var i = 0; i < pairs.length; i++) {
+    query.push(encodeURIComponent(pairs[i][0]) + "=" + encodeURIComponent(pairs[i][1]));
+  }
+  return BASE_URL + "/" + sourceKey + "?" + query.join("&");
+}
+
+function mapQualityToStream(entry, sourceLabel, index, ctx) {
+  var quality = normalizeQuality(entry.quality);
+  var emoji = getResolutionEmoji(quality);
+  var rank = qualityRank(quality);
+  var sortTag = getInvertedSortTag(rank * 100000 + (100 - index), 999999);
+  var name = sortTag + "Vidlove • " + quality + " • " + sourceLabel;
+
+  var line1 = "🎬 " + ctx.title + (ctx.year ? " (" + ctx.year + ")" : "");
+  var line2 = null;
+  if (ctx.mediaType === "tv" && ctx.season && ctx.episode) {
+    line2 = "📋 S" + ctx.season + " E" + ctx.episode + (ctx.episodeTitle ? " - " + ctx.episodeTitle : "");
+  }
+  var line3 = emoji + " | 🗣️ Multi-Audio";
+  var line4 = "🎞️ MKV | ⚡ HEVC | 🎧 AAC";
+  var line5 = "🔗 Vidlove | 🌐 " + sourceLabel + " | 📥 WEB-DL";
+
+  var parts = [line1, line2, line3, line4, line5].filter(Boolean).join("\n");
+  var headers = {
+    "Referer": REFERER,
+    "Origin": "https://player.vidlove.cc",
+    "User-Agent": USER_AGENT
   };
-  return __async(this, null, function*() {
-    try {
-      const v71 = v57 === "tv" ? "tv" : "movie",
-        v72 = yield __nvFetch(TMDB_BASE + "/" + v71 + "/" + encodeURIComponent(v56) + "?api_key=" +
-          TMDB_KEY, {
-            headers: {
-              Accept: "application/json",
-              "User-Agent": USER_AGENT
-            }
-          });
-      if (!v72.ok) return {
-        title: "Unknown",
-        year: null,
-        episodeTitle: ""
-      };
-      const v73 = yield v72.json(), v74 = v73.title || v73.name || v73.original_title || v73
-        .original_name || "Unknown", v75 = v73.release_date || v73.first_air_date || "", v76 = v75 ?
-        parseInt(v75.slice(0, 4)) : null;
-      let v77 = "";
-      if (v57 === "tv" && v58 && v59) try {
-        const v78 = yield __nvFetch(TMDB_BASE + "/tv/" + encodeURIComponent(v56) + "/season/" + v58 +
-          "?api_key=" + TMDB_KEY, {
-            headers: {
-              Accept: "application/json",
-              "User-Agent": USER_AGENT
-            }
-          });
-        if (v78.ok) {
-          const v79 = yield v78.json();
-          if (v79 && Array.isArray(v79.episodes)) {
-            const v80 = parseInt(v59),
-              v81 = v79.episodes.find(v82 => v82.episode_number === v80);
-            v81 && v81.name && (v77 = v81.name);
+  return {
+    name: name,
+    title: parts,
+    size: parts,
+    description: parts,
+    url: entry.url,
+    quality: quality,
+    headers: headers,
+    behaviorHints: { notWebReady: true, proxyHeaders: { request: headers } }
+  };
+}
+
+function fetchProviderStreams(sourceKey, tmdbId, type, season, episode, ctx) {
+  return __nvFetch(buildEndpointUrl(sourceKey, tmdbId, sourceKey, type === "tv" ? season : null, type === "tv" ? episode : null), {
+    method: "GET",
+    headers: DEFAULT_HEADERS
+  }).then(function (res) {
+    if (!res.ok) return [];
+    return res.json().then(function (data) {
+      var source = data && data.source;
+      if (!source) return [];
+      var label = source.label != null ? source.label : sourceKey;
+      var qualities = Array.isArray(source.qualities) ? source.qualities : [];
+
+      if (qualities.length > 0) {
+        var rows = [];
+        for (var i = 0; i < qualities.length; i++) {
+          var q = qualities[i];
+          if (q && q.url && isQualityAcceptable(q.quality)) {
+            rows.push(mapQualityToStream(q, label, i, ctx));
           }
         }
-      } catch (v83) {}
-      return {
-        title: v74,
-        year: v76,
-        episodeTitle: v77
-      };
-    } catch (v84) {
-      return {
-        title: "Unknown",
-        year: null,
-        episodeTitle: ""
-      };
-    }
-  });
-}
-var buildEndpointUrl = (v85, v86, v87, v88, v89) => {
-    const v94 = new URLSearchParams({
-      id: v86,
-      mode: "json",
-      sources: v87,
-      hevc: "1"
-    });
-    if (v88 != null) v94.set("season", v88);
-    if (v89 != null) v94.set("episode", v89);
-    return BASE_URL + "/" + v85 + "?" + v94;
-  },
-  mapQualityToStream = (v95, v96, v97, v98) => {
-    const v99 = {
-        v100: 461,
-        v101: 472,
-        v102: 474,
-        v103: 454,
-        v104: 419,
-        v105: 454,
-        v106: 456
-      },
-      v108 = normalizeQuality(v95.quality),
-      v109 = getResolutionEmoji(v108),
-      v110 = qualityRank(v108),
-      v111 = getInvertedSortTag(v110 * 100000 + (100 - v97), 999999),
-      v112 = v111 + "Vidlove • " + v108 + " • " + v96,
-      v113 = "🎬 " + v98.title + (v98.year ? " (" + v98.year + ")" : "");
-    let v114 = null;
-    v98.mediaType === "tv" && v98.season && v98.episode && (v114 = "📋 S" + v98.season + " E" + v98.episode +
-      (v98.episodeTitle ? " - " + v98.episodeTitle : ""));
-    const v115 = v109 + " | 🗣️ Multi-Audio",
-      v116 = "🎞️ MKV | ⚡ HEVC | 🎧 AAC",
-      v117 = "🔗 Vidlove | 🌐 " + v96 + " | 📥 WEB-DL",
-      v118 = [v113, v114, v115, v116, v117].filter(Boolean).join("\n"),
-      v119 = {
-        Referer: REFERER,
-        Origin: "https://player.vidlove.cc",
-        "User-Agent": USER_AGENT
-      };
-    return {
-      name: v112,
-      title: v118,
-      size: v118,
-      description: v118,
-      url: v95.url,
-      quality: v108,
-      headers: v119,
-      behaviorHints: {
-        notWebReady: true,
-        proxyHeaders: {
-          request: v119
-        }
+        return rows;
       }
-    };
+      if (source.url && isQualityAcceptable(source.quality)) {
+        // 4.39 bugfix: this branch used to call an undefined function and
+        // silently dropped every single-url source
+        return [mapQualityToStream({ url: source.url, quality: source.quality }, label, 0, ctx)];
+      }
+      return [];
+    }).catch(function () { return []; });
+  }).catch(function () { return []; });
+}
+
+function getStreams(tmdbId, mediaType, season, episode) {
+  var raw = String(mediaType || "").toLowerCase().trim();
+  var type = (raw === "series" || raw === "show" || raw === "tvshow" || raw === "tv") ? "tv" : "movie";
+  if (type === "tv" && (season == null || episode == null)) return Promise.resolve([]);
+
+  return fetchTmdbMeta(tmdbId, type, season, episode).then(function (meta) {
+    meta.mediaType = type;
+    meta.season = season;
+    meta.episode = episode;
+
+    var lanes = [];
+    for (var i = 0; i < PROVIDERS.length; i++) {
+      lanes.push(fetchProviderStreams(PROVIDERS[i], tmdbId, type, season, episode, meta).catch(function () { return []; }));
+    }
+
+    // 6.2s partial collect: take whatever resolved by then, never hang
+    var collected = [];
+    var push = function (rows) { if (Array.isArray(rows)) collected = collected.concat(rows); };
+    lanes.forEach(function (p) { p.then(push).catch(function () {}); });
+
+    var settled = typeof setTimeout === "function"
+      ? Promise.race([
+          Promise.all(lanes),
+          new Promise(function (res) {
+            var t = setTimeout(function () { res(1); }, 6200);
+            if (t && typeof t.unref === "function") t.unref();
+          })
+        ])
+      : Promise.all(lanes);
+
+    return settled.then(function () {
+      var seen = {}, out = [];
+      for (var i = 0; i < collected.length; i++) {
+        var r = collected[i];
+        if (r && r.url && !seen[r.url]) { seen[r.url] = 1; out.push(r); }
+      }
+      return out;
+    });
+  }).catch(function () { return []; });
+}
+
+module.exports = { getStreams: getStreams };
+
+/* ===== nv-plugins device waterfall merge v2.0.0 (pack 4.37.0, 2026-09-14) ======
+   Device truth (NuvioMobile PluginRuntime.kt + quickjs-kt 1.0.5-nuvio AAR):
+   no timers in the realm (every Promise.race cap was inert or threw
+   ReferenceError), each fetch is one BLOCKING host call (lanes run
+   sequentially regardless of Promise.all), app kills the call at 60s. The
+   old 4.33.0 merge ran BOTH lanes on every call and its cap() called
+   setTimeout DIRECTLY -> the whole provider rejected -> 0 rows.
+   v2.0.0: sequential waterfall bounded by fetch count, fail-soft both lanes.
+     __WINGS_FIRST = true  : WINGS lane first, native only when empty
+   ========================================================================== */
+(function () {
+  'use strict';
+  var __LABEL = 'VidLove';
+  var __WINGS_FIRST = true;
+  var __ALT_NAME = '__nvWingsStreams';
+  function __junk(u) { return /tungtungtungsahur\.cfd|\/api\?d=/i.test(String(u || '')); }
+  var __orig = null;
+  try { __orig = module.exports && module.exports.getStreams; } catch (e) { __orig = null; }
+  if (typeof __orig !== 'function') return;
+  function runAlt(args, self) {
+    var f = null;
+    try { f = (typeof globalThis !== 'undefined' && globalThis) ? globalThis[__ALT_NAME] : null; } catch (e) { f = null; }
+    if (typeof f !== 'function') return Promise.resolve([]);
+    try {
+      var r = f({ tmdbId: args[0], mediaType: args[1], season: args[2], episode: args[3], label: __LABEL });
+      return Promise.resolve(r).then(function (v) { return Array.isArray(v) ? v : []; }, function () { return []; });
+    } catch (e) { return Promise.resolve([]); }
+  }
+  function runNative(args, self) {
+    try {
+      var r = __orig.apply(self, args);
+      return Promise.resolve(r).then(function (v) { return Array.isArray(v) ? v : []; }, function () { return []; });
+    } catch (e) { return Promise.resolve([]); }
+  }
+  module.exports.getStreams = function () {
+    var args = Array.prototype.slice.call(arguments), self = this;
+    function clean(v) {
+      var seen = {}, out = [];
+      (v || []).forEach(function (r) {
+        if (!r || !r.url || __junk(r.url)) return;
+        var k = String(r.url);
+        if (seen[k]) return;
+        seen[k] = 1; out.push(r);
+      });
+      return out;
+    }
+    function laneA() { return __WINGS_FIRST ? runAlt(args, self) : runNative(args, self); }
+    function laneB() { return __WINGS_FIRST ? runNative(args, self) : runAlt(args, self); }
+    return Promise.resolve().then(laneA).then(function (rows) {
+      rows = clean(rows);
+      if (rows.length) return rows;
+      return Promise.resolve().then(laneB).then(function (rows2) { return clean(rows2); });
+    });
   };
+})();
 
-function fetchProviderStreams(v120, v121, v122, v123, v124, v125) {
-  return __async(this, null, function*() {
-    var v132;
-    try {
-      const v133 = yield __nvFetch(buildEndpointUrl(v122, v121, v120, v123, v124), {
-        method: "GET",
-        headers: DEFAULT_HEADERS
-      });
-      if (!v133.ok) return [];
-      const {
-        source: v134
-      } = yield v133.json();
-      if (!v134) return [];
-      const v135 = Array.isArray(v134.qualities) ? v134.qualities : [],
-        v136 = (v132 = v134.label) != null ? v132 : v120;
-      if (v135.length > 0) return v135.filter(v137 => (v137 == null ? void 0 : v137.url) &&
-        isQualityAcceptable(v137.quality)).map((v138, v139) => mapQualityToStream(v138, v136, v139,
-        v125));
-      if (v134.url && isQualityAcceptable(v134.quality)) return [mapQualityToStream({
-        url: v134.url,
-        quality: v134.quality
-      }, v136, 0, v125)];
-      return [];
-    } catch (v140) {
-      return [];
-    }
-  });
-}
 
-function getStreams(v141, v142, v143, v144) {
-  return __async(this, null, function*() {
-    try {
-      const v150 = String(v142 || "").toLowerCase().trim(),
-        v151 = v150 === "series" || v150 === "show" || v150 === "tvshow" || v150 === "tv" ? "tv" :
-        "movie";
-      if (v151 === "tv" && (v143 == null || v144 == null)) return [];
-      const v152 = yield fetchTmdbMeta(v141, v151, v143, v144);
-      (v152.mediaType = v151, v152.season = v143, v152.episode = v144);
-      const v153 = PROVIDERS.map(v154 => fetchProviderStreams(v154, v141, v151, v143, v144, v152).catch(
-      () => []));
-      var _0xvlRows = [];
-      const _0xvlPush = v155 => {
-        if (Array.isArray(v155)) _0xvlRows = _0xvlRows.concat(v155);
-      };
-      v153.forEach(v155 => {
-        v155.then(_0xvlPush).catch(() => {});
-      });
-      yield typeof setTimeout === "function" ? Promise.race([Promise.all(v153), new Promise(_0xvlRes => {
-        var _0xvlT = setTimeout(() => _0xvlRes(1), 6200);
-        if (_0xvlT && typeof _0xvlT.unref === "function") _0xvlT.unref();
-      })]) : Promise.all(v153);
-      const v156 = new Set();
-      return _0xvlRows.filter(v157 => v157 && v157.url && !v156.has(v157.url) && v156.add(v157.url));
-    } catch (v158) {
-      return [];
-    }
-  });
-}
-module["exports"] = {
-  'getStreams': getStreams
-};
 /* ===== nvio post-filter v1.0 (auto-injected) ============================
    Rules (per user request 2026-09):
    1. Language gate: only English / Tagalog (Filipino) audio lanes are kept.
@@ -862,21 +841,13 @@ module["exports"] = {
       providers (cross-provider duplicates).
    Opt-out: set SCRAPER_SETTINGS.postFilter = false.
 ======================================================================== */
-(function() {
+(function () {
   var PROVIDER = "vidlove";
   var G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
-
   function settings() {
-    try {
-      return (G && G.SCRAPER_SETTINGS) || {};
-    } catch (e) {
-      return {};
-    }
+    try { return (G && G.SCRAPER_SETTINGS) || {}; } catch (e) { return {}; }
   }
-
-  function hasTimers() {
-    return typeof setTimeout === "function" && typeof clearTimeout === "function";
-  }
+  function hasTimers() { return typeof setTimeout === "function" && typeof clearTimeout === "function"; }
 
   /* ---------- quality ---------- */
   function normQ(q) {
@@ -891,7 +862,6 @@ module["exports"] = {
     if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/.test(s)) return "CAM";
     return "";
   }
-
   function qFromText(text) {
     var s = String(text || "");
     var m = s.match(/(\d{3,4})\s*p/i);
@@ -911,24 +881,19 @@ module["exports"] = {
     return "";
   }
   var qualCache = G.__NV_QUAL_CACHE__ || (G.__NV_QUAL_CACHE__ = {});
-
   function probeM3u8(url, headers) {
     var now = Date.now();
     var c = qualCache[url];
     if (c && now - c.t < (c.q ? 15 * 60 * 1000 : 3 * 60 * 1000)) {
       return Promise.resolve(c.q);
     }
-    var opts = {
-      headers: Object.assign({}, headers || {})
-    };
-    var p = __nvFetch(url, opts).then(function(r) {
+    var opts = { headers: Object.assign({}, headers || {}) };
+    var p = __nvFetch(url, opts).then(function (r) {
       return r.ok ? r.text() : "";
-    }).then(function(t) {
+    }).then(function (t) {
       var q = "";
       if (t && t.indexOf("#EXTM3U") !== -1) {
-        var best = 0,
-          re = /RESOLUTION=(\d+)x(\d+)/gi,
-          m;
+        var best = 0, re = /RESOLUTION=(\d+)x(\d+)/gi, m;
         while ((m = re.exec(t)) !== null) {
           var h = parseInt(m[2], 10);
           if (h > best) best = h;
@@ -939,23 +904,12 @@ module["exports"] = {
         else if (best >= 640) q = "720p";
         else if (best > 0) q = "CAM";
       }
-      qualCache[url] = {
-        t: now,
-        q: q
-      };
+      qualCache[url] = { t: now, q: q };
       return q;
-    }).catch(function() {
-      qualCache[url] = {
-        t: now,
-        q: ""
-      };
-      return "";
-    });
+    }).catch(function () { qualCache[url] = { t: now, q: "" }; return ""; });
     if (hasTimers()) {
-      p = Promise.race([p, new Promise(function(res) {
-        var timer = setTimeout(function() {
-          res("");
-        }, 6000);
+      p = Promise.race([p, new Promise(function (res) {
+        var timer = setTimeout(function () { res(""); }, 6000);
         if (typeof timer === "object" && typeof timer.unref === "function") timer.unref();
       })]);
     }
@@ -997,10 +951,7 @@ module["exports"] = {
     if (!nu) return true;
     var e = SEEN[nu];
     if (e && e.exp > now && e.owner !== owner) return false;
-    SEEN[nu] = {
-      exp: now + 120000,
-      owner: owner
-    };
+    SEEN[nu] = { exp: now + 120000, owner: owner };
     return true;
   }
 
@@ -1012,57 +963,44 @@ module["exports"] = {
     if (q === "720p") return 2;
     return 0;
   }
-
   function postProcess(list) {
     var now = Date.now();
     var kept = [];
     var probes = [];
     var rows = [];
-    (list || []).forEach(function(s, i) {
+    (list || []).forEach(function (s, i) {
       if (!s || !s.url) return;
       if (!langAllowed(s.title)) return;
       var text = (s.name || "") + " " + (s.title || "");
       var isMagnet = /^magnet:/i.test(String(s.url));
       var q = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText(text);
       var isHlsLike = /m3u8/i.test(String(s.url)) ||
-        (!/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) &&
-          /^https?:/i.test(String(s.url)));
+        (!/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) && /^https?:/i.test(String(s.url)));
       if (!q && !isMagnet && isHlsLike) {
-        rows.push({
-          s: s,
-          i: i
-        });
+        rows.push({ s: s, i: i });
         probes.push(probeM3u8(String(s.url), s.headers));
       } else {
-        rows.push({
-          s: s,
-          i: i
-        });
+        rows.push({ s: s, i: i });
         probes.push(Promise.resolve(q));
       }
     });
-    return Promise.all(probes).then(function(qs) {
+    return Promise.all(probes).then(function (qs) {
       var ranked = [];
-      rows.forEach(function(row, k) {
+      rows.forEach(function (row, k) {
         var q = qs[k];
         if (!q) return; // unknown resolution -> removed
         if (q === "CAM") return; // cam / sd / sub-720 -> removed
         row.s.quality = q;
-        ranked.push({
-          s: row.s,
-          i: row.i,
-          q: q
-        });
+        ranked.push({ s: row.s, i: row.i, q: q });
       });
       // best first so dedupe keeps the strongest duplicate (stable)
-      ranked.sort(function(a, b) {
+      ranked.sort(function (a, b) {
         var r = rank(b.q) - rank(a.q);
         if (r !== 0) return r;
         return a.i - b.i;
       });
-      var seenLocal = {},
-        out = [];
-      ranked.forEach(function(row) {
+      var seenLocal = {}, out = [];
+      ranked.forEach(function (row) {
         var s = row.s;
         var nu = normUrl(s.url);
         if (seenLocal[nu]) return;
@@ -1071,150 +1009,33 @@ module["exports"] = {
         out.push(s);
       });
       return out.slice(0, 40);
-    }).catch(function() {
-      return (list || []).slice(0, 40);
-    });
+    }).catch(function () { return (list || []).slice(0, 40); });
   }
 
   var __orig = null;
-  try {
-    __orig = module.exports && module.exports.getStreams;
-  } catch (e) {
-    __orig = null;
-  }
+  try { __orig = module.exports && module.exports.getStreams; } catch (e) { __orig = null; }
   if (typeof __orig === "function") {
-    module.exports.getStreams = function() {
-      var args = Array.prototype.slice.call(arguments),
-        self = this;
-
+    module.exports.getStreams = function () {
+      var args = Array.prototype.slice.call(arguments), self = this;
       function finish(v) {
         if (settings().postFilter === false) return v;
-        try {
-          return postProcess(Array.isArray(v) ? v : []);
-        } catch (e) {
-          return Array.isArray(v) ? v : [];
-        }
+        try { return postProcess(Array.isArray(v) ? v : []); }
+        catch (e) { return Array.isArray(v) ? v : []; }
       }
       try {
         var r = __orig.apply(self, args);
         if (r && typeof r.then === "function") {
           if (typeof setTimeout === "function") {
             // nv best-settings 4.23.0: hard 8s cap on the whole provider run
-            r = Promise.race([r, new Promise(function(res) {
-              var dl = setTimeout(function() {
-                res([]);
-              }, 8000);
+            r = Promise.race([r, new Promise(function (res) {
+              var dl = setTimeout(function () { res([]); }, 8000);
               if (dl && typeof dl.unref === "function") dl.unref();
             })]);
           }
-          return r.then(function(v) {
-            return finish(v);
-          }, function() {
-            return [];
-          });
+          return r.then(function (v) { return finish(v); }, function () { return []; });
         }
         return finish(r);
-      } catch (e) {
-        return Promise.resolve([]);
-      }
+      } catch (e) { return Promise.resolve([]); }
     };
   }
-})();
-/* ===== nv-plugins device waterfall merge v2.0.0 (pack 4.37.0, 2026-09-14) ======
-   Device truth (NuvioMobile PluginRuntime.kt + quickjs-kt 1.0.5-nuvio AAR):
-   no timers in the realm (every Promise.race cap was inert or threw
-   ReferenceError), each fetch is one BLOCKING host call (lanes run
-   sequentially regardless of Promise.all), app kills the call at 60s. The
-   old 4.33.0 merge ran BOTH lanes on every call and its cap() called
-   setTimeout DIRECTLY -> the whole provider rejected -> 0 rows.
-   v2.0.0: sequential waterfall bounded by fetch count, fail-soft both lanes.
-     __WINGS_FIRST = true  : WINGS lane first, native only when empty
-   ========================================================================== */
-(function() {
-  'use strict';
-  var __LABEL = 'Vidlove';
-  var __WINGS_FIRST = true;
-  var __ALT_NAME = '__nvWingsStreams';
-
-  function __junk(u) {
-    return /tungtungtungsahur\.cfd|\/api\?d=/i.test(String(u || ''));
-  }
-  var __orig = null;
-  try {
-    __orig = module.exports && module.exports.getStreams;
-  } catch (e) {
-    __orig = null;
-  }
-  if (typeof __orig !== 'function') return;
-
-  function runAlt(args, self) {
-    var f = null;
-    try {
-      f = (typeof globalThis !== 'undefined' && globalThis) ? globalThis[__ALT_NAME] : null;
-    } catch (e) {
-      f = null;
-    }
-    if (typeof f !== 'function') return Promise.resolve([]);
-    try {
-      var r = f({
-        tmdbId: args[0],
-        mediaType: args[1],
-        season: args[2],
-        episode: args[3],
-        label: __LABEL
-      });
-      return Promise.resolve(r).then(function(v) {
-        return Array.isArray(v) ? v : [];
-      }, function() {
-        return [];
-      });
-    } catch (e) {
-      return Promise.resolve([]);
-    }
-  }
-
-  function runNative(args, self) {
-    try {
-      var r = __orig.apply(self, args);
-      return Promise.resolve(r).then(function(v) {
-        return Array.isArray(v) ? v : [];
-      }, function() {
-        return [];
-      });
-    } catch (e) {
-      return Promise.resolve([]);
-    }
-  }
-  module.exports.getStreams = function() {
-    var args = Array.prototype.slice.call(arguments),
-      self = this;
-
-    function clean(v) {
-      var seen = {},
-        out = [];
-      (v || []).forEach(function(r) {
-        if (!r || !r.url || __junk(r.url)) return;
-        var k = String(r.url);
-        if (seen[k]) return;
-        seen[k] = 1;
-        out.push(r);
-      });
-      return out;
-    }
-
-    function laneA() {
-      return __WINGS_FIRST ? runAlt(args, self) : runNative(args, self);
-    }
-
-    function laneB() {
-      return __WINGS_FIRST ? runNative(args, self) : runAlt(args, self);
-    }
-    return Promise.resolve().then(laneA).then(function(rows) {
-      rows = clean(rows);
-      if (rows.length) return rows;
-      return Promise.resolve().then(laneB).then(function(rows2) {
-        return clean(rows2);
-      });
-    });
-  };
 })();

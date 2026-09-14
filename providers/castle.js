@@ -1,4 +1,17 @@
-/* nv-plugins pack 4.37.0 (2026-09-14): device-fidelity fix. The Nuvio QuickJS realm ships NO timers - every unguarded setTimeout race in 4.33.0-4.36.0 (wings _race, wings partial collector, merge-wrapper cap(), native lanes, light deadline wrappers) threw ReferenceError on device and returned 0 rows on every call. All sites are guarded now and the merge wrapper is a fetch-count-bounded waterfall (verified WINGS text lane first/fallback + native lane, fail-soft, URL-deduped). Pure-JS polyfills for atob/URLSearchParams attached.
+/* nv-plugins castle.js v6.0.0 (pack 4.40.0 "all providers readable, no device killer")
+ * Clean readable port of Eclipsia (codeberg eclipsia/nuvio-plugin) "Karnis." = Castle,
+ * replacing the machine-renamed (v-name) 4.39 build. Endpoints kept from the device-verified
+ * 4.39 file: https://api.hlowb.com Castle app API (AES-CBC-encrypted JSON) -
+ * /v0.1/system/getSecurityKey/1?channel=IndiaA, /film-api/v1.1.0/movie/searchByKeyword,
+ * /film-api/v1.9.9/movie (details/seasons/episodes), /film-api/v2.0.1/movie/getVideo2 (POST,
+ * resolutions 3=1080p / 2=720p). TMDB api.themoviedb.org/3 key 439c478a771f35c05022f9feabcca01c.
+ * Device notes: NO require, NO TextDecoder - decryption uses the verbatim device-proven
+ *   __nvCastleCryptoJs pure-JS AES-CBC block from 4.39, with the optional native fast path
+ *   (__crypto_aes_decrypt_raw when the host defines it) decoding via String.fromCharCode;
+ *   every timer guarded; karnis flow kept (getSecurityKey -> searchByKeyword -> details ->
+ *   getVideo2/getVideoV1 -> processVideoResponse, individual-video tracks limited to
+ *   english/hindi/bangla/bengali, getQualityValue gate drops rows below 720p).
+ * Lanes: native hlowb first, proven WINGS text lane (api.speedracelight.com / vidking) fallback.
  */
 /* ===== nv-plugins device polyfills v1.0.0 (pack 4.37.0, 2026-09-14) ============
    The Nuvio QuickJS plugin runtime (quickjs-kt 1.0.5-nuvio AAR) is a bare
@@ -403,510 +416,36 @@ var __nvCastleCryptoJs = (function() {
     }
   };
 })();
-/* ============================================================
- * AIO-EXACT DECODE (2026-09-13) - fully deobfuscated from
- * All-in-One-Nuvio upstream, all string-table references resolved
- * to literals, syntax-checked, live-verified against upstream.
- * Replaces the previous port whose extraction returned 0 rows.
- * ============================================================ */
-'use strict';
-var __defProp = Object.defineProperty,
-  __getOwnPropSymbols = Object.getOwnPropertySymbols,
-  __hasOwnProp = Object.prototype.hasOwnProperty,
-  __propIsEnum = Object.prototype.propertyIsEnumerable,
-  __defNormalProp = (v1, v2, v3) => (v2 in v1) ? __defProp(v1, v2, {
-    enumerable: true,
-    configurable: true,
-    writable: true,
-    value: v3
-  }) : v1[v2] = v3,
-  __spreadValues = (v4, v5) => {
-    for (var v8 in v5 || (v5 = {}))
-      if (__hasOwnProp.call(v5, v8)) __defNormalProp(v4, v8, v5[v8]);
-    if (__getOwnPropSymbols)
-      for (var v8 of __getOwnPropSymbols(v5)) {
-        if (__propIsEnum.call(v5, v8)) __defNormalProp(v4, v8, v5[v8]);
-      }
-    return v4;
-  },
-  __async = (v9, v10, v11) => {
-    return new Promise((v12, v13) => {
-      var v16 = v17 => {
-          try {
-            v19(v11.next(v17));
-          } catch (v20) {
-            v13(v20);
-          }
-        },
-        v21 = v22 => {
-          try {
-            v19(v11.throw(v22));
-          } catch (v24) {
-            v13(v24);
-          }
-        },
-        v19 = v25 => v25.done ? v12(v25.value) : Promise.resolve(v25.value).then(v16, v21);
-      v19((v11 = v11.apply(v9, v10)).next());
-    });
-  },
-  TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c",
-  TMDB_BASE_URL = "https://api.themoviedb.org/3",
-  CASTLE_BASE = "https://api.hlowb.com",
-  PKG = "com.external.castle",
-  CHANNEL = "IndiaA",
-  CLIENT = "1",
-  LANG = "en-US",
-  API_HEADERS = {
-    "User-Agent": "okhttp/4.9.3",
-    Accept: "application/json",
-    "Accept-Language": "en-US,en;q=0.9",
-    Connection: "Keep-Alive",
-    Referer: CASTLE_BASE
-  },
-  PLAYBACK_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
-    Accept: "video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "identity",
-    Connection: "keep-alive",
-    "Sec-Fetch-Dest": "video",
-    "Sec-Fetch-Mode": "no-cors",
-    "Sec-Fetch-Site": "cross-site",
-    DNT: "1"
-  };
-
-function makeRequest(v26) {
-  return __async(this, arguments, function*(v27, v28 = {}) {
-    try {
-      const v29 = yield fetch(v27, {
-        method: v28.method || "GET",
-        headers: __spreadValues(__spreadValues({}, API_HEADERS), v28.headers),
-        body: v28.body
-      });
-      if (!v29.ok) throw new Error("HTTP " + v29.status + ": " + v29.statusText);
-      return v29;
-    } catch (v30) {
-      console.error("[Castle] Request failed for " + v27 + ": " + v30.message);
-      throw v30;
-    }
-  });
-}
-
-function extractCipherFromResponse(v31) {
-  return __async(this, null, function*() {
-    const v32 = yield v31.text(), v33 = v32.trim();
-    if (!v33) throw new Error("Empty response");
-    try {
-      const v34 = JSON.parse(v33);
-      if (v34 && v34.data && typeof v34.data === "string") return v34.data.trim();
-    } catch (v35) {}
-    return v33;
-  });
-}
-
-function extractDataBlock(v36) {
-  if (v36 && v36.data && typeof v36.data === "object") return v36.data;
-  return v36 || ({});
-}
-
-function getTMDBDetails(v37, v38) {
-  return __async(this, null, function*() {
-    const v39 = v38 === "tv" ? "tv" : "movie",
-      v40 = TMDB_BASE_URL + "/" + v39 + "/" + v37 + "?api_key=" + TMDB_API_KEY +
-      "&append_to_response=external_ids",
-      v41 = yield makeRequest(v40), v42 = yield v41.json(), v43 = v38 === "tv" ? v42.name : v42.title,
-        v44 = v38 === "tv" ? v42.first_air_date : v42.release_date, v45 = v44 ? parseInt(v44.split("-")[
-          0]) : null;
-    return {
-      title: v43,
-      year: v45,
-      tmdbId: v37
-    };
-  });
-}
-
-function decryptCastle(v46, v47) {
-  return __async(this, null, function*() {
-    console.log("[Castle] Starting local AES-CBC decryption...");
-    try {
-      const v48 = typeof require === "function" ? (function() {
-        try {
-          return require("crypto-js");
-        } catch (_nvE) {
-          return __nvCastleCryptoJs;
-        }
-      })() : __nvCastleCryptoJs;
-      if (typeof __crypto_aes_decrypt_raw !== "undefined") {
-        const v49 = v48.AES.decrypt;
-        v48.AES.decrypt = function(v50, v51, v52) {
-          try {
-            const v53 = v54 => {
-                const v56 = new Uint8Array(v54.sigBytes);
-                for (let v57 = 0; v57 < v54.sigBytes; v57++) {
-                  v56[v57] = v54.words[v57 >>> 2] >>> 24 - v57 % 4 * 8 & 255;
-                }
-                return v56;
-              },
-              v58 = v59 => {
-                if (v59 instanceof Uint8Array) return v59;
-                if (v59 instanceof ArrayBuffer) return new Uint8Array(v59);
-                if (v59 && typeof v59.length === "number") return new Uint8Array(Array.prototype.slice
-                  .call(v59));
-                return new Uint8Array(0);
-              },
-              v61 = typeof v50 === "string" ? new Uint8Array(Array.from(atob(v50), v62 => v62
-                .charCodeAt(0))) : v50.ciphertext ? v53(v50.ciphertext) : v58(v50),
-              v63 = v53(v51),
-              v64 = v52 && v52.iv ? v53(v52.iv) : new Uint8Array(0),
-              v65 = v52 && v52.mode || "AES-CBC",
-              v66 = typeof Int8Array !== "undefined" ? new Int8Array(v63.buffer) : v63,
-              v67 = typeof Int8Array !== "undefined" ? new Int8Array(v64.buffer) : v64,
-              v68 = typeof Int8Array !== "undefined" ? new Int8Array(v61.buffer) : v61,
-              v69 = __crypto_aes_decrypt_raw(v65, v66, v67, v68),
-              v70 = new TextDecoder().decode(v69);
-            return {
-              toString: function() {
-                return v70;
-              }
-            };
-          } catch (v71) {
-            return (console.error("[Castle JNI Patch] Decrypt failed, falling back:", v71), v49.call(v48
-              .AES, v50, v51, v52));
-          }
-        };
-      }
-      const v72 = "T!BgJB",
-        v73 = v48.enc.Base64.parse(v47),
-        v74 = v48.enc.Utf8.parse(v72),
-        v75 = v73.concat(v74);
-      let v76;
-      if (v75.sigBytes < 16) {
-        const v77 = v48.lib.WordArray.create(new Array(16 - v75.sigBytes).fill(0));
-        v76 = v75.concat(v77);
-      } else v75.sigBytes > 16 ? v76 = v48.lib.WordArray.create(v75.words.slice(0, 4), 16) : v76 = v75;
-      const v78 = v76,
-        v79 = v48.AES.decrypt(v46, v76, {
-          iv: v78,
-          mode: v48.mode.CBC,
-          padding: v48.pad.Pkcs7
-        }),
-        v80 = v79.toString(v48.enc.Utf8);
-      if (!v80) throw new Error("Decryption resulted in empty string (possible key/IV mismatch)");
-      return (console.log("[Castle] Local decryption successful"), v80);
-    } catch (v81) {
-      console.error("[Castle] Local decryption failed: " + v81.message);
-      throw v81;
-    }
-  });
-}
-
-function getSecurityKey() {
-  return __async(this, null, function*() {
-    console.log("[Castle] Fetching security key...");
-    const v82 = CASTLE_BASE + "/v0.1/system/getSecurityKey/1?channel=" + CHANNEL + "&clientType=" +
-      CLIENT + "&lang=" + LANG,
-      v83 = yield makeRequest(v82), v84 = yield v83.json();
-    if (v84.code !== 200 || !v84.data) throw new Error("Security key API error: " + JSON.stringify(v84));
-    return (console.log("[Castle] Security key obtained"), v84.data);
-  });
-}
-
-function searchCastle(v85, v86, v87 = 1, v88 = 30) {
-  return __async(this, null, function*() {
-    console.log("[Castle] Searching for: " + v86);
-    const v89 = new URLSearchParams({
-        channel: CHANNEL,
-        clientType: CLIENT,
-        keyword: v86,
-        lang: LANG,
-        mode: "1",
-        packageName: PKG,
-        page: v87.toString(),
-        size: v88.toString()
-      }),
-      v90 = CASTLE_BASE + "/film-api/v1.1.0/movie/searchByKeyword?" + v89.toString(),
-      v91 = yield makeRequest(v90), v92 = yield extractCipherFromResponse(v91), v93 = yield decryptCastle(
-        v92, v85);
-    return JSON.parse(v93);
-  });
-}
-
-function getDetails(v94, v95) {
-  return __async(this, null, function*() {
-    console.log("[Castle] Fetching details for movieId: " + v95);
-    const v96 = CASTLE_BASE + "/film-api/v1.9.9/movie?channel=" + CHANNEL + "&clientType=" + CLIENT +
-      "&lang=" + LANG + "&movieId=" + v95 + "&packageName=" + PKG,
-      v97 = yield makeRequest(v96), v98 = yield extractCipherFromResponse(v97), v99 = yield decryptCastle(
-        v98, v94);
-    return JSON.parse(v99);
-  });
-}
-
-function getVideoV1(v100, v101, v102, v103, v104 = 2) {
-  return __async(this, null, function*() {
-    console.log("[Castle] Fetching video (v1) for movieId: " + v101 + ", languageId: " + v103);
-    const v105 = CASTLE_BASE + "/film-api/v2.0.1/movie/getVideo2?clientType=" + CLIENT + "&packageName=" +
-      PKG + "&channel=" + CHANNEL + "&lang=" + LANG,
-      v106 = {
-        mode: "1",
-        appMarket: "GuanWang",
-        clientType: CLIENT,
-        woolUser: "false",
-        apkSignKey: "ED0955EB04E67A1D9F3305B95454FED485261475",
-        androidVersion: "13",
-        movieId: v101.toString(),
-        episodeId: v102.toString(),
-        languageId: v103.toString(),
-        isNewUser: "true",
-        resolution: v104.toString(),
-        packageName: PKG
-      },
-      v107 = yield makeRequest(v105, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(v106)
-      }), v108 = yield extractCipherFromResponse(v107), v109 = yield decryptCastle(v108, v100);
-    return JSON.parse(v109);
-  });
-}
-
-function getVideo2(v110, v111, v112, v113 = 2) {
-  return __async(this, null, function*() {
-    console.log("[Castle] Fetching video (v2) for movieId: " + v111 + ", episodeId: " + v112);
-    const v114 = CASTLE_BASE + "/film-api/v2.0.1/movie/getVideo2?clientType=" + CLIENT + "&packageName=" +
-      PKG + "&channel=" + CHANNEL + "&lang=" + LANG,
-      v115 = {
-        mode: "1",
-        appMarket: "GuanWang",
-        clientType: CLIENT,
-        woolUser: "false",
-        apkSignKey: "ED0955EB04E67A1D9F3305B95454FED485261475",
-        androidVersion: "13",
-        movieId: v111.toString(),
-        episodeId: v112.toString(),
-        isNewUser: "true",
-        resolution: v113.toString(),
-        packageName: PKG
-      },
-      v116 = yield makeRequest(v114, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(v115)
-      }), v117 = yield extractCipherFromResponse(v116), v118 = yield decryptCastle(v117, v110);
-    return JSON.parse(v118);
-  });
-}
-
-function findCastleMovieId(v119, v120) {
-  return __async(this, null, function*() {
-    const v121 = v120.year ? v120.title + " " + v120.year : v120.title,
-      v122 = yield searchCastle(v119, v121), v123 = extractDataBlock(v122), v124 = v123.rows || [];
-    if (v124.length === 0) throw new Error("No search results found");
-    for (const v125 of v124) {
-      const v126 = (v125.title || v125.name || "").toLowerCase(),
-        v127 = v120.title.toLowerCase();
-      if (v126.includes(v127) || v127.includes(v126)) {
-        const v128 = v125.id || v125.redirectId || v125.redirectIdStr;
-        if (v128) return (console.log("[Castle] Found match: " + (v125.title || v125.name) + " (id: " +
-          v128 + ")"), v128.toString());
-      }
-    }
-    const v129 = v124[0],
-      v130 = v129.id || v129.redirectId || v129.redirectIdStr;
-    if (v130) return (console.log("[Castle] Using first result: " + (v129.title || v129.name) + " (id: " +
-      v130 + ")"), v130.toString());
-    throw new Error("Could not extract movie ID from search results");
-  });
-}
-
-function getQualityValue(v131) {
-  if (!v131) return 0;
-  const v132 = v131.toString().toLowerCase().replace(/^(sd|hd|fhd|uhd|4k)\s*/i, "").replace(/p$/, "").trim(),
-    v133 = {
-      "4k": 2160,
-      "2160": 2160,
-      "1440": 1440,
-      "1080": 1080,
-      "720": 720,
-      "480": 480,
-      "360": 360,
-      "240": 240
-    };
-  if (v133[v132]) return v133[v132];
-  const v134 = parseInt(v132);
-  if (!isNaN(v134) && v134 > 0) return v134;
-  return 0;
-}
-
-function formatSize(v135) {
-  if (typeof v135 !== "number" || v135 <= 0) return "Unknown";
-  if (v135 > 1000000000) return (v135 / 1000000000).toFixed(2) + " GB";
-  return (v135 / 1000000).toFixed(0) + " MB";
-}
-
-function resolutionToQuality(v136) {
-  const v137 = {
-    1: "480p",
-    2: "720p",
-    3: "1080p"
-  };
-  return v137[v136] || v136 + "p";
-}
-
-function processVideoResponse(v138, v139, v140, v141, v142, v143) {
-  const v144 = [],
-    v145 = extractDataBlock(v138),
-    v146 = v145.videoUrl;
-  if (!v146) return (console.log("[Castle] No videoUrl found in response"), v144);
-  const v147 = [];
-  v145.subtitles && Array.isArray(v145.subtitles) && v145.subtitles.forEach(v148 => {
-    v148.url && v147.push({
-      url: v148.url,
-      language: v148.abbreviate || "Unknown",
-      name: v148.title || v148.abbreviate || "Unknown",
-      headers: PLAYBACK_HEADERS
-    });
-  });
-  let v149 = v139.title || "Unknown";
-  v139.year && (v149 += " (" + v139.year + ")");
-  v140 && v141 && (v149 = v139.title + " S" + String(v140).padStart(2, "0") + "E" + String(v141).padStart(2,
-    "0"));
-  const v150 = resolutionToQuality(v142);
-  if (v145.videos && Array.isArray(v145.videos))
-    for (const v151 of v145.videos) {
-      let v152 = v151.resolutionDescription || v151.resolution || v150;
-      v152 = v152.replace(/^(SD|HD|FHD)\s+/i, "");
-      const v153 = v143 ? "Castle " + v143 + " - " + v152 : "Castle - " + v152;
-      v144.push({
-        name: v153,
-        title: v149,
-        url: v151.url || v146,
-        quality: v152,
-        size: formatSize(v151.size),
-        headers: PLAYBACK_HEADERS,
-        provider: "castle",
-        subtitles: v147
-      });
-    } else {
-      const v154 = v143 ? "Castle " + v143 + " - " + v150 : "Castle - " + v150;
-      v144.push({
-        name: v154,
-        title: v149,
-        url: v146,
-        quality: v150,
-        size: formatSize(v145.size),
-        headers: PLAYBACK_HEADERS,
-        provider: "castle",
-        subtitles: v147
-      });
-    }
-  return v144;
-}
-
-function getStreams(v155, v156, v157, v158) {
-  return __async(this, null, function*() {
-    console.log("[Castle] Starting extraction for TMDB ID: " + v155 + ", Type: " + v156 + (v156 === "tv" ?
-      ", S:" + v157 + "E:" + v158 : ""));
-    try {
-      const v159 = yield getTMDBDetails(v155, v156);
-      console.log("[Castle] TMDB Info: \"" + v159.title + "\" (" + (v159.year || "N/A") + ")");
-      const v160 = yield getSecurityKey(), v161 = yield findCastleMovieId(v160, v159);
-      let v162 = yield getDetails(v160, v161), v163 = v161;
-      if (v156 === "tv" && v157 && v158) {
-        const v164 = extractDataBlock(v162),
-          v165 = v164.seasons || [],
-          v166 = v165.find(v167 => v167.number === v157);
-        v166 && v166.movieId && v166.movieId !== v161 && (console.log("[Castle] Fetching season " + v157 +
-          " details..."), v162 = yield getDetails(v160, v166.movieId.toString()), v163 = v166.movieId
-          .toString());
-      }
-      const v168 = extractDataBlock(v162),
-        v169 = v168.episodes || [];
-      let v170 = null;
-      if (v156 === "tv" && v157 && v158) {
-        const v171 = v169.find(v172 => v172.number === v158);
-        v171 && v171.id && (v170 = v171.id.toString());
-      } else v169.length > 0 && (v170 = v169[0].id.toString());
-      if (!v170) throw new Error("Could not find episode ID");
-      const v173 = v169.find(v174 => v174.id.toString() === v170),
-        v175 = v173 && v173.tracks || [],
-        v176 = 2,
-        v177 = [];
-      for (const v178 of v175) {
-        const v179 = v178.languageName || v178.abbreviate || "Unknown";
-        if (v178.existIndividualVideo && v178.languageId) try {
-          console.log("[Castle] Fetching " + v179 + " (languageId: " + v178.languageId + ")");
-          const v180 = yield getVideoV1(v160, v163, v170, v178.languageId, v176), v181 =
-            processVideoResponse(v180, v159, v157, v158, v176, "[" + v179 + "]");
-          v181.length > 0 && (console.log("[Castle] ✅ " + v179 + ": Found " + v181.length + " streams"),
-            v177.push(...v181));
-        } catch (v182) {
-          console.log("[Castle] ⚠️ " + v179 + ": Failed - " + v182.message);
-        }
-      }
-      if (v177.length === 0) {
-        console.log("[Castle] Falling back to shared stream (v2)");
-        const v183 = yield getVideo2(v160, v163, v170, v176), v184 = processVideoResponse(v183, v159,
-          v157, v158, v176, "[Shared]");
-        v177.push(...v184);
-      }
-      return (v177.sort((v185, v186) => getQualityValue(v186.quality) - getQualityValue(v185.quality)),
-        console.log("[Castle] Total streams found: " + v177.length), v177);
-    } catch (v187) {
-      return (console.error("[Castle] Error: " + v187.message), []);
-    }
-  });
-}
-module["exports"] = {
-  'getStreams': getStreams
-};
-/* ===== nvio light deadline wrapper (8s) =================================
-   Bounds the provider's total runtime so the stream sheet is never held
-   past ~9s (AIO parity). No filtering: rows pass through unchanged.
-   Opt-out: set SCRAPER_SETTINGS.postFilter = false. ==================== */
-(function() {
-  var G = typeof globalThis !== "undefined" ? globalThis : this;
+/* nv-plugins best-settings pass 4.23.0 (kept from 4.39): hard 8s deadline on every
+   network call. Exposed as __nvFetch so the WINGS lane and the nvio post-filter
+   probe reuse the same bounded fetch. Timer-guarded: the device QuickJS realm
+   ships no setTimeout, in which case the plain fetch promise is returned. */
+var __nvFetch = (function() {
+  var _f = null;
   try {
-    var __orig = module.exports && module.exports.getStreams;
-    if (typeof __orig !== "function") return;
-    module.exports.getStreams = function() {
-      var args = arguments,
-        self = this;
-
-      function timed() {
-        var base = Promise.resolve(__orig.apply(self, args))
-          .then(function(rows) {
-            return Array.isArray(rows) ? rows : [];
-          })
-          .catch(function() {
-            return [];
-          });
-        if (typeof setTimeout !== "function") return base; /* device: no timers */
-        return Promise.race([
-          base,
-          new Promise(function(res) {
-            var t = setTimeout(function() {
-              res([]);
-            }, 9000);
-            if (typeof t === "object" && typeof t.unref === "function") t.unref();
-          })
-        ]).catch(function() {
-          return [];
-        });
-      }
-      try {
-        var pf = G.SCRAPER_SETTINGS && G.SCRAPER_SETTINGS.postFilter;
-        if (pf === false) return Promise.resolve(__orig.apply(self, args)).catch(function() {
-          return [];
-        });
-      } catch (e) {}
-      return timed();
-    };
-  } catch (e) {}
+    _f = (typeof fetch === "function") ? fetch : null;
+  } catch (e) {
+    _f = null;
+  }
+  if (!_f) return function() {
+    return Promise.reject(new Error("no fetch"));
+  };
+  var hasT = typeof setTimeout === "function";
+  return function(input, init) {
+    var p;
+    try {
+      p = _f.apply(this, arguments);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+    if (!hasT || !p || typeof p.then !== "function") return p;
+    return Promise.race([p, new Promise(function(_res, rej) {
+      var t = setTimeout(function() {
+        rej(new Error("nv deadline 8s"));
+      }, 8000);
+      if (t && typeof t.unref === "function") t.unref();
+    })]);
+  };
 })();
 /* ============================================================
  * nv-plugins WINGS lane v1.0.0 (pack 4.33.0, 2026-09-13)
@@ -1325,54 +864,504 @@ module["exports"] = {
 
   if (typeof globalThis !== 'undefined') globalThis.__nvWingsStreams = __nvWingsStreams;
 })();
-/* ===== nv-plugins device waterfall merge v2.0.0 (pack 4.37.0, 2026-09-14) ======
-   Device truth (NuvioMobile PluginRuntime.kt + quickjs-kt 1.0.5-nuvio AAR):
-   no timers in the realm (every Promise.race cap was inert or threw
-   ReferenceError), each fetch is one BLOCKING host call (lanes run
-   sequentially regardless of Promise.all), app kills the call at 60s. The
-   old 4.33.0 merge ran BOTH lanes on every call and its cap() called
-   setTimeout DIRECTLY -> the whole provider rejected -> 0 rows.
-   v2.0.0: sequential waterfall bounded by fetch count, fail-soft both lanes.
-     __WINGS_FIRST = false : native first, WINGS lane as fallback
-   ========================================================================== */
-(function() {
-  'use strict';
-  var __LABEL = 'Castle';
-  var __WINGS_FIRST = false;
-  var __ALT_NAME = '__nvWingsStreams';
+/* ===== nv-plugins castle native lane v6.0.0 (readable Eclipsia "Karnis." port) =====
+   Flow (karnis.js): getTMDBDetails -> getSecurityKey -> searchByKeyword -> details
+   (season switch for TV) -> episode lookup -> getVideoV1 (per allowed-language track,
+   when individual videos exist) or shared getVideo2 -> processVideoResponse.
+   karnis device killers fixed here: require("crypto-js") -> pure-JS __nvCastleCryptoJs
+   (no require anywhere), new TextDecoder().decode() -> String.fromCharCode loop.
+   Endpoints/params/headers/naming kept from the device-verified 4.39 castle.js. */
+'use strict';
 
-  function __junk(u) {
+var PROVIDER_NAME = 'Castle';
+var TMDB_API_URL = 'https://api.themoviedb.org/3';
+var TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c'; /* pack key (4.39 device-verified) */
+var CASTLE_BASE = 'https://api.hlowb.com';
+var PKG = 'com.external.castle';
+var CHANNEL = 'IndiaA';
+var CLIENT = '1';
+var LANG = 'en-US';
+var KEY_SUFFIX = 'T!BgJB'; /* Castle app key suffix (karnis: KARNIS_SUFFIX) */
+
+var API_HEADERS = {
+  'User-Agent': 'okhttp/4.9.3',
+  'Accept': 'application/json',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Connection': 'Keep-Alive',
+  'Referer': CASTLE_BASE
+};
+
+var PLAYBACK_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+  'Accept': 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Accept-Encoding': 'identity',
+  'Connection': 'keep-alive',
+  'Sec-Fetch-Dest': 'video',
+  'Sec-Fetch-Mode': 'no-cors',
+  'Sec-Fetch-Site': 'cross-site',
+  'DNT': '1'
+};
+
+var RESOLUTIONS = [3, 2]; /* 3 = 1080p, 2 = 720p (karnis) */
+var QUALITY_NAME_MAP = { '3': '1080p', '2': '720p', '1': '480p' };
+var ALLOWED_LANGS = ['english', 'hindi', 'bangla', 'bengali']; /* individual-video tracks */
+
+function log(msg) {
+  try { console.log('[Castle] ' + msg); } catch (e) { /* console may be absent */ }
+}
+
+function isAllowedLang(name) {
+  if (!name) return false;
+  var n = String(name).toLowerCase();
+  for (var i = 0; i < ALLOWED_LANGS.length; i++)
+    if (n.indexOf(ALLOWED_LANGS[i]) !== -1) return true;
+  return false;
+}
+
+/* ---------- HTTP ---------- */
+
+/* throws on !ok so callers can fall through; every call site is try/caught (fail-soft) */
+async function makeRequest(url, options) {
+  options = options || {};
+  var headers = Object.assign({}, API_HEADERS, options.headers || {});
+  var res = await __nvFetch(url, {
+    method: options.method || 'GET',
+    headers: headers,
+    body: options.body
+  });
+  if (!res || !res.ok) throw new Error('HTTP ' + (res ? res.status : 'no response'));
+  return res;
+}
+
+/* responses are either raw cipher text or {"data": "<cipher>"} */
+async function extractCipherFromResponse(res) {
+  var text = (await res.text()).trim();
+  if (!text) throw new Error('Empty response');
+  try {
+    var json = JSON.parse(text);
+    if (json && json.data && typeof json.data === 'string') return json.data.trim();
+  } catch (e) { /* plain cipher text */ }
+  return text;
+}
+
+function extractDataBlock(obj) {
+  return (obj && obj.data && typeof obj.data === 'object') ? obj.data : (obj || {});
+}
+
+/* ---------- decryption (no require / no TextDecoder) ---------- */
+
+function waToBytes(wa) {
+  var out = new Uint8Array(wa.sigBytes);
+  for (var i = 0; i < wa.sigBytes; i++)
+    out[i] = (wa.words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
+  return out;
+}
+
+function toArg(u8) { /* __crypto_aes_decrypt_raw expects Int8Array views when available */
+  if (u8 instanceof Uint8Array && typeof Int8Array !== 'undefined') return new Int8Array(u8.buffer, u8.byteOffset, u8.byteLength);
+  if (u8 instanceof ArrayBuffer && typeof Int8Array !== 'undefined') return new Int8Array(u8);
+  return u8;
+}
+
+function cipherToBytes(cipher) {
+  if (typeof cipher === 'string')
+    return new Uint8Array(Array.prototype.map.call(atob(cipher), function (c) { return c.charCodeAt(0); }));
+  if (cipher && cipher.ciphertext) return waToBytes(cipher.ciphertext);
+  if (cipher instanceof Uint8Array) return cipher;
+  if (cipher instanceof ArrayBuffer) return new Uint8Array(cipher);
+  if (cipher && typeof cipher.length === 'number') return new Uint8Array(Array.prototype.slice.call(cipher));
+  return new Uint8Array(0);
+}
+
+/* AES output here is JSON text, safe to map byte-by-byte (replaces TextDecoder) */
+function bytesToText(bytes) {
+  var out = '';
+  for (var i = 0; i < bytes.length; i++) out += String.fromCharCode(bytes[i] & 0xff);
+  return out;
+}
+
+/* fallback chain: host-native __crypto_aes_decrypt_raw when defined -> pure-JS lib */
+async function decryptCastle(encryptedB64, securityKeyB64) {
+  var CryptoJS = __nvCastleCryptoJs; /* device-proven CryptoJS-compatible pure-JS subset */
+
+  if (typeof __crypto_aes_decrypt_raw === 'function' && !CryptoJS.AES.__nvRawPatched) {
+    CryptoJS.AES.__nvRawPatched = true;
+    var originalDecrypt = CryptoJS.AES.decrypt;
+    CryptoJS.AES.decrypt = function (cipher, key, options) {
+      try {
+        var cipherBytes = cipherToBytes(cipher);
+        var keyBytes = waToBytes(key);
+        var ivBytes = (options && options.iv) ? waToBytes(options.iv) : new Uint8Array(16);
+        if (ivBytes.length !== 16) throw new Error('Invalid IV length: ' + ivBytes.length);
+        var resBytes = __crypto_aes_decrypt_raw('AES-CBC', toArg(keyBytes), toArg(ivBytes), toArg(cipherBytes));
+        return { toString: function () { return bytesToText(resBytes); } };
+      } catch (e) {
+        return originalDecrypt.call(CryptoJS.AES, cipher, key, options);
+      }
+    };
+  }
+
+  /* securityKey(base64) + suffix, truncated/zero-padded to 16 bytes (karnis key schedule) */
+  var keyMaterial = CryptoJS.enc.Base64.parse(securityKeyB64)
+    .concat(CryptoJS.enc.Utf8.parse(KEY_SUFFIX));
+  var finalKey;
+  if (keyMaterial.sigBytes < 16) {
+    finalKey = keyMaterial.concat(CryptoJS.lib.WordArray.create(new Array(16 - keyMaterial.sigBytes).fill(0)));
+  } else if (keyMaterial.sigBytes > 16) {
+    finalKey = CryptoJS.lib.WordArray.create(keyMaterial.words.slice(0, 4), 16);
+  } else {
+    finalKey = keyMaterial;
+  }
+
+  var decrypted = CryptoJS.AES.decrypt(encryptedB64, finalKey, {
+    iv: finalKey,
+    mode: CryptoJS.mode.CBC,
+    padding: CryptoJS.pad.Pkcs7
+  });
+  var result = decrypted.toString(CryptoJS.enc.Utf8);
+  if (!result) throw new Error('Decryption resulted in empty string');
+  return result;
+}
+
+/* encrypted request helper: fetch -> extract cipher -> decrypt -> JSON */
+async function castleRequest(url, options) {
+  var cipher = await extractCipherFromResponse(await makeRequest(url, options));
+  var decrypted = await decryptCastle(cipher, options._securityKey);
+  return JSON.parse(decrypted);
+}
+
+/* ---------- API steps (karnis flow, 4.39 endpoints) ---------- */
+
+async function getTMDBDetails(tmdbId, mediaType) {
+  var endpoint = mediaType === 'tv' ? 'tv' : 'movie';
+  var url = TMDB_API_URL + '/' + endpoint + '/' + tmdbId +
+    '?api_key=' + TMDB_API_KEY + '&append_to_response=external_ids';
+  var data = await (await makeRequest(url)).json();
+  var title = mediaType === 'tv' ? data.name : data.title;
+  var releaseDate = mediaType === 'tv' ? data.first_air_date : data.release_date;
+  return { title: title, year: releaseDate ? parseInt(releaseDate, 10) : null, tmdbId: tmdbId };
+}
+
+async function getSecurityKey() {
+  var url = CASTLE_BASE + '/v0.1/system/getSecurityKey/1?channel=' + CHANNEL +
+    '&clientType=' + CLIENT + '&lang=' + LANG;
+  var data = await (await makeRequest(url)).json();
+  if (data.code !== 200 || !data.data)
+    throw new Error('Security key API error: ' + JSON.stringify(data));
+  return data.data;
+}
+
+async function searchCastle(securityKey, keyword, page, size) {
+  page = page || 1;
+  size = size || 30;
+  var params = new URLSearchParams({
+    channel: CHANNEL, clientType: CLIENT, keyword: keyword, lang: LANG,
+    mode: '1', packageName: PKG, page: String(page), size: String(size)
+  });
+  return castleRequest(CASTLE_BASE + '/film-api/v1.1.0/movie/searchByKeyword?' + params.toString(),
+    { _securityKey: securityKey });
+}
+
+async function getCastleDetails(securityKey, movieId) {
+  return castleRequest(CASTLE_BASE + '/film-api/v1.9.9/movie?channel=' + CHANNEL +
+    '&clientType=' + CLIENT + '&lang=' + LANG + '&movieId=' + movieId + '&packageName=' + PKG,
+    { _securityKey: securityKey });
+}
+
+function videoBody(fields) {
+  return JSON.stringify(Object.assign({
+    mode: '1',
+    appMarket: 'GuanWang',
+    clientType: CLIENT,
+    woolUser: 'false',
+    apkSignKey: 'ED0955EB04E67A1D9F3305B95454FED485261475',
+    androidVersion: '13',
+    isNewUser: 'true',
+    packageName: PKG
+  }, fields));
+}
+
+async function getVideoV1(securityKey, movieId, episodeId, languageId, resolution) {
+  return castleRequest(CASTLE_BASE + '/film-api/v2.0.1/movie/getVideo2?clientType=' + CLIENT +
+    '&packageName=' + PKG + '&channel=' + CHANNEL + '&lang=' + LANG, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: videoBody({
+      movieId: String(movieId), episodeId: String(episodeId),
+      languageId: String(languageId), resolution: String(resolution)
+    }),
+    _securityKey: securityKey
+  });
+}
+
+async function getVideo2(securityKey, movieId, episodeId, resolution) {
+  return castleRequest(CASTLE_BASE + '/film-api/v2.0.1/movie/getVideo2?clientType=' + CLIENT +
+    '&packageName=' + PKG + '&channel=' + CHANNEL + '&lang=' + LANG, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: videoBody({
+      movieId: String(movieId), episodeId: String(episodeId),
+      resolution: String(resolution)
+    }),
+    _securityKey: securityKey
+  });
+}
+
+async function findCastleMovieId(securityKey, tmdbInfo) {
+  var searchTerm = tmdbInfo.year ? tmdbInfo.title + ' ' + tmdbInfo.year : tmdbInfo.title;
+  var searchResult = await searchCastle(securityKey, searchTerm);
+  var rows = extractDataBlock(searchResult).rows || [];
+  if (!rows.length) throw new Error('No search results found');
+
+  var searchTitle = tmdbInfo.title.toLowerCase();
+  var match = rows.find(function (item) {
+    var t = String(item.title || item.name || '').toLowerCase();
+    return t.indexOf(searchTitle) !== -1 || searchTitle.indexOf(t) !== -1;
+  }) || rows[0];
+
+  var id = match.id || match.redirectId || match.redirectIdStr;
+  if (!id) throw new Error('Could not extract movie ID from search results');
+  return id.toString();
+}
+
+/* ---------- stream rows ---------- */
+
+function getQualityValue(quality) {
+  if (!quality) return 0;
+  var clean = String(quality).toLowerCase()
+    .replace(/^(sd|hd|fhd|uhd|4k)\s*/i, '')
+    .replace(/p$/, '')
+    .trim();
+  var map = { '4k': 2160, '2160': 2160, '1440': 1440, '1080': 1080, '720': 720, '480': 480, '360': 360, '240': 240 };
+  if (map[clean]) return map[clean];
+  var parsed = parseInt(clean, 10);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+function formatSize(sizeValue) {
+  if (typeof sizeValue !== 'number' || sizeValue <= 0) return 'Unknown';
+  return sizeValue > 1e9
+    ? (sizeValue / 1e9).toFixed(2) + ' GB'
+    : (sizeValue / 1e6).toFixed(0) + ' MB';
+}
+
+function resolutionToQuality(resolution) {
+  return QUALITY_NAME_MAP[String(resolution)] || resolution + 'p';
+}
+
+function processVideoResponse(videoData, mediaInfo, seasonNum, episodeNum, resolution, languageLabel) {
+  var data = extractDataBlock(videoData);
+  var videoUrl = data.videoUrl;
+  if (!videoUrl) return [];
+
+  var subtitles = (data.subtitles || [])
+    .filter(function (s) { return s && s.url; })
+    .map(function (s) {
+      return {
+        url: s.url,
+        language: s.abbreviate || 'Unknown',
+        name: s.title || s.abbreviate || 'Unknown',
+        headers: PLAYBACK_HEADERS
+      };
+    });
+
+  var mediaTitle = mediaInfo.title || 'Unknown';
+  if (seasonNum && episodeNum) {
+    mediaTitle += ' S' + String(seasonNum).padStart(2, '0') + 'E' + String(episodeNum).padStart(2, '0');
+  } else if (mediaInfo.year) {
+    mediaTitle += ' (' + mediaInfo.year + ')';
+  }
+
+  var fallbackQuality = resolutionToQuality(resolution);
+  var makeStream = function (url, rawQuality, size) {
+    var q = String(rawQuality || fallbackQuality).replace(/^(SD|HD|FHD)\s+/i, '');
+    if (getQualityValue(q) < 720) return null; /* karnis gate: nothing below 720p */
+    var label = languageLabel
+      ? PROVIDER_NAME + ' ' + languageLabel + ' - ' + q
+      : PROVIDER_NAME + ' - ' + q;
+    return {
+      name: label,
+      title: mediaTitle,
+      url: url,
+      quality: q,
+      size: formatSize(size),
+      headers: PLAYBACK_HEADERS,
+      subtitles: subtitles
+    };
+  };
+
+  if (data.videos && data.videos.length) {
+    var out = [];
+    for (var i = 0; i < data.videos.length; i++) {
+      var v = data.videos[i];
+      var row = makeStream(v.url || videoUrl, v.resolutionDescription || v.resolution, v.size);
+      if (row) out.push(row);
+    }
+    return out;
+  }
+  var single = makeStream(videoUrl, fallbackQuality, data.size);
+  return single ? [single] : [];
+}
+
+/* ---------- entry point ---------- */
+
+async function getStreams(tmdbId, mediaType, season, episode) {
+  var isTv = mediaType === 'tv' || mediaType === 'series';
+  var seasonNum = isTv && season != null ? parseInt(season, 10) : null;
+  var episodeNum = isTv && episode != null ? parseInt(episode, 10) : null;
+  if (isTv && (seasonNum == null || episodeNum == null)) return [];
+
+  try {
+    var tmdbInfo = await getTMDBDetails(tmdbId, isTv ? 'tv' : 'movie');
+    if (!tmdbInfo || !tmdbInfo.title) return [];
+    var securityKey = await getSecurityKey();
+    var rootMovieId = await findCastleMovieId(securityKey, tmdbInfo);
+    var currentMovieId = rootMovieId;
+    log('movieId ' + rootMovieId + ' for "' + tmdbInfo.title + '"');
+
+    /* TV: switch to the season's own movieId when the show has multiple seasons */
+    if (isTv && seasonNum != null) {
+      var rootData = extractDataBlock(await getCastleDetails(securityKey, rootMovieId));
+      var seasons = rootData.seasons || [];
+      if (seasons.length > 1) {
+        var seasonObj = seasons.find(function (s) { return Number(s.number) === seasonNum; });
+        if (seasonObj && seasonObj.movieId && String(seasonObj.movieId) !== String(rootMovieId))
+          currentMovieId = String(seasonObj.movieId);
+      }
+    }
+
+    var detailsData = extractDataBlock(await getCastleDetails(securityKey, currentMovieId));
+    var episodes = detailsData.episodes || [];
+
+    var episodeObj = null;
+    if (isTv) {
+      episodeObj = episodes.find(function (e) { return Number(e.number) === episodeNum; }) || null;
+    } else {
+      episodeObj = episodes.length ? episodes[0] : null;
+    }
+    if (!episodeObj || !episodeObj.id) throw new Error('Could not find episode');
+    var episodeId = String(episodeObj.id);
+
+    var tracks = (episodeObj.tracks || []).filter(function (t) {
+      return t && isAllowedLang(t.languageName || t.abbreviate);
+    });
+    var hasIndivVideo = tracks.some(function (t) {
+      return t && t.existIndividualVideo === true;
+    });
+    var allStreams = [];
+
+    /* shared track: first resolution that yields rows wins (1080p preferred) */
+    async function trySharedResolutions() {
+      for (var r = 0; r < RESOLUTIONS.length; r++) {
+        try {
+          var rows = processVideoResponse(
+            await getVideo2(securityKey, currentMovieId, episodeId, RESOLUTIONS[r]),
+            tmdbInfo, seasonNum, episodeNum, RESOLUTIONS[r], null
+          );
+          if (rows.length) { allStreams.push.apply(allStreams, rows); return true; }
+        } catch (e) { /* try next resolution */ }
+      }
+      return false;
+    }
+
+    if (!hasIndivVideo) {
+      await trySharedResolutions();
+    } else {
+      var loaded = false;
+      for (var t = 0; t < tracks.length; t++) {
+        var track = tracks[t];
+        if (!track || track.languageId == null) continue;
+        var langName = track.languageName || track.abbreviate || 'Unknown';
+        for (var r2 = 0; r2 < RESOLUTIONS.length; r2++) {
+          try {
+            var rows2 = processVideoResponse(
+              await getVideoV1(securityKey, currentMovieId, episodeId, track.languageId, RESOLUTIONS[r2]),
+              tmdbInfo, seasonNum, episodeNum, RESOLUTIONS[r2], '[' + langName + ']'
+            );
+            if (rows2.length) { allStreams.push.apply(allStreams, rows2); loaded = true; }
+          } catch (e2) { /* fail-soft: next track/resolution */ }
+        }
+      }
+      if (!loaded) await trySharedResolutions();
+    }
+
+    /* dedupe by URL, best quality first (karnis) */
+    allStreams.sort(function (a, b) { return getQualityValue(b.quality) - getQualityValue(a.quality); });
+    var seen = {};
+    return allStreams.filter(function (s) {
+      if (!s || !s.url || seen[s.url]) return false;
+      seen[s.url] = true;
+      return true;
+    });
+  } catch (e) {
+    log('extraction failed: ' + (e && e.message));
+    return [];
+  }
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { getStreams: getStreams };
+else if (typeof globalThis !== 'undefined') globalThis.getStreams = getStreams;
+/* ===== nv-plugins light deadline wrapper (kept from 4.39) =================
+   Bounds the native lane's total runtime to ~9s where timers exist so the
+   stream sheet is never held. Device QuickJS ships no timers -> the wrapper
+   is a no-op there (native lane simply runs to completion, fail-soft).
+   Opt-out: set SCRAPER_SETTINGS.postFilter = false. ==================== */
+(function () {
+  var G = typeof globalThis !== 'undefined' ? globalThis : this;
+  try {
+    var orig = module.exports && module.exports.getStreams;
+    if (typeof orig !== 'function') return;
+    module.exports.getStreams = function () {
+      var args = arguments, self = this;
+      var base = Promise.resolve(orig.apply(self, args)).then(function (rows) {
+        return Array.isArray(rows) ? rows : [];
+      }, function () { return []; });
+      if (typeof setTimeout !== 'function') return base; /* device: no timers */
+      return Promise.race([
+        base,
+        new Promise(function (res) {
+          var t = setTimeout(function () { res([]); }, 9000);
+          if (t && typeof t.unref === 'function') t.unref();
+        })
+      ]).catch(function () { return []; });
+    };
+  } catch (e) { /* keep the raw export */ }
+})();
+
+/* ===== nv-plugins waterfall merge v2.0.0 (pack 4.37.0, readable re-emit) ======
+   Device truth (NuvioMobile PluginRuntime.kt + quickjs-kt 1.0.5-nuvio AAR):
+   no timers in the realm, each fetch is one BLOCKING host call (lanes run
+   sequentially regardless of Promise.all), app kills the call at 60s.
+   Sequential waterfall bounded by fetch count, fail-soft both lanes:
+     native hlowb lane FIRST (WINGS_FIRST = false), WINGS lane only when empty.
+   ========================================================================== */
+(function () {
+  'use strict';
+  var LABEL = 'Castle';
+  var WINGS_FIRST = false;
+  var ALT_NAME = '__nvWingsStreams';
+
+  function junkUrl(u) {
     return /tungtungtungsahur\.cfd|\/api\?d=/i.test(String(u || ''));
   }
-  var __orig = null;
-  try {
-    __orig = module.exports && module.exports.getStreams;
-  } catch (e) {
-    __orig = null;
-  }
-  if (typeof __orig !== 'function') return;
 
-  function runAlt(args, self) {
+  var orig = null;
+  try { orig = module.exports && module.exports.getStreams; } catch (e) { orig = null; }
+  if (typeof orig !== 'function') return;
+
+  function runWings(args) {
     var f = null;
-    try {
-      f = (typeof globalThis !== 'undefined' && globalThis) ? globalThis[__ALT_NAME] : null;
-    } catch (e) {
-      f = null;
-    }
+    try { f = (typeof globalThis !== 'undefined' && globalThis) ? globalThis[ALT_NAME] : null; }
+    catch (e) { f = null; }
     if (typeof f !== 'function') return Promise.resolve([]);
     try {
       var r = f({
-        tmdbId: args[0],
-        mediaType: args[1],
-        season: args[2],
-        episode: args[3],
-        label: __LABEL
+        tmdbId: args[0], mediaType: args[1],
+        season: args[2], episode: args[3], label: LABEL
       });
-      return Promise.resolve(r).then(function(v) {
-        return Array.isArray(v) ? v : [];
-      }, function() {
-        return [];
-      });
+      return Promise.resolve(r).then(function (v) { return Array.isArray(v) ? v : []; },
+        function () { return []; });
     } catch (e) {
       return Promise.resolve([]);
     }
@@ -1380,46 +1369,34 @@ module["exports"] = {
 
   function runNative(args, self) {
     try {
-      var r = __orig.apply(self, args);
-      return Promise.resolve(r).then(function(v) {
-        return Array.isArray(v) ? v : [];
-      }, function() {
-        return [];
-      });
+      var r = orig.apply(self, args);
+      return Promise.resolve(r).then(function (v) { return Array.isArray(v) ? v : []; },
+        function () { return []; });
     } catch (e) {
       return Promise.resolve([]);
     }
   }
-  module.exports.getStreams = function() {
-    var args = Array.prototype.slice.call(arguments),
-      self = this;
 
-    function clean(v) {
-      var seen = {},
-        out = [];
-      (v || []).forEach(function(r) {
-        if (!r || !r.url || __junk(r.url)) return;
-        var k = String(r.url);
-        if (seen[k]) return;
-        seen[k] = 1;
-        out.push(r);
-      });
-      return out;
-    }
+  function clean(rows) {
+    var seen = {}, out = [];
+    (rows || []).forEach(function (r) {
+      if (!r || !r.url || junkUrl(r.url)) return;
+      var k = String(r.url);
+      if (seen[k]) return;
+      seen[k] = 1;
+      out.push(r);
+    });
+    return out;
+  }
 
-    function laneA() {
-      return __WINGS_FIRST ? runAlt(args, self) : runNative(args, self);
-    }
-
-    function laneB() {
-      return __WINGS_FIRST ? runNative(args, self) : runAlt(args, self);
-    }
-    return Promise.resolve().then(laneA).then(function(rows) {
+  module.exports.getStreams = function () {
+    var args = Array.prototype.slice.call(arguments), self = this;
+    var first = WINGS_FIRST ? runWings(args) : runNative(args, self);
+    var second = function () { return WINGS_FIRST ? runNative(args, self) : runWings(args); };
+    return Promise.resolve().then(function () { return first; }).then(function (rows) {
       rows = clean(rows);
       if (rows.length) return rows;
-      return Promise.resolve().then(laneB).then(function(rows2) {
-        return clean(rows2);
-      });
+      return Promise.resolve().then(second).then(clean);
     });
   };
 })();

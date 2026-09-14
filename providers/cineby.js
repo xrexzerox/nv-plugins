@@ -1,4 +1,10 @@
-/* nv-plugins pack 4.37.0 (2026-09-14): device-fidelity fix. The Nuvio QuickJS realm ships NO timers - every unguarded setTimeout race in 4.33.0-4.36.0 (wings _race, wings partial collector, merge-wrapper cap(), native lanes, light deadline wrappers) threw ReferenceError on device and returned 0 rows on every call. All sites are guarded now and the merge wrapper is a fetch-count-bounded waterfall (verified WINGS text lane first/fallback + native lane, fail-soft, URL-deduped). Pure-JS polyfills for atob/URLSearchParams attached.
+/* nv-plugins cineby.js v7.0.0 (pack 4.40.0 "all providers readable")
+ * Full clean rebuild: every machine name replaced with semantic names.
+ * Lanes: WINGS text lane (api.speedracelight.com / vidking) first, native
+ * cineby.at keystream-cipher lane fallback. Post-filter (>=720p, en/tl gate,
+ * dedupe) + waterfall merge appended below.
+ * Device notes: preamble polyfills, timer-guarded __nvFetch deadlines,
+ * fail-soft everywhere, no require/cheerio/TextDecoder/raw timers.
  */
 /* ===== nv-plugins device polyfills v1.0.0 (pack 4.37.0, 2026-09-14) ============
    The Nuvio QuickJS plugin runtime (quickjs-kt 1.0.5-nuvio AAR) is a bare
@@ -81,14 +87,7 @@
     G.URLSearchParams = USP;
   }
 })();
-/* nv-plugins cineby.js v2.5.0 (pack 4.33.0, 2026-09-13): speed fix - estimateHlsSize (1 master fetch + 5 segment HEADs per stream) removed: on device it pushed every call past the 8s tail cap, which is why cineby showed no streams on device while working on fast networks. Size now reported as Variable. */
-/*
- * nv-plugins cineby.js — FULLY DECODED port of the All-in-One-Nuvio provider (4.23.0 best-settings pass).
- * Decoded from the obfuscated AIO build: string tables resolved, decoder machinery stripped,
- * every network call capped by an 8s deadline, nvio post-filter attached (en/tl audio gate,
- * >=720p quality gate, cross-provider dedupe). Behavior/endpoints identical to the AIO original.
- */
-/* nv-plugins best-settings pass 4.23.0: hard 8s deadline on every network call */
+
 var __nvFetch = (function() {
   var _f = null;
   try {
@@ -116,648 +115,7 @@ var __nvFetch = (function() {
     })]);
   };
 })();
-var v1 = function() {
-  return "";
-};
-var __defProp = Object.defineProperty,
-  __defProps = Object.defineProperties,
-  __getOwnPropDescs = Object.getOwnPropertyDescriptors,
-  __getOwnPropSymbols = Object.getOwnPropertySymbols,
-  __hasOwnProp = Object.prototype.hasOwnProperty,
-  __propIsEnum = Object.prototype.propertyIsEnumerable,
-  __defNormalProp = (v3, v4, v5) => (v4 in v3) ? __defProp(v3, v4, {
-    enumerable: true,
-    configurable: true,
-    writable: true,
-    value: v5
-  }) : v3[v4] = v5,
-  __spreadValues = (v6, v7) => {
-    for (var v11 in v7 || (v7 = {}))
-      if (__hasOwnProp.call(v7, v11)) __defNormalProp(v6, v11, v7[v11]);
-    if (__getOwnPropSymbols)
-      for (var v11 of __getOwnPropSymbols(v7)) {
-        if (__propIsEnum.call(v7, v11)) __defNormalProp(v6, v11, v7[v11]);
-      }
-    return v6;
-  },
-  __spreadProps = (v12, v13) => __defProps(v12, __getOwnPropDescs(v13)),
-  __async = (v14, v15, v16) => {
-    return new Promise((v21, v22) => {
-      var v24 = v25 => {
-          try {
-            v27(v16.next(v25));
-          } catch (v28) {
-            v22(v28);
-          }
-        },
-        v29 = v30 => {
-          try {
-            v27(v16.throw(v30));
-          } catch (v31) {
-            v22(v31);
-          }
-        },
-        v27 = v32 => v32.done ? v21(v32.value) : Promise.resolve(v32.value).then(v24, v29);
-      v27((v16 = v16.apply(v14, v15)).next());
-    });
-  },
-  DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json",
-  FALLBACK_API_HOST = "https://api.speedracelight.com",
-  TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49",
-  HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    Referer: "https://www.cineby.at/",
-    Origin: "https://www.cineby.at"
-  },
-  cachedDomains = null;
 
-function getDomains() {
-  return __async(this, null, function*() {
-    if (cachedDomains) return cachedDomains;
-    try {
-      const v33 = yield __nvFetch(DOMAINS_URL, {
-        skipSizeCheck: true
-      });
-      cachedDomains = yield v33.json();
-    } catch (v34) {
-      cachedDomains = {};
-    }
-    return cachedDomains;
-  });
-}
-
-function getApiHost() {
-  return __async(this, null, function*() {
-    const v38 = yield getDomains();
-    return (v38.speedracelight || v38["api.speedracelight.com"] || FALLBACK_API_HOST).replace(/\/+$/, "");
-  });
-}
-var SHA256_CONSTANTS = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
-    0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174
-  ],
-  MAGIC_BYTES = [0x6d, 0x76, 0x6d, 0x31];
-
-function isCustomBranch(v39) {
-  return (v39 * (v39 + 1) & 1) === 0;
-}
-
-function fmix32(v40) {
-  return (v40 = v40 >>> 0, v40 ^= v40 >>> 16, v40 = Math.imul(v40, 2246822507) >>> 0, v40 ^= v40 >>> 13, v40 =
-    Math.imul(v40, 3266489909) >>> 0, v40 = (v40 ^ v40 >>> 16) >>> 0, v40);
-}
-
-function rotl32(v44, v45) {
-  (v44 = v44 >>> 0, v45 &= 31);
-  if (v45 === 0) return v44 >>> 0;
-  return (v44 << v45 | v44 >>> 32 - v45) >>> 0;
-}
-var BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-function pureBase64Decode(v46) {
-  let v52 = "";
-  for (let v53 = 0; v53 < v46.length; v53++) {
-    const v54 = v46.charAt(v53);
-    if (v54 !== "=" && BASE64_CHARS.indexOf(v54) !== -1) v52 += v54;
-  }
-  let v55 = "";
-  for (let v56 = 0; v56 < v52.length; v56 += 4) {
-    const v57 = BASE64_CHARS.indexOf(v52.charAt(v56)),
-      v58 = BASE64_CHARS.indexOf(v52.charAt(v56 + 1)),
-      v59 = v56 + 2 < v52.length ? BASE64_CHARS.indexOf(v52.charAt(v56 + 2)) : -1,
-      v60 = v56 + 3 < v52.length ? BASE64_CHARS.indexOf(v52.charAt(v56 + 3)) : -1;
-    v55 += String.fromCharCode(v57 << 2 | v58 >> 4);
-    if (v59 !== -1) v55 += String.fromCharCode((v58 & 15) << 4 | v59 >> 2);
-    if (v60 !== -1) v55 += String.fromCharCode((v59 & 3) << 6 | v60);
-  }
-  return v55;
-}
-/*decoder removed*/
-function base64UrlToBytes(v61) {
-  const v63 = v61.replace(/-/g, "+").replace(/_/g, "/").padEnd(4 * Math.ceil(v61.length / 4), "="),
-    v64 = typeof atob === "function" ? atob(v63) : pureBase64Decode(v63),
-    v65 = new Uint8Array(v64.length);
-  for (let v66 = 0; v66 < v64.length; v66++) v65[v66] = v64.charCodeAt(v66);
-  return v65;
-}
-
-function fnv1a32(v67) {
-  let v72 = 2166136261;
-  for (let v73 = 0; v73 < v67.length; v73++) v72 = Math.imul(v72 ^ v67.charCodeAt(v73), 16777619) >>> 0;
-  return fmix32(v72);
-}
-
-function makeKeystreamState(v74, v75) {
-  const v76 = new Array(61);
-  let v77 = fmix32(fnv1a32(v74) ^ fmix32(v75 >>> 0 ^ 2654435769)) >>> 0;
-  for (let v78 = 0; v78 < 8; v78++) {
-    if (isCustomBranch(v78)) {
-      const v79 = v77 % 61;
-      (v77 = rotl32(v77 + 2654435769 >>> 0, 7 + (7 & v78)), v76[v79] = (v77 ^ fmix32(v77)) >>> 0, v77 =
-        fmix32(v77 + v79 >>> 0));
-    } else v76[v78] = SHA256_CONSTANTS[15 & v78];
-  }
-  return {
-    slots: v76,
-    acc: fmix32(2779096485 ^ v77) >>> 0
-  };
-}
-
-function nextKeystreamWord(v80, v81) {
-  const v85 = v80.slots,
-    v86 = v80.acc,
-    v87 = v86 % 61,
-    v88 = (v87 in v85) ? -1 : 0,
-    v89 = v85[v87] >>> 0,
-    v90 = (v89 ^ Math.imul(2654435769, v81 + 1) >>> 0) >>> 0,
-    v91 = ((v86 ^ v90) >>> 0 | (v86 & v90 & v88) >>> 0) >>> 0,
-    v92 = (rotl32(v91 + v86 >>> 0, 31 & v87) ^ rotl32(v86, 31 & Math.imul(v87, 7))) >>> 0,
-    v93 = fmix32(v92 + 2654435769 >>> 0);
-  return (v85[v87] = v93 >>> 0, v80.acc = v93, v93 >>> 0);
-}
-
-function generateKeystream(v94, v95, v96) {
-  const v97 = makeKeystreamState(v94, v95),
-    v98 = new Uint8Array(v96);
-  let v99 = 0,
-    v100 = 0;
-  while (v99 < v96) {
-    const v101 = nextKeystreamWord(v97, v100++);
-    v98[v99++] = 255 & v101;
-    if (v99 < v96) v98[v99++] = v101 >>> 8 & 255;
-    if (v99 < v96) v98[v99++] = v101 >>> 16 & 255;
-    if (v99 < v96) v98[v99++] = v101 >>> 24 & 255;
-  }
-  return v98;
-}
-
-function utf8BytesToString(v102) {
-  let v106 = "",
-    v107 = 0;
-  while (v107 < v102.length) {
-    const v108 = v102[v107++];
-    if (v108 < 128) v106 += String.fromCharCode(v108);
-    else {
-      if ((v108 & 224) === 192) {
-        const v109 = v102[v107++];
-        v106 += String.fromCharCode((v108 & 31) << 6 | v109 & 63);
-      } else {
-        if ((v108 & 240) === 224) {
-          const v110 = v102[v107++],
-            v111 = v102[v107++];
-          v106 += String.fromCharCode((v108 & 15) << 12 | (v110 & 63) << 6 | v111 & 63);
-        } else {
-          if ((v108 & 248) === 240) {
-            const v112 = v102[v107++],
-              v113 = v102[v107++],
-              v114 = v102[v107++];
-            let v115 = (v108 & 7) << 18 | (v112 & 63) << 12 | (v113 & 63) << 6 | v114 & 63;
-            (v115 -= 65536, v106 += String.fromCharCode(55296 + (v115 >> 10), 56320 + (v115 & 1023)));
-          } else v106 += String.fromCharCode(v108);
-        }
-      }
-    }
-  }
-  return v106;
-}
-
-function decryptSourcesPayload(v116, v117, v118) {
-  const v122 = base64UrlToBytes(v116),
-    v123 = generateKeystream(v117, v118, v122.length),
-    v124 = new Uint8Array(v122.length);
-  for (let v125 = 0; v125 < v122.length; v125++) v124[v125] = v122[v125] ^ v123[v125];
-  for (let v126 = 0; v126 < MAGIC_BYTES.length; v126++) {
-    if (v124[v126] !== MAGIC_BYTES[v126]) throw new Error("decrypt failed: bad seed or tampered payload");
-  }
-  const v127 = v124.subarray(MAGIC_BYTES.length);
-  return utf8BytesToString(v127);
-}
-
-function getTmdbMeta(v128, v129) {
-  return __async(this, null, function*() {
-    const v138 = v129 === "tv" ? "tv" : "movie",
-      v139 = "https://api.themoviedb.org/3/" + v138 + "/" + v128 + "?api_key=" + TMDB_API_KEY +
-      "&append_to_response=external_ids",
-      v140 = yield __nvFetch(v139, {
-        skipSizeCheck: true
-      });
-    if (!v140.ok) return null;
-    const v141 = yield v140.json(), v142 = v138 === "tv" ? v141.name : v141.title, v143 = v138 === "tv" ?
-      v141.first_air_date : v141.release_date, v144 = v143 ? v143.slice(0, 4) : "", v145 = v141
-      .external_ids && v141.external_ids.imdb_id || v141.imdb_id || "";
-    return {
-      title: v142,
-      year: v144,
-      imdbId: v145
-    };
-  });
-}
-
-function qualityRank(v146) {
-  if (!v146) return 0;
-  if ((/4k/i).test(v146)) return 2160;
-  const v148 = parseInt(v146, 10);
-  return Number.isFinite(v148) ? v148 : 0;
-}
-
-function formatBytes(v149) {
-  if (!v149) return "Unknown";
-  const v157 = 1024,
-    v158 = ["Bytes", "KB", "MB", "GB", "TB"],
-    v159 = Math.floor(Math.log(v149) / Math.log(v157));
-  return parseFloat((v149 / Math.pow(v157, v159)).toFixed(2)) + " " + v158[v159];
-}
-var SEGMENT_SAMPLE_SIZE = 0x5;
-
-function getRealSegmentSize(v160) {
-  return __async(this, null, function*() {
-    try {
-      const v165 = yield __nvFetch(v160, {
-        method: "HEAD",
-        headers: HEADERS,
-        skipSizeCheck: true
-      }), v166 = v165.headers.get("content-length");
-      if (v166) return parseInt(v166, 10);
-    } catch (v167) {}
-    try {
-      const v168 = yield __nvFetch(v160, {
-        headers: __spreadProps(__spreadValues({}, HEADERS), {
-          Range: "bytes=0-1"
-        }),
-        skipSizeCheck: true
-      }), v169 = v168.headers.get("content-range"), v170 = v169 && v169.match(/\/(\d+)$/);
-      if (v170) return parseInt(v170[1], 10);
-    } catch (v171) {}
-    return null;
-  });
-}
-
-function estimateHlsSize(v172) {
-  return Promise.resolve("Variable");
-}
-
-function getStreams(v173, v174, v175, v176) {
-  const v177 = {
-    v178: 140,
-    v179: 124,
-    v180: 175,
-    v181: 179,
-    v182: 154,
-    v183: 181,
-    v184: 154,
-    v185: 157,
-    v186: 125,
-    v187: 172
-  };
-  return __async(this, null, function*() {
-    try {
-      let v193 = v173;
-      if (typeof v173 === "string" && v173.trim().toLowerCase().startsWith("tt")) {
-        const v194 = "https://api.themoviedb.org/3/find/" + v173 + "?api_key=" + TMDB_API_KEY +
-          "&external_source=imdb_id",
-          v195 = yield(yield __nvFetch(v194, {
-            skipSizeCheck: true
-          })).json(), v196 = v174 === "tv" ? v195.tv_results : v195.movie_results;
-        v193 = v196 && v196.length ? v196[0].id : null;
-        if (!v193) return [];
-      }
-      v193 = parseInt(v193, 10);
-      if (!v193) return [];
-      const v197 = yield getTmdbMeta(v193, v174);
-      if (!v197 || !v197.title) return [];
-      const v198 = yield getApiHost(), v199 = v174 === "tv", v200 = yield __nvFetch(v198 +
-        "/seed?mediaId=" + v193, {
-          headers: HEADERS,
-          skipSizeCheck: true
-        });
-      if (!v200.ok) return [];
-      const v201 = yield v200.json().catch(() => null);
-      if (!v201 || !v201.seed) return [];
-      const v202 = new URLSearchParams({
-          title: v197.title,
-          mediaType: v199 ? "tv" : "movie",
-          year: v197.year || "",
-          episodeId: String(v199 ? v176 || 1 : 1),
-          seasonId: String(v199 ? v175 || 1 : 1),
-          tmdbId: String(v193),
-          imdbId: v197.imdbId || "",
-          enc: "2",
-          seed: v201.seed
-        }),
-        v203 = yield __nvFetch(v198 + "/cdn/sources-with-title?" + v202.toString(), {
-          headers: HEADERS,
-          skipSizeCheck: true
-        });
-      if (!v203.ok) return [];
-      const v204 = yield v203.text();
-      let v205;
-      try {
-        const v206 = decryptSourcesPayload(v204, v201.seed, v193);
-        v205 = JSON.parse(v206);
-      } catch (v207) {
-        return (console.error("[Cineby] decrypt failed:", v207.message), []);
-      }
-      const v208 = v205 && v205.sources || [];
-      if (!v208.length) return [];
-      const v209 = (v205 && v205.subtitles || []).filter(v210 => v210 && v210.url).map(v211 => ({
-          url: v211.url,
-          lang: v211.lang || v211.language || "Unknown"
-        })),
-        v212 = yield Promise.all(v208.filter(v213 => v213 && v213.url).map(v214 => __async(this, null,
-          function*() {
-            const v216 = yield estimateHlsSize(v214.url);
-            return {
-              url: v214.url,
-              quality: v214.quality || "Unknown",
-              title: "Cineby " + (v214.quality || "Unknown"),
-              name: "Cineby",
-              size: v216,
-              headers: HEADERS,
-              subtitles: v209
-            };
-          })));
-      return (v212.sort((v217, v218) => qualityRank(v218.quality) - qualityRank(v217.quality)), v212);
-    } catch (v219) {
-      return (console.error("[Cineby]", v219), []);
-    }
-  });
-}
-typeof module !== "undefined" && module['exports'] ? module["exports"] = {
-  'getStreams': getStreams
-} : global['getStreams'] = getStreams;
-/* ===== nvio post-filter v1.0 (auto-injected) ============================
-   Rules (per user request 2026-09):
-   1. Language gate: only English / Tagalog (Filipino) audio lanes are kept.
-      Streams explicitly tagged with another audio language (hindi, tamil,
-      spanish, arabic, korean, ...) are dropped unless an allowed language
-      is also present (dual/multi audio) or no language is tagged at all.
-      Subtitle-only tokens (ESub, HindiSub, ...) are ignored by the gate.
-   2. Quality gate: unknown/"Auto" resolutions are probed from the HLS
-      master playlist; everything below 720p, CAM/telesync, and still-
-      unknown rows are dropped. Survivors are labeled 720p/1080p/1440p/4K.
-   3. Dedupe: exact URL, then normalized URL (query stripped, torrent
-      info-hash), then identical name+quality rows. A short-TTL global
-      registry also removes the same URL reported by two different
-      providers (cross-provider duplicates).
-   Opt-out: set SCRAPER_SETTINGS.postFilter = false.
-======================================================================== */
-(function() {
-  var PROVIDER = "cineby";
-  var G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
-
-  function settings() {
-    try {
-      return (G && G.SCRAPER_SETTINGS) || {};
-    } catch (e) {
-      return {};
-    }
-  }
-
-  function hasTimers() {
-    return typeof setTimeout === "function" && typeof clearTimeout === "function";
-  }
-
-  /* ---------- quality ---------- */
-  function normQ(q) {
-    var s = String(q == null ? "" : q).toLowerCase();
-    if (!s) return "";
-    if (/8k/.test(s)) return "4K";
-    if (/2160|4k|uhd/.test(s)) return "4K";
-    if (/1440/.test(s)) return "1440p";
-    if (/1080|fhd/.test(s)) return "1080p";
-    if (/720/.test(s)) return "720p";
-    if (/480|360|240|\bsd\b/.test(s)) return "CAM";
-    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/.test(s)) return "CAM";
-    return "";
-  }
-
-  function qFromText(text) {
-    var s = String(text || "");
-    var m = s.match(/(\d{3,4})\s*p/i);
-    if (m) {
-      var n = parseInt(m[1], 10);
-      if (n >= 2100) return "4K";
-      if (n >= 1300) return "1440p";
-      if (n >= 1000) return "1080p";
-      if (n >= 640) return "720p";
-      return "CAM";
-    }
-    if (/\b8k\b/i.test(s) || /2160|4k|uhd/i.test(s)) return "4K";
-    if (/1440p/i.test(s)) return "1440p";
-    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/i.test(s)) return "CAM";
-    if (/480p|360p|240p|\bsd\b|\bdvdrip\b/i.test(s)) return "CAM";
-    if (/\bhd\b/i.test(s)) return "720p";
-    return "";
-  }
-  var qualCache = G.__NV_QUAL_CACHE__ || (G.__NV_QUAL_CACHE__ = {});
-
-  function probeM3u8(url, headers) {
-    var now = Date.now();
-    var c = qualCache[url];
-    if (c && now - c.t < (c.q ? 15 * 60 * 1000 : 3 * 60 * 1000)) {
-      return Promise.resolve(c.q);
-    }
-    var opts = {
-      headers: Object.assign({}, headers || {})
-    };
-    var p = fetch(url, opts).then(function(r) {
-      return r.ok ? r.text() : "";
-    }).then(function(t) {
-      var q = "";
-      if (t && t.indexOf("#EXTM3U") !== -1) {
-        var best = 0,
-          re = /RESOLUTION=(\d+)x(\d+)/gi,
-          m;
-        while ((m = re.exec(t)) !== null) {
-          var h = parseInt(m[2], 10);
-          if (h > best) best = h;
-        }
-        if (best >= 2100) q = "4K";
-        else if (best >= 1300) q = "1440p";
-        else if (best >= 1000) q = "1080p";
-        else if (best >= 640) q = "720p";
-        else if (best > 0) q = "CAM";
-      }
-      qualCache[url] = {
-        t: now,
-        q: q
-      };
-      return q;
-    }).catch(function() {
-      qualCache[url] = {
-        t: now,
-        q: ""
-      };
-      return "";
-    });
-    if (hasTimers()) {
-      p = Promise.race([p, new Promise(function(res) {
-        var timer = setTimeout(function() {
-          res("");
-        }, 6000);
-        if (typeof timer === "object" && typeof timer.unref === "function") timer.unref();
-      })]);
-    }
-    return p;
-  }
-
-  /* ---------- language gate ---------- */
-  var BLOCK_RE = new RegExp(
-    "\\b(hindi|hin|tamil|telugu|malayalam|mallu|kannada|bengali|bangla|punjabi|marathi|bhojpuri|gujarati|" +
-    "odia|assamese|nepali|urdu|sinhala|arabic|ara|farsi|persian|turkish|turkce|espanol|spanish|latino|" +
-    "castellano|french|vostfr|german|deutsch|russian|korean|kor|japanese|jpn|chinese|mandarin|cantonese|" +
-    "thai|vietnamese|indonesian|bahasa|portuguese|brasileiro|italian|polish|ukrainian|hebrew|" +
-    "hungarian|romanian|dutch|flemish|greek|czech|swedish|danish|norwegian|finnish|org)\\b", "i");
-  var ALLOW_RE = /\b(english|eng|tagalog|filipino)\b/i;
-  var SUB_RE = /\b[a-z0-9]{0,12}subs?\b/gi;
-  // NOTE: gate runs on the stream TITLE only (release names / labels).
-  // Provider names (e.g. "MallumV") must not trigger the language gate.
-  function langAllowed(titleText) {
-    var t = String(titleText || "").replace(SUB_RE, " ");
-    if (BLOCK_RE.test(t)) return ALLOW_RE.test(t);
-    return true;
-  }
-
-  /* ---------- dedupe ---------- */
-  function normUrl(u) {
-    var s = String(u || "");
-    if (/^magnet:/i.test(s)) {
-      var m = s.match(/btih:([a-z0-9]+)/i);
-      return "m:" + (m ? m[1].toLowerCase() : s.slice(0, 80));
-    }
-    return s.replace(/[#?].*$/, "").replace(/\/+$/, "");
-  }
-  var SEEN = G.__NV_SEEN_URLS__ || (G.__NV_SEEN_URLS__ = {});
-  // SEEN[nu] = { exp: <ts>, owner: <provider> }
-  // - same URL from a DIFFERENT provider within TTL -> dropped (cross-provider dup)
-  // - same provider re-querying its own URL -> allowed (repeat opens must still
-  //   return rows) and its claim is refreshed
-  function claim(nu, now, owner) {
-    if (!nu) return true;
-    var e = SEEN[nu];
-    if (e && e.exp > now && e.owner !== owner) return false;
-    SEEN[nu] = {
-      exp: now + 120000,
-      owner: owner
-    };
-    return true;
-  }
-
-  /* ---------- main ---------- */
-  function rank(q) {
-    if (q === "4K") return 4;
-    if (q === "1440p") return 3.5;
-    if (q === "1080p") return 3;
-    if (q === "720p") return 2;
-    return 0;
-  }
-
-  function postProcess(list) {
-    var now = Date.now();
-    var kept = [];
-    var probes = [];
-    var rows = [];
-    (list || []).forEach(function(s, i) {
-      if (!s || !s.url) return;
-      if (!langAllowed(s.title)) return;
-      var text = (s.name || "") + " " + (s.title || "");
-      var isMagnet = /^magnet:/i.test(String(s.url));
-      var q = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText(text);
-      var isHlsLike = /m3u8/i.test(String(s.url)) ||
-        (!/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) &&
-          /^https?:/i.test(String(s.url)));
-      if (!q && !isMagnet && isHlsLike) {
-        rows.push({
-          s: s,
-          i: i
-        });
-        probes.push(probeM3u8(String(s.url), s.headers));
-      } else {
-        rows.push({
-          s: s,
-          i: i
-        });
-        probes.push(Promise.resolve(q));
-      }
-    });
-    return Promise.all(probes).then(function(qs) {
-      var ranked = [];
-      rows.forEach(function(row, k) {
-        var q = qs[k];
-        if (!q) return; // unknown resolution -> removed
-        if (q === "CAM") return; // cam / sd / sub-720 -> removed
-        row.s.quality = q;
-        ranked.push({
-          s: row.s,
-          i: row.i,
-          q: q
-        });
-      });
-      // best first so dedupe keeps the strongest duplicate (stable)
-      ranked.sort(function(a, b) {
-        var r = rank(b.q) - rank(a.q);
-        if (r !== 0) return r;
-        return a.i - b.i;
-      });
-      var seenLocal = {},
-        out = [];
-      ranked.forEach(function(row) {
-        var s = row.s;
-        var nu = normUrl(s.url);
-        if (seenLocal[nu]) return;
-        if (!claim(nu, now, PROVIDER)) return; // already reported by a different provider
-        seenLocal[nu] = 1;
-        out.push(s);
-      });
-      return out.slice(0, 40);
-    }).catch(function() {
-      return (list || []).slice(0, 40);
-    });
-  }
-
-  var __orig = null;
-  try {
-    __orig = module.exports && module.exports.getStreams;
-  } catch (e) {
-    __orig = null;
-  }
-  if (typeof __orig === "function") {
-    module.exports.getStreams = function() {
-      var args = Array.prototype.slice.call(arguments),
-        self = this;
-
-      function finish(v) {
-        if (settings().postFilter === false) return v;
-        try {
-          return postProcess(Array.isArray(v) ? v : []);
-        } catch (e) {
-          return Array.isArray(v) ? v : [];
-        }
-      }
-      try {
-        var r = __orig.apply(self, args);
-        if (r && typeof r.then === "function") {
-          if (typeof setTimeout === "function") {
-            // nv best-settings 4.23.0: hard 8s cap on the whole provider run
-            r = Promise.race([r, new Promise(function(res) {
-              var dl = setTimeout(function() {
-                res([]);
-              }, 8000);
-              if (dl && typeof dl.unref === "function") dl.unref();
-            })]);
-          }
-          return r.then(function(v) {
-            return finish(v);
-          }, function() {
-            return [];
-          });
-        }
-        return finish(r);
-      } catch (e) {
-        return Promise.resolve([]);
-      }
-    };
-  }
-})();
 /* ============================================================
  * nv-plugins WINGS lane v1.0.0 (pack 4.33.0, 2026-09-13)
  * ------------------------------------------------------------
@@ -1175,6 +533,314 @@ typeof module !== "undefined" && module['exports'] ? module["exports"] = {
 
   if (typeof globalThis !== 'undefined') globalThis.__nvWingsStreams = __nvWingsStreams;
 })();
+
+/* ============================================================
+ * nv-plugins cineby.js v7.0.0 (pack 4.40.0 "all providers readable")
+ * ------------------------------------------------------------
+ * Clean readable rebuild of the Cineby native lane. Every machine
+ * name (vNNN) replaced with semantic names; flow unchanged from the
+ * device-verified 4.39 build.
+ *
+ * Flow: TMDB meta (tt-ids resolved via /find) -> domains.json host map
+ *   (raw.githubusercontent sapariyaneel/nuvio-plugin, fallback
+ *   api.speedracelight.com) -> GET {host}/seed?mediaId={tmdbId} ->
+ *   GET {host}/cdn/sources-with-title?title=..&mediaType=..&seasonId=..
+ *   &episodeId=..&tmdbId=..&imdbId=..&enc=2&seed=.. -> payload is
+ *   base64url + custom keystream XOR ("mvm1" magic) -> sources[] rows
+ *   + subtitles[].
+ * Device notes: fetches via timer-guarded __nvFetch (plain fetch when
+ *   the realm has no timers), response.ok checked, whole lane
+ *   fail-soft; WINGS lane + waterfall merge + nvio post-filter tail.
+ * ============================================================ */
+
+var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
+var FALLBACK_API_HOST = "https://api.speedracelight.com";
+var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+var HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  "Referer": "https://www.cineby.at/",
+  "Origin": "https://www.cineby.at"
+};
+var __nvCinebyDomainCache = null;
+
+function getCinebyDomains() {
+  if (__nvCinebyDomainCache) return Promise.resolve(__nvCinebyDomainCache);
+  return __nvFetch(DOMAINS_URL, { skipSizeCheck: true }).then(function (res) {
+    return res.json().then(function (j) {
+      __nvCinebyDomainCache = j || {};
+      return __nvCinebyDomainCache;
+    }).catch(function () { __nvCinebyDomainCache = {}; return __nvCinebyDomainCache; });
+  }).catch(function () { __nvCinebyDomainCache = {}; return __nvCinebyDomainCache; });
+}
+
+function getCinebyApiHost() {
+  return getCinebyDomains().then(function (map) {
+    var host = (map && (map.speedracelight || map["api.speedracelight.com"])) || FALLBACK_API_HOST;
+    return String(host).replace(/\/+$/, "");
+  });
+}
+
+function getCinebyTmdbMeta(tmdbId, mediaType) {
+  var endpoint = mediaType === "tv" ? "tv" : "movie";
+  var url = "https://api.themoviedb.org/3/" + endpoint + "/" + encodeURIComponent(tmdbId) +
+    "?api_key=" + TMDB_API_KEY + "&append_to_response=external_ids";
+  return __nvFetch(url, { skipSizeCheck: true }).then(function (res) {
+    if (!res.ok) return null;
+    return res.json().then(function (data) {
+      var title = endpoint === "tv" ? data.name : data.title;
+      var date = endpoint === "tv" ? data.first_air_date : data.release_date;
+      return {
+        title: title || "",
+        year: date ? String(date).slice(0, 4) : "",
+        imdbId: (data.external_ids && data.external_ids.imdb_id) || data.imdb_id || ""
+      };
+    }).catch(function () { return null; });
+  }).catch(function () { return null; });
+}
+
+/* ---- cineby payload keystream cipher ("mvm1" magic, seed = per-media) ---- */
+
+var SHA256_CONSTANTS = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174
+];
+var MAGIC_BYTES = [0x6d, 0x76, 0x6d, 0x31]; // "mvm1"
+var BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+function fmix32(h) {
+  h = h >>> 0;
+  h ^= h >>> 16;
+  h = Math.imul(h, 2246822507) >>> 0;
+  h ^= h >>> 13;
+  h = Math.imul(h, 3266489909) >>> 0;
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+function rotl32(x, n) {
+  x = x >>> 0;
+  n &= 31;
+  if (n === 0) return x >>> 0;
+  return ((x << n) | (x >>> (32 - n))) >>> 0;
+}
+
+function fnv1a32(text) {
+  var hash = 2166136261;
+  for (var i = 0; i < text.length; i++) {
+    hash = Math.imul(hash ^ text.charCodeAt(i), 16777619) >>> 0;
+  }
+  return fmix32(hash);
+}
+
+/** base64url (and plain base64) -> byte array; atob when available. */
+function base64UrlToBytes(text) {
+  var normalized = text.replace(/-/g, "+").replace(/_/g, "/");
+  while (normalized.length % 4) normalized += "=";
+  var raw = "";
+  try { if (typeof atob === "function") raw = atob(normalized); } catch (e) { raw = ""; }
+  if (!raw) {
+    var stripped = "";
+    for (var s = 0; s < text.length; s++) {
+      var ch = text.charAt(s);
+      if (ch !== "=" && BASE64_CHARS.indexOf(ch) !== -1) stripped += ch;
+    }
+    for (var b = 0; b < stripped.length; b += 4) {
+      var c1 = BASE64_CHARS.indexOf(stripped.charAt(b));
+      var c2 = BASE64_CHARS.indexOf(stripped.charAt(b + 1));
+      var c3 = b + 2 < stripped.length ? BASE64_CHARS.indexOf(stripped.charAt(b + 2)) : -1;
+      var c4 = b + 3 < stripped.length ? BASE64_CHARS.indexOf(stripped.charAt(b + 3)) : -1;
+      raw += String.fromCharCode((c1 << 2) | (c2 >> 4));
+      if (c3 !== -1) raw += String.fromCharCode(((c2 & 15) << 4) | (c3 >> 2));
+      if (c4 !== -1) raw += String.fromCharCode(((c3 & 3) << 6) | c4);
+    }
+  }
+  var bytes = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+
+function makeKeystreamState(seedText, mediaId) {
+  var slots = new Array(61);
+  var state = fmix32(fnv1a32(seedText) ^ fmix32((mediaId >>> 0) ^ 2654435769)) >>> 0;
+  for (var i = 0; i < 8; i++) {
+    // the site's own branch quirk: even (i*(i+1)&1)==0 lanes pull from the
+    // SHA-256 constant table, odd lanes mix a new slot
+    if ((i * (i + 1) & 1) === 0) {
+      var slotIndex = state % 61;
+      state = rotl32((state + 2654435769) >>> 0, 7 + (7 & i));
+      slots[slotIndex] = (state ^ fmix32(state)) >>> 0;
+      state = fmix32((state + slotIndex) >>> 0);
+    } else {
+      slots[i] = SHA256_CONSTANTS[15 & i];
+    }
+  }
+  return { slots: slots, acc: fmix32(2779096485 ^ state) >>> 0 };
+}
+
+function nextKeystreamWord(ks, step) {
+  var slots = ks.slots;
+  var acc = ks.acc;
+  var idx = acc % 61;
+  var missing = (idx in slots) ? -1 : 0;
+  var prev = slots[idx] >>> 0;
+  var mixed = (prev ^ Math.imul(2654435769, step + 1)) >>> 0;
+  var comb = (((acc ^ mixed) >>> 0) | ((acc & mixed & missing) >>> 0)) >>> 0;
+  var spun = rotl32((comb + acc) >>> 0, 31 & idx) ^ rotl32(acc, 31 & Math.imul(idx, 7));
+  var word = fmix32((spun + 2654435769) >>> 0);
+  slots[idx] = word >>> 0;
+  ks.acc = word;
+  return word >>> 0;
+}
+
+function generateKeystream(seedText, mediaId, length) {
+  var ks = makeKeystreamState(seedText, mediaId);
+  var out = new Uint8Array(length);
+  var o = 0, step = 0;
+  while (o < length) {
+    var word = nextKeystreamWord(ks, step++);
+    out[o++] = word & 255;
+    if (o < length) out[o++] = (word >>> 8) & 255;
+    if (o < length) out[o++] = (word >>> 16) & 255;
+    if (o < length) out[o++] = (word >>> 24) & 255;
+  }
+  return out;
+}
+
+function utf8BytesToString(bytes) {
+  var out = "", i = 0;
+  while (i < bytes.length) {
+    var b0 = bytes[i++];
+    if (b0 < 128) {
+      out += String.fromCharCode(b0);
+    } else if ((b0 & 224) === 192) {
+      out += String.fromCharCode(((b0 & 31) << 6) | (bytes[i++] & 63));
+    } else if ((b0 & 240) === 224) {
+      var b1 = bytes[i++], b2 = bytes[i++];
+      out += String.fromCharCode(((b0 & 15) << 12) | ((b1 & 63) << 6) | (b2 & 63));
+    } else if ((b0 & 248) === 240) {
+      var u1 = bytes[i++], u2 = bytes[i++], u3 = bytes[i++];
+      var cp = ((b0 & 7) << 18) | ((u1 & 63) << 12) | ((u2 & 63) << 6) | (u3 & 63);
+      cp -= 65536;
+      out += String.fromCharCode(55296 + (cp >> 10), 56320 + (cp & 1023));
+    } else {
+      out += String.fromCharCode(b0);
+    }
+  }
+  return out;
+}
+
+/** Decrypt the sources-with-title payload; throws when the seed is wrong. */
+function decryptSourcesPayload(payloadB64Url, seed, mediaId) {
+  var cipher = base64UrlToBytes(payloadB64Url);
+  var keystream = generateKeystream(String(seed), mediaId, cipher.length);
+  var plain = new Uint8Array(cipher.length);
+  for (var i = 0; i < cipher.length; i++) plain[i] = cipher[i] ^ keystream[i];
+  for (var m = 0; m < MAGIC_BYTES.length; m++) {
+    if (plain[m] !== MAGIC_BYTES[m]) throw new Error("decrypt failed: bad seed or tampered payload");
+  }
+  return utf8BytesToString(plain.subarray(MAGIC_BYTES.length));
+}
+
+/* ---- quality helpers ---- */
+
+function qualityRank(q) {
+  if (!q) return 0;
+  if (/4k/i.test(String(q))) return 2160;
+  var n = parseInt(q, 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Cineby native lane: TMDB meta -> seed -> encrypted sources payload. */
+function getStreams(tmdbId, mediaType, season, episode) {
+  var raw = String(tmdbId == null ? "" : tmdbId).trim();
+  var idP;
+  if (raw.toLowerCase().indexOf("tt") === 0) {
+    // imdb id -> TMDB find
+    var findUrl = "https://api.themoviedb.org/3/find/" + encodeURIComponent(raw) +
+      "?api_key=" + TMDB_API_KEY + "&external_source=imdb_id";
+    idP = __nvFetch(findUrl, { skipSizeCheck: true }).then(function (res) {
+      if (!res.ok) return null;
+      return res.json().then(function (data) {
+        var bucket = mediaType === "tv" ? data.tv_results : data.movie_results;
+        return bucket && bucket.length ? bucket[0].id : null;
+      }).catch(function () { return null; });
+    }).catch(function () { return null; });
+  } else {
+    idP = Promise.resolve(parseInt(raw, 10) || null);
+  }
+
+  return idP.then(function (id) {
+    if (!id) return [];
+    return getCinebyTmdbMeta(id, mediaType).then(function (meta) {
+      if (!meta || !meta.title) return [];
+      return getCinebyApiHost().then(function (host) {
+        var isTv = mediaType === "tv";
+        var seedUrl = host + "/seed?mediaId=" + encodeURIComponent(id);
+        return __nvFetch(seedUrl, { headers: HEADERS, skipSizeCheck: true }).then(function (res) {
+          if (!res.ok) return [];
+          return res.json().catch(function () { return null; }).then(function (seedData) {
+            if (!seedData || !seedData.seed) return [];
+
+            var pairs = [
+              ["title", meta.title],
+              ["mediaType", isTv ? "tv" : "movie"],
+              ["year", meta.year || ""],
+              ["episodeId", String(isTv ? (episode || 1) : 1)],
+              ["seasonId", String(isTv ? (season || 1) : 1)],
+              ["tmdbId", String(id)],
+              ["imdbId", meta.imdbId || ""],
+              ["enc", "2"],
+              ["seed", seedData.seed]
+            ];
+            var query = [];
+            for (var i = 0; i < pairs.length; i++) {
+              query.push(encodeURIComponent(pairs[i][0]) + "=" + encodeURIComponent(pairs[i][1]));
+            }
+
+            return __nvFetch(host + "/cdn/sources-with-title?" + query.join("&"), { headers: HEADERS, skipSizeCheck: true })
+              .then(function (res2) {
+                if (!res2.ok) return [];
+                return res2.text().then(function (body) {
+                  var payload;
+                  try { payload = JSON.parse(decryptSourcesPayload(body, seedData.seed, id)); }
+                  catch (e) { console.error("[Cineby] decrypt failed:", e.message); return []; }
+
+                  var sources = (payload && payload.sources) || [];
+                  if (!sources.length) return [];
+                  var subtitles = ((payload && payload.subtitles) || [])
+                    .filter(function (s) { return s && s.url; })
+                    .map(function (s) { return { url: s.url, lang: s.lang || s.language || "Unknown" }; });
+
+                  var rows = [];
+                  for (var k = 0; k < sources.length; k++) {
+                    var src = sources[k];
+                    if (!src || !src.url) continue;
+                    var q = src.quality || "Unknown";
+                    rows.push({
+                      url: src.url,
+                      quality: q,
+                      title: "Cineby " + q,
+                      name: "Cineby",
+                      size: "Variable",
+                      headers: HEADERS,
+                      subtitles: subtitles
+                    });
+                  }
+                  rows.sort(function (a, b) { return qualityRank(b.quality) - qualityRank(a.quality); });
+                  return rows;
+                }).catch(function () { return []; });
+              }).catch(function () { return []; });
+          });
+        }).catch(function () { return []; });
+      });
+    });
+  }).catch(function (e) {
+    console.error("[Cineby]", e);
+    return [];
+  });
+}
+
+module.exports = { getStreams: getStreams };
+
 /* ===== nv-plugins device waterfall merge v2.0.0 (pack 4.37.0, 2026-09-14) ======
    Device truth (NuvioMobile PluginRuntime.kt + quickjs-kt 1.0.5-nuvio AAR):
    no timers in the realm (every Promise.race cap was inert or threw
@@ -1183,93 +849,266 @@ typeof module !== "undefined" && module['exports'] ? module["exports"] = {
    old 4.33.0 merge ran BOTH lanes on every call and its cap() called
    setTimeout DIRECTLY -> the whole provider rejected -> 0 rows.
    v2.0.0: sequential waterfall bounded by fetch count, fail-soft both lanes.
-     __WINGS_FIRST = false : native first, WINGS lane as fallback
+     __WINGS_FIRST = true  : WINGS lane first, native only when empty
    ========================================================================== */
-(function() {
+(function () {
   'use strict';
   var __LABEL = 'Cineby';
-  var __WINGS_FIRST = false;
+  var __WINGS_FIRST = true;
   var __ALT_NAME = '__nvWingsStreams';
-
-  function __junk(u) {
-    return /tungtungtungsahur\.cfd|\/api\?d=/i.test(String(u || ''));
-  }
+  function __junk(u) { return /tungtungtungsahur\.cfd|\/api\?d=/i.test(String(u || '')); }
   var __orig = null;
-  try {
-    __orig = module.exports && module.exports.getStreams;
-  } catch (e) {
-    __orig = null;
-  }
+  try { __orig = module.exports && module.exports.getStreams; } catch (e) { __orig = null; }
   if (typeof __orig !== 'function') return;
-
   function runAlt(args, self) {
     var f = null;
-    try {
-      f = (typeof globalThis !== 'undefined' && globalThis) ? globalThis[__ALT_NAME] : null;
-    } catch (e) {
-      f = null;
-    }
+    try { f = (typeof globalThis !== 'undefined' && globalThis) ? globalThis[__ALT_NAME] : null; } catch (e) { f = null; }
     if (typeof f !== 'function') return Promise.resolve([]);
     try {
-      var r = f({
-        tmdbId: args[0],
-        mediaType: args[1],
-        season: args[2],
-        episode: args[3],
-        label: __LABEL
-      });
-      return Promise.resolve(r).then(function(v) {
-        return Array.isArray(v) ? v : [];
-      }, function() {
-        return [];
-      });
-    } catch (e) {
-      return Promise.resolve([]);
-    }
+      var r = f({ tmdbId: args[0], mediaType: args[1], season: args[2], episode: args[3], label: __LABEL });
+      return Promise.resolve(r).then(function (v) { return Array.isArray(v) ? v : []; }, function () { return []; });
+    } catch (e) { return Promise.resolve([]); }
   }
-
   function runNative(args, self) {
     try {
       var r = __orig.apply(self, args);
-      return Promise.resolve(r).then(function(v) {
-        return Array.isArray(v) ? v : [];
-      }, function() {
-        return [];
-      });
-    } catch (e) {
-      return Promise.resolve([]);
-    }
+      return Promise.resolve(r).then(function (v) { return Array.isArray(v) ? v : []; }, function () { return []; });
+    } catch (e) { return Promise.resolve([]); }
   }
-  module.exports.getStreams = function() {
-    var args = Array.prototype.slice.call(arguments),
-      self = this;
-
+  module.exports.getStreams = function () {
+    var args = Array.prototype.slice.call(arguments), self = this;
     function clean(v) {
-      var seen = {},
-        out = [];
-      (v || []).forEach(function(r) {
+      var seen = {}, out = [];
+      (v || []).forEach(function (r) {
         if (!r || !r.url || __junk(r.url)) return;
         var k = String(r.url);
         if (seen[k]) return;
-        seen[k] = 1;
-        out.push(r);
+        seen[k] = 1; out.push(r);
       });
       return out;
     }
-
-    function laneA() {
-      return __WINGS_FIRST ? runAlt(args, self) : runNative(args, self);
-    }
-
-    function laneB() {
-      return __WINGS_FIRST ? runNative(args, self) : runAlt(args, self);
-    }
-    return Promise.resolve().then(laneA).then(function(rows) {
+    function laneA() { return __WINGS_FIRST ? runAlt(args, self) : runNative(args, self); }
+    function laneB() { return __WINGS_FIRST ? runNative(args, self) : runAlt(args, self); }
+    return Promise.resolve().then(laneA).then(function (rows) {
       rows = clean(rows);
       if (rows.length) return rows;
-      return Promise.resolve().then(laneB).then(function(rows2) {
-        return clean(rows2);
-      });
+      return Promise.resolve().then(laneB).then(function (rows2) { return clean(rows2); });
     });
   };
+})();
+
+
+/* ===== nvio post-filter v1.0 (auto-injected) ============================
+   Rules (per user request 2026-09):
+   1. Language gate: only English / Tagalog (Filipino) audio lanes are kept.
+      Streams explicitly tagged with another audio language (hindi, tamil,
+      spanish, arabic, korean, ...) are dropped unless an allowed language
+      is also present (dual/multi audio) or no language is tagged at all.
+      Subtitle-only tokens (ESub, HindiSub, ...) are ignored by the gate.
+   2. Quality gate: unknown/"Auto" resolutions are probed from the HLS
+      master playlist; everything below 720p, CAM/telesync, and still-
+      unknown rows are dropped. Survivors are labeled 720p/1080p/1440p/4K.
+   3. Dedupe: exact URL, then normalized URL (query stripped, torrent
+      info-hash), then identical name+quality rows. A short-TTL global
+      registry also removes the same URL reported by two different
+      providers (cross-provider duplicates).
+   Opt-out: set SCRAPER_SETTINGS.postFilter = false.
+======================================================================== */
+(function () {
+  var PROVIDER = "cineby";
+  var G = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : this;
+  function settings() {
+    try { return (G && G.SCRAPER_SETTINGS) || {}; } catch (e) { return {}; }
+  }
+  function hasTimers() { return typeof setTimeout === "function" && typeof clearTimeout === "function"; }
+
+  /* ---------- quality ---------- */
+  function normQ(q) {
+    var s = String(q == null ? "" : q).toLowerCase();
+    if (!s) return "";
+    if (/8k/.test(s)) return "4K";
+    if (/2160|4k|uhd/.test(s)) return "4K";
+    if (/1440/.test(s)) return "1440p";
+    if (/1080|fhd/.test(s)) return "1080p";
+    if (/720/.test(s)) return "720p";
+    if (/480|360|240|\bsd\b/.test(s)) return "CAM";
+    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/.test(s)) return "CAM";
+    return "";
+  }
+  function qFromText(text) {
+    var s = String(text || "");
+    var m = s.match(/(\d{3,4})\s*p/i);
+    if (m) {
+      var n = parseInt(m[1], 10);
+      if (n >= 2100) return "4K";
+      if (n >= 1300) return "1440p";
+      if (n >= 1000) return "1080p";
+      if (n >= 640) return "720p";
+      return "CAM";
+    }
+    if (/\b8k\b/i.test(s) || /2160|4k|uhd/i.test(s)) return "4K";
+    if (/1440p/i.test(s)) return "1440p";
+    if (/cam|telesync|telecine|\bts\b|\btc\b|screener|dvdscr/i.test(s)) return "CAM";
+    if (/480p|360p|240p|\bsd\b|\bdvdrip\b/i.test(s)) return "CAM";
+    if (/\bhd\b/i.test(s)) return "720p";
+    return "";
+  }
+  var qualCache = G.__NV_QUAL_CACHE__ || (G.__NV_QUAL_CACHE__ = {});
+  function probeM3u8(url, headers) {
+    var now = Date.now();
+    var c = qualCache[url];
+    if (c && now - c.t < (c.q ? 15 * 60 * 1000 : 3 * 60 * 1000)) {
+      return Promise.resolve(c.q);
+    }
+    var opts = { headers: Object.assign({}, headers || {}) };
+    var p = __nvFetch(url, opts).then(function (r) {
+      return r.ok ? r.text() : "";
+    }).then(function (t) {
+      var q = "";
+      if (t && t.indexOf("#EXTM3U") !== -1) {
+        var best = 0, re = /RESOLUTION=(\d+)x(\d+)/gi, m;
+        while ((m = re.exec(t)) !== null) {
+          var h = parseInt(m[2], 10);
+          if (h > best) best = h;
+        }
+        if (best >= 2100) q = "4K";
+        else if (best >= 1300) q = "1440p";
+        else if (best >= 1000) q = "1080p";
+        else if (best >= 640) q = "720p";
+        else if (best > 0) q = "CAM";
+      }
+      qualCache[url] = { t: now, q: q };
+      return q;
+    }).catch(function () { qualCache[url] = { t: now, q: "" }; return ""; });
+    if (hasTimers()) {
+      p = Promise.race([p, new Promise(function (res) {
+        var timer = setTimeout(function () { res(""); }, 6000);
+        if (typeof timer === "object" && typeof timer.unref === "function") timer.unref();
+      })]);
+    }
+    return p;
+  }
+
+  /* ---------- language gate ---------- */
+  var BLOCK_RE = new RegExp(
+    "\\b(hindi|hin|tamil|telugu|malayalam|mallu|kannada|bengali|bangla|punjabi|marathi|bhojpuri|gujarati|" +
+    "odia|assamese|nepali|urdu|sinhala|arabic|ara|farsi|persian|turkish|turkce|espanol|spanish|latino|" +
+    "castellano|french|vostfr|german|deutsch|russian|korean|kor|japanese|jpn|chinese|mandarin|cantonese|" +
+    "thai|vietnamese|indonesian|bahasa|portuguese|brasileiro|italian|polish|ukrainian|hebrew|" +
+    "hungarian|romanian|dutch|flemish|greek|czech|swedish|danish|norwegian|finnish|org)\\b", "i");
+  var ALLOW_RE = /\b(english|eng|tagalog|filipino)\b/i;
+  var SUB_RE = /\b[a-z0-9]{0,12}subs?\b/gi;
+  // NOTE: gate runs on the stream TITLE only (release names / labels).
+  // Provider names (e.g. "MallumV") must not trigger the language gate.
+  function langAllowed(titleText) {
+    var t = String(titleText || "").replace(SUB_RE, " ");
+    if (BLOCK_RE.test(t)) return ALLOW_RE.test(t);
+    return true;
+  }
+
+  /* ---------- dedupe ---------- */
+  function normUrl(u) {
+    var s = String(u || "");
+    if (/^magnet:/i.test(s)) {
+      var m = s.match(/btih:([a-z0-9]+)/i);
+      return "m:" + (m ? m[1].toLowerCase() : s.slice(0, 80));
+    }
+    return s.replace(/[#?].*$/, "").replace(/\/+$/, "");
+  }
+  var SEEN = G.__NV_SEEN_URLS__ || (G.__NV_SEEN_URLS__ = {});
+  // SEEN[nu] = { exp: <ts>, owner: <provider> }
+  // - same URL from a DIFFERENT provider within TTL -> dropped (cross-provider dup)
+  // - same provider re-querying its own URL -> allowed (repeat opens must still
+  //   return rows) and its claim is refreshed
+  function claim(nu, now, owner) {
+    if (!nu) return true;
+    var e = SEEN[nu];
+    if (e && e.exp > now && e.owner !== owner) return false;
+    SEEN[nu] = { exp: now + 120000, owner: owner };
+    return true;
+  }
+
+  /* ---------- main ---------- */
+  function rank(q) {
+    if (q === "4K") return 4;
+    if (q === "1440p") return 3.5;
+    if (q === "1080p") return 3;
+    if (q === "720p") return 2;
+    return 0;
+  }
+  function postProcess(list) {
+    var now = Date.now();
+    var kept = [];
+    var probes = [];
+    var rows = [];
+    (list || []).forEach(function (s, i) {
+      if (!s || !s.url) return;
+      if (!langAllowed(s.title)) return;
+      var text = (s.name || "") + " " + (s.title || "");
+      var isMagnet = /^magnet:/i.test(String(s.url));
+      var q = normQ(s.quality) || normQ(String(s.title || "").split("\n")[0]) || qFromText(text);
+      var isHlsLike = /m3u8/i.test(String(s.url)) ||
+        (!/\.(mp4|mkv|avi|mov|webm|ts|flv|m4v|mp3|aac)(\?|$)/i.test(String(s.url.split("?")[0])) && /^https?:/i.test(String(s.url)));
+      if (!q && !isMagnet && isHlsLike) {
+        rows.push({ s: s, i: i });
+        probes.push(probeM3u8(String(s.url), s.headers));
+      } else {
+        rows.push({ s: s, i: i });
+        probes.push(Promise.resolve(q));
+      }
+    });
+    return Promise.all(probes).then(function (qs) {
+      var ranked = [];
+      rows.forEach(function (row, k) {
+        var q = qs[k];
+        if (!q) return; // unknown resolution -> removed
+        if (q === "CAM") return; // cam / sd / sub-720 -> removed
+        row.s.quality = q;
+        ranked.push({ s: row.s, i: row.i, q: q });
+      });
+      // best first so dedupe keeps the strongest duplicate (stable)
+      ranked.sort(function (a, b) {
+        var r = rank(b.q) - rank(a.q);
+        if (r !== 0) return r;
+        return a.i - b.i;
+      });
+      var seenLocal = {}, out = [];
+      ranked.forEach(function (row) {
+        var s = row.s;
+        var nu = normUrl(s.url);
+        if (seenLocal[nu]) return;
+        if (!claim(nu, now, PROVIDER)) return; // already reported by a different provider
+        seenLocal[nu] = 1;
+        out.push(s);
+      });
+      return out.slice(0, 40);
+    }).catch(function () { return (list || []).slice(0, 40); });
+  }
+
+  var __orig = null;
+  try { __orig = module.exports && module.exports.getStreams; } catch (e) { __orig = null; }
+  if (typeof __orig === "function") {
+    module.exports.getStreams = function () {
+      var args = Array.prototype.slice.call(arguments), self = this;
+      function finish(v) {
+        if (settings().postFilter === false) return v;
+        try { return postProcess(Array.isArray(v) ? v : []); }
+        catch (e) { return Array.isArray(v) ? v : []; }
+      }
+      try {
+        var r = __orig.apply(self, args);
+        if (r && typeof r.then === "function") {
+          if (typeof setTimeout === "function") {
+            // nv best-settings 4.23.0: hard 8s cap on the whole provider run
+            r = Promise.race([r, new Promise(function (res) {
+              var dl = setTimeout(function () { res([]); }, 8000);
+              if (dl && typeof dl.unref === "function") dl.unref();
+            })]);
+          }
+          return r.then(function (v) { return finish(v); }, function () { return []; });
+        }
+        return finish(r);
+      } catch (e) { return Promise.resolve([]); }
+    };
+  }
 })();
