@@ -1,5 +1,53 @@
 # NV Plugins
 
+## v4.42.0 (2026-09-15) - netmirror v17.0.0 "verbatim pasted code"
+
+User directive: "please replace netmirror with pasted code" - the pasted readable netmirror
+(soryn shape) is now the file, unmodified.
+
+- The implementation is the paste exactly: "use strict"; TMDB_API_KEY, PLATFORM_MAP
+  (netflix/primevideo/hotstar/disney), NEW_TV_BASE_HEADERS, 24 base64 NEW_TV_DOMAINS;
+  resolveApiUrl -> fetchFromNetflixDirect (net27.cc embed-tmdb) -> fetchEpisodesPage /
+  getAllEpisodes -> fetchFromPlatform -> getStreams; meetsQualityFilter (>=720p, Auto passes);
+  module.exports = { getStreams }.
+- Single addition: a guarded globalThis.atob fallback prepended above the paste. Device
+  runtimes may lack global atob (every previously device-validated netmirror guarded it);
+  without the guard a raw atob ReferenceError would kill all four NewTV platform lanes.
+- With the paste, the Alpha lane and the nvio post-filter tail are gone (the pasted code
+  self-enforces the >=720p floor and is fail-soft per platform; 8 working providers already
+  run without the tail). Captions pass through unfiltered (soryn parity).
+- Sandbox (datacenter): 125988 S1E1 -> net27 1080p +4 subs, 0.6s; junk-id and tv-without-s/e
+  -> [] fail-soft, no hang; NewTV domains fail-fast from DC IPs (retail/device IPs reach them
+  directly, as device-verified in earlier rounds). 341 lines / 11.6KB (v16: 1,040 / 39.5KB).
+- The other 31 providers are byte-identical to 4.41.0 (md5-verified in the package step).
+
+## v4.41.0 (2026-09-15) - netmirror v16.0.0 "flat soryn port"
+
+User directive: "i want a readble like this" - pasting the eclipsia soryn.js source verbatim
+as the shape netmirror.js should have.
+
+netmirror.js is rewritten in that exact shape: "use strict", plain constants, plain async
+functions, no classes, no state machines, no polyfill blocks - 59,339B/1,429 lines down to
+~39.5KB/1,040 lines, and the core (everything above the auto-injected nvio post-filter tail)
+reads top-to-bottom like the pasted file.
+
+- Lanes kept: net27 embed-tmdb (soryn parity, en+fil caption filter), NewTV (soryn parity),
+  and the user-validated Alpha lane ("remove not working stream just leave alpha") - compact
+  port with pure-JS HMAC-SHA256 signing, Alpha rows only.
+- Device killers removed vs BOTH soryn and v15: soryn's 24-domain sequential probe becomes 6
+  concurrent probes with a 60s negative memo + single-flight (previously one failed probe
+  re-probed 6 dead domains for EVERY platform = up to 24 dead fetches per call); soryn's
+  while(true) episode pagination becomes 8 pages / 12 seasons / 18-fetch budget; watchpvr
+  empty-page retries 3 -> 2; zero timers in the file (the plugin realm ships none).
+- onSettings(captionLang) dropped -> hasSettings:false; caption filter fixed to the v15
+  default (English + Filipino tracks).
+- Sandbox (datacenter): 969681 movie -> Alpha 1080p; 125988 S1E1 -> net27 1080p + Alpha 1080p
+  with English subs, 0.9s on the cache/probe-memo path (first call pays the dead-domain probe
+  on datacenter IPs only - retail IPs hit the NewTV API directly, as device-verified in v15).
+  tv-without-s/e guard and junk-id fail-soft verified. HMAC parity vs node:crypto re-derived
+  through the live Alpha lane (rows returned).
+- The other 31 providers are byte-identical to 4.40.0 (md5-verified in the package step).
+
 ## v4.40.0 (2026-09-14) - "ALL PROVIDERS READABLE" - 16 providers rebuilt clean, zero device killers
 
 User directive: "i want all providers readable and no device killer fix them all", with the
