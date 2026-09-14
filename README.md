@@ -4,6 +4,30 @@ Clean Nuvio provider collection migrated from the canonical NVV provider set.
 
 The import workflow keeps only the canonical provider implementations registered in `manifest.json`.
 
+## v4.34.0 — CINEJOY RE-ADDED as v2.0.0 hybrid (zero-config universal lanes)
+
+User request: bring cinejoy back, using github.com/jamilkj18434-boop/CineJoyScraper as a working reference. That repo (Playwright driving cinejoy.to + m3u8 interception) proves the site is alive. A headless-browser trace plus a from-Node chain replay confirmed the full picture on 2026-09-14:
+
+### What was verified live
+- cinejoy.to is up; movie pages are `/movie/{tmdbId}-{slug}` (SvelteKit SPA); the player decrypts via `api.shegu.st/crush.wasm` and POSTs `api.shegu.st/g` (binary request AND response)
+- The provider's native chain replays perfectly from Node: `/servers` 8x ok -> enc-dec.app enc-cinejoy -> binary POST /g 200 -> dec-cinejoy -> real HLS master on info.movieboxnoob.cc (Mutiny 1288445)
+- The API does NOT accept text/base64 bodies at /g (404) - the binary leg is mandatory at the API level
+- Therefore on NuvioMobile (UTF-8 string-only bridge, verified at app-source level in a previous cycle) the native chain can never connect without the user's worker relay - the same conclusion as v1.8.0, now re-proven
+
+### What changed in cinejoy.js v2.0.0
+- NEW Lane T1 (universal, zero-config): the 4.33.0-verified WINGS lane (api.speedracelight.com, mvm1 keystream decrypt, partial-result collection) targeting movie+TV - 4 quality rows per title (4K/1080p/720p/480p), live-verified
+- NEW Lane T2 (movies, zero-config): stremio-moviebox-1.onrender.com (MovieBox CDN family - the same CDN family cinejoy.to itself streams from), plain GET JSON with the addon's proxyHeaders applied
+- Native shegu chain kept byte-identical (8-server wave sweep, enc-dec, binary /g lanes, /cjg + /cjs worker relay lanes): NuvioTV/PC get the authentic movieboxnoob.cc 4K/HLS rows with no configuration; Mobile users who set the "Cinejoy relay base URL" setting get them too
+- Lanes run in PARALLEL, rows merged + URL-deduped; the provider fails only when every lane fails
+- Postfilter tail cap raised 12s -> 20s (same treatment videasy got in 4.33.0) so the 14s WINGS flush survives slow mobile networks
+- Live test results from the build sandbox: Mutiny 6 rows (9.2s, incl. 2 native movieboxnoob rows), Fight Club 9 rows (7.2s, 4 lanes all contributing), Breaking Bad S1E1 6 rows (18.6s, native + text)
+
+### Pack facts
+- 32 provider files, manifest 1:1 (cinejoy re-added at the user's request; standing "no re-adds" rule overridden by this explicit ask)
+- validate-manifest.js: 32 providers, 0 warnings, 0 errors; every provider syntax-checked
+- The asian-catalog addon/worker is UNCHANGED this cycle (bundle already carries /cjg + /cjs); no CF Worker redeploy needed
+- Untouched per standing rule: kisskh, asianhub, pinoyhub, tagalogtorrents, miruro, pencuri, netmirror (English-only), cinemacity (Tagalog)
+
 ## v4.33.0 — The 12-provider recovery release (verified-lane merge)
 
 User device report on 4.32.0: vidlink showed 1 dead stream; vidlove, videasy, vidfast, moviebox, moviesdrive, peachify, movieshunt, cinefreak, cinemacity, cineby showed no streams at all; anikototv rows would not play. Every lane in this cycle was live-verified from the build sandbox on 2026-09-13 before shipping (Fight Club 550 movie + Breaking Bad 1396 S1E1).
