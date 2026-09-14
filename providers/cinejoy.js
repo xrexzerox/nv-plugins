@@ -1,7 +1,19 @@
 /**
  * cinejoy - Built from src/cinejoy/ (run bun build.js to regenerate)
  *
- * v2.0.0 (universal text lanes, 2026-09-14):
+ * v2.1.0 (device-hardened lanes, 2026-09-14):
+ *  Device report: 4.34.0 showed no streams on NuvioMobile while the same
+ *  build resolved 6-9 rows from the sandbox. Root cause found by a
+ *  Mobile-fidelity sandbox (string-only bridge + per-call latency):
+ *  withSharedSubs' two sequential 12s subtitle fetches sat INSIDE the 20s
+ *  postfilter tail race - on real mobile networks 14s (WINGS flush) + up to
+ *  24s (subs) blew the cap and the tail returned []. Fixes:
+ *    - subtitles now race-capped at 3s (subs are garnish, streams are the
+ *      product; attachment simply skips on slow networks)
+ *    - NEW Lane T3: api.vidlove.cc moviebox2 (the MovieBox backend in the
+ *      vidlove ring, 4.32.0-proven shape) - movie+tv, 6.5s cap, so TV rows
+ *      do not depend on the WINGS flush alone
+ *  v2.0.0 (universal text lanes):
  *  User brought a Playwright reference scraper (github.com/jamilkj18434-boop/
  *  CineJoyScraper) proving cinejoy.to is alive: the site player decrypts via
  *  api.shegu.st/crush.wasm in-browser and POSTs the binary /g leg - exactly
@@ -1275,7 +1287,50 @@ function cinejoyMovieBoxRows(ctx) {
   });
 }
 
-/* --- text orchestrator: T1 always, T2 for movies; both fail-soft --- */
+/* --- Lane T3: vidlove API moviebox2 server (movie+tv, 4.32.0-proven shape) --- */
+var _CJ_VL_BASE = "https://api.vidlove.cc";
+var _CJ_VL_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+function cinejoyVidloveRows(ctx) {
+  return __async(this, null, function* () {
+    if (!ctx || (!ctx.tmdbId && !ctx.imdbId))
+      return [];
+    const isTv = !!ctx.isTv;
+    // 4.32.0-proven invocation: the id goes through as the provider's own
+    // first getStreams arg (tmdb id). imdb also resolves for movies, but the
+    // tv endpoint wants the numeric tmdb id (imdb -> "Invalid TMDB ID").
+    const qid = String(ctx.tmdbId || ctx.imdbId);
+    let params = "id=" + encodeURIComponent(qid) + "&mode=json&sources=moviebox2";
+    if (isTv)
+      params += "&season=" + encodeURIComponent(ctx.season || 1) + "&episode=" + encodeURIComponent(ctx.episode || 1);
+    const out = [];
+    try {
+      const p = fetch(_CJ_VL_BASE + "/" + (isTv ? "tv" : "movie") + "?" + params, {
+        headers: { "User-Agent": _CJ_VL_UA, Accept: "application/json", Referer: "https://player.vidlove.cc/" }
+      }).then(function (r) { return r && r.ok ? r.json() : null; });
+      const j = yield (hasTimers()
+        ? Promise.race([p, new Promise(function (res) { const t = setTimeout(function () { res(null); }, 6500); if (t && typeof t.unref === "function") t.unref(); })])
+        : p);
+      const s = j && j.source;
+      if (s && s.url && String(s.url).indexOf("http") === 0) {
+        // 4.33.0 pack rule: the VidAPI relay (tungtungtungsahur.cfd YT-rips,
+        // 640x266) is junk - best-mode can return it, so guard here too.
+        if (/tungtungtungsahur\.cfd/i.test(String(s.url)))
+          return out;
+        const subs = (j.subtitles || []).slice(0, 6).map(function (st) {
+          return { url: st.file, language: "en", name: st.label || "Subtitle" };
+        }).filter(function (x) { return x.url; });
+        const sRow = makeStream("Cinejoy", "Cinejoy MovieBox | " + (s.label || "moviebox2") + "\n\ud83d\udcfa quality resolves at playback", String(s.url), "", { Referer: "https://player.vidlove.cc/", "User-Agent": _CJ_VL_UA }, subs);
+        if (sRow)
+          out.push(sRow);
+      }
+    } catch (e) {
+      return out;
+    }
+    return out;
+  });
+}
+
+/* --- text orchestrator: T1 always, T2 movies, T3 always; fail-soft --- */
 function cinejoyTextRows(ctx) {
   return __async(this, null, function* () {
     const out = [];
@@ -1295,28 +1350,49 @@ function cinejoyTextRows(ctx) {
       }
     } catch (e) {}
     jobs.push(cinejoyMovieBoxRows(ctx).then(function (rows) { out.push.apply(out, rows || []); }).catch(function () {}));
+    jobs.push(cinejoyVidloveRows(ctx).then(function (rows) { out.push.apply(out, rows || []); }).catch(function () {}));
     yield Promise.all(jobs);
     return out;
   });
 }
 
 /**
- * v2.0.0 orchestrator: native shegu chain (direct binary on TV/PC, /cjg+/cjs
- * relay on Mobile when configured) runs IN PARALLEL with the universal text
- * lanes. First-class fail-soft everywhere: rows from whichever lanes succeed.
+ * v2.0.0 orchestrator (v2.1.0 hardening): native shegu chain (direct binary on
+ * TV/PC, /cjg+/cjs relay on Mobile when configured) runs IN PARALLEL with the
+ * universal text lanes. A 14.5s MERGE DEADLINE resolves the merge with
+ * whatever lanes have settled by then - on device networks this guarantees
+ * the 20s postfilter tail cap is never reached (the 4.34.0 zero-row cause).
+ * First-class fail-soft everywhere.
  */
 function scrape(ctx) {
   return __async(this, null, function* () {
-    const jobs = [];
+    const box = { native: null, text: null };
     let nativeP, textP;
     try { nativeP = scrapeNative(ctx); } catch (e) { nativeP = Promise.resolve([]); }
     try { textP = cinejoyTextRows(ctx); } catch (e) { textP = Promise.resolve([]); }
-    jobs.push(Promise.resolve(nativeP).catch(function () { return []; }));
-    jobs.push(Promise.resolve(textP).catch(function () { return []; }));
-    const results = yield Promise.all(jobs);
+    Promise.resolve(nativeP).then(function (v) { box.native = v || []; }, function () { box.native = []; });
+    Promise.resolve(textP).then(function (v) { box.text = v || []; }, function () { box.text = []; });
+    let results;
+    if (hasTimers()) {
+      results = yield Promise.race([
+        Promise.all([
+          Promise.resolve(nativeP).catch(function () { return []; }),
+          Promise.resolve(textP).catch(function () { return []; })
+        ]),
+        new Promise(function (res) {
+          const t = setTimeout(function () { res([box.native || [], box.text || []]); }, 14500);
+          if (t && typeof t.unref === "function") t.unref();
+        })
+      ]);
+    } else {
+      results = yield Promise.all([
+        Promise.resolve(nativeP).catch(function () { return []; }),
+        Promise.resolve(textP).catch(function () { return []; })
+      ]);
+    }
     const seen = {};
     const merged = [];
-    results.forEach(function (arr) {
+    (results || []).forEach(function (arr) {
       (arr || []).forEach(function (s) {
         if (!s || !s.url)
           return;
@@ -1390,7 +1466,23 @@ function getStreams(tmdbId, mediaType, season, episode) {
     try {
       const ctx = yield buildCtx(tmdbId, mediaType, season, episode);
       const out = yield withTimeout(scrape(ctx), 2e4, "cinejoy");
-      return presentStreams(dedupe(yield withSharedSubs(out, ctx)), ctx);
+      let withSubs = out;
+      try {
+        if (hasTimers()) {
+          withSubs = yield Promise.race([
+            withSharedSubs(out, ctx),
+            new Promise(function (res) {
+              const t = setTimeout(function () { res(out); }, 2500);
+              if (t && typeof t.unref === "function") t.unref();
+            })
+          ]);
+        } else {
+          withSubs = yield withSharedSubs(out, ctx);
+        }
+      } catch (eSubs) {
+        withSubs = out;
+      }
+      return presentStreams(dedupe(withSubs), ctx);
     } catch (e) {
       console.log("[Streamline][cinejoy] " + (e && e.message));
       return [];
