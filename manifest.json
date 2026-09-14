@@ -1,6 +1,6 @@
 {
   "name": "NV Plugins",
-  "version": "4.32.0",
+  "version": "4.33.0",
   "description": "nv-plugins 4.32.0: torrents = ONE merged torrent provider (Torrentio + TorrentsDB backends, seeders >= 5 hard floor, 720p/1080p rows only, debrid gear-icon support) - torrentio.js removed as redundant. Playback fixes: anikototv v1.2.0 emits the tokened master plus an ALT host row (ncdn.imgnex.top; same token verified valid on both CDN hosts), miruro v2.9.0 unchanged. Stream-source fixes: videasy v2.1.0 returns the streams it finds inside the 8s budget (progressive 6.8s deadline - previously all rows were raced away), vidlove v2.0.0 re-pointed to the live player API api.vidlove.cc (routes recovered from the player bundle), xpass v2.0.0 ports the site's own AES-GCM v3 data lane (key = SHA256 over the signed token, decrypt verified against the live blob), and moviebox/vidfast/peachify gained the api.vidlove.cc fallback lane (moviebox2 / ipcloud+megaknight / warden+tcloud server subsets). moviesdrive follows the site's host rotation (new1 -> new4) and parallelizes archive resolution. peachify re-enabled. vidlink/cineby verified healthy - vidlink only returns 0 rows for titles whose upstream tops out below 720p (pack rule), and cinemacity remains Cloudflare-gated from datacenter IPs (device-validated historically).",
   "author": "xrexzerox",
   "scrapers": [
@@ -32,7 +32,7 @@
       "id": "vidlink",
       "name": "Vidlink",
       "description": "Vidlink streaming with encrypted TMDB ID support; v1.3.0 replaces the size:Unknown placeholder (shown as 'Unknown' in Nuvio rows) with real formatted sizes and attaches English+Filipino subtitles. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
-      "version": "1.4.0",
+      "version": "1.5.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -54,7 +54,7 @@
       "id": "vidfast",
       "name": "VidFast",
       "description": "VidFast v6.1: default network timeout 20s -> 8s (vidfast.vc enc-dec.app decode lane could stall 20s). Lanes unchanged, nvio post-filter kept. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet. | v6.2.0 (4.32.0): vidfast.vc page is click-gated upstream so the scrape lane yields nothing; added the api.vidlove.cc ipcloud+megaknight fallback lane (parallel, merged)",
-      "version": "6.2.0",
+      "version": "6.3.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -98,7 +98,7 @@
       "id": "cinemacity",
       "name": "CinemaCity",
       "description": "CinemaCity v5: language-aware PlayerJS extraction - English entries first, Tagalog/Filipino dub entries emitted as CinemaCity | Tagalog Dub rows when the site carries them, Italian/Hindi/Arabic last-resort, sub-only variants dropped; 3-identity UA ladder kept as CF fallback",
-      "version": "5.0.0",
+      "version": "5.1.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -308,7 +308,7 @@
       "id": "cineby",
       "name": "Cineby",
       "description": "Cineby: FULLY DECODED AIO port - seed handshake + sources-with-title flow on the live api host, encrypted payload decryption intact, subtitles mapped, 8s/12s deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
-      "version": "2.4.0",
+      "version": "2.5.0",
       "author": "Nuvio Team (AIO merge)",
       "supportedTypes": [
         "movie",
@@ -329,7 +329,7 @@
       "id": "movieshunt",
       "name": "MoviesHunt",
       "description": "MoviesHunt: FULLY DECODED AIO port - movieshunt.run search + abhilinks resolver + vcloud/gdflix hops, real UA set, 8s per-call + 12s overall deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
-      "version": "2.4.0",
+      "version": "2.5.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie"
@@ -439,14 +439,14 @@
       "id": "cinefreak",
       "name": "CineFreak",
       "description": "CineFreak v1.3 - DISABLED (upstream API removed): cinefreak.nl deleted its wp-json search route (rest_no_route), so title search is impossible. Site front-end still alive; re-enable if the REST API returns.",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
         "tv"
       ],
       "filename": "providers/cinefreak.js",
-      "enabled": false,
+      "enabled": true,
       "formats": [
         "mkv",
         "mp4"
@@ -505,7 +505,7 @@
       "id": "moviebox",
       "name": "MovieBox",
       "description": "MovieBox via the pengu.uk resolver gateway (source_moviebox config, auth token from the AIO build). FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). | v1.2.0 (4.32.0): pengu.uk gateway was repurposed upstream; added the api.vidlove.cc moviebox2 fallback lane (runs in parallel, rows merged) - pengu/onrender lane kept as primary",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -527,7 +527,7 @@
       "id": "moviesdrive",
       "name": "MoviesDrive",
       "description": "MoviesDrive new1.moviesdrive.christmas + mdrive.lol link hops. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). | v5.1.0 (4.32.0): host-follow fix - new1 302s to the current host dropping the query string so every search returned latest uploads (universal no-match); effective origin resolved per call; archive + hubcloud resolution parallelized to fit the 8s budget",
-      "version": "5.1.0",
+      "version": "5.2.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -572,7 +572,7 @@
       "id": "peachify",
       "name": "Peachify",
       "description": "Peachify v2.1 - DISABLED (upstream dead): all stream mirrors (uwu/usa.eat-peach.sbs) are DNS NXDOMAIN since 2026-09; peachify.top front-end is Cloudflare-gated and the old worker is gone. Re-enable when mirrors return. | v2.2.0 (4.32.0): re-enabled with the api.vidlove.cc warden+tcloud fallback lane (old mirrors are NXDOMAIN; lane verified returning rows)",
-      "version": "2.2.0",
+      "version": "2.3.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -594,7 +594,7 @@
       "id": "videasy",
       "name": "VidEasy",
       "description": "VidEasy v2.0 - AIO-EXACT DECODE: seed -> 9 speedracelight server fan-out (Hydrogen/Titanium/Oxygen/Aluminium/Nitrogen/...) verified live (6+ rows on Wicked 2024). Replaces the previous port whose Aluminium-only lane returned 0 rows. | v2.1.0 (4.32.0): progressive 6.8s deadline - the 10-server sweep previously finished after the 8s provider cap so every found stream was raced away to zero rows; now whatever landed in time returns",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -616,7 +616,7 @@
       "id": "vidlove",
       "name": "VidLove",
       "description": "VidLove aggregator: one api call fans out to moviebox/ipcloud/tcloud/vidapi/vixsrc/1embed/xpass/vidrift/lookmovie/vidnest sources. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). | v2.0.0 (4.32.0): re-pointed to the live player API api.vidlove.cc (routes + server ring recovered from the player.vidlove.cc bundle: vidapi/cinefreak/warden/tcloud/megaknight); progressive 6.2s deadline",
-      "version": "2.0.0",
+      "version": "2.1.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -662,7 +662,7 @@
       "id": "anikototv",
       "name": "AnikotoTV",
       "description": "AnikotoTV v1.1.0 - FIXED: MegaPlay getSources/getSourcesNew now ship the stream URL AES-encrypted in the \"enc\" field; the old code only read the retired plain sources.file so every anime returned zero rows. extractHLS decrypts enc (AES-256-CBC, keys reversed from MegaPlay e1-player.min.js) and signs the master.m3u8 token (HMAC-SHA256) that the CDN requires; SUB row label relabeled \"SUB (JP)\" so the nvio language gate no longer drops it. Live-verified: Frieren S1E1/E5 via mal/52991. Decoded AIO port otherwise unchanged (8s caps, fail-soft, nvio post-filter attached). | v1.2.0 (4.32.0): emits the tokened master AND an ALT row on ncdn.imgnex.top (same token valid on both CDN hosts - live-verified 200 M3U8); fixes device 'rows show but stream will not play' when fetch.nexabloom.top is unreachable on the device network",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",

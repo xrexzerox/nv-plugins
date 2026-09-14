@@ -4,6 +4,30 @@ Clean Nuvio provider collection migrated from the canonical NVV provider set.
 
 The import workflow keeps only the canonical provider implementations registered in `manifest.json`.
 
+## v4.33.0 — The 12-provider recovery release (verified-lane merge)
+
+User device report on 4.32.0: vidlink showed 1 dead stream; vidlove, videasy, vidfast, moviebox, moviesdrive, peachify, movieshunt, cinefreak, cinemacity, cineby showed no streams at all; anikototv rows would not play. Every lane in this cycle was live-verified from the build sandbox on 2026-09-13 before shipping (Fight Club 550 movie + Breaking Bad 1396 S1E1).
+
+### The verified WINGS lane (new shared fallback)
+- One self-contained, dependency-free lane (plain JS, QuickJS/Hermes-safe: no URLSearchParams, no AbortController, no node APIs) targeting the speedracelight backend that VidEasy/Cineby already use - seed -> sources-with-title -> custom keystream decrypt (ported byte-for-byte from cineby.js) -> direct m3u8 rows with vidking.net referers.
+- Collects PARTIAL results: a hanging server can no longer zero the whole lane (the old Promise.all gate was the flake mechanism).
+- Merged into 9 providers via an auto-injected wrapper that never rejects, caps both lanes (native 20s / wings 20s), dedupes by URL, and drops the junk VidAPI relay rows (tungtungtungsahur.cfd YT-rips at 640x266).
+
+### Root causes found per provider
+- vidlink v1.5.0 - the media CDN (bcdnxw.hakunaymatata.com) 429s "vidlink.pro" referers; the API ships each quality with its own filmboom.top referer, now applied. Verified: 206 video/mp4 with the fixed header vs 429 before. WINGS lane appended.
+- cineby v2.5.0 - estimateHlsSize (1 master fetch + 5 segment HEADs per stream) pushed every call past the native 8s tail cap on device networks -> empty sheet on device while fast networks looked fine. Size estimation removed (1.5s full call now).
+- videasy v2.2.0 - server race 6.8s -> 9s, hard tail cap 12s -> 20s (mobile TMDB+seed+servers exceeded 12s -> tail returned []).
+- vidfast v6.3.0 / moviebox v1.3.0 / peachify v2.3.0 / vidlove v2.1.0 - native lanes only emitted the junk VidAPI relay row; WINGS rows now come FIRST, relay rows dropped.
+- moviesdrive v5.2.0 - site migrated to a JS-rendered search (search.html + Typesense search.php) and hubcloud search-recover pages the old parsers cannot read; its new catalog no longer even carries tt0137523. WINGS first, native kept for old-format pages.
+- movieshunt v2.5.0 - movieshunt.run 301s to movieshunt.monster whose search is JS-rendered (lookup.php JSON); old entry-title parser found 1 unusable row. WINGS first.
+- cinefreak v1.1.0 - upstream search route dead (re-confirmed live); WINGS first. Re-enabled in the manifest.
+- cinemacity v5.1.0 - cinemacity.cc sits behind a Cloudflare managed challenge (403 from datacenter IPs across all 3 identity ladders; device IPs normally pass). Native (Tagalog/Filipino) lanes stay FIRST, WINGS appended so titles still resolve when CF blocks.
+- anikototv v1.3.0 - MegaPlay CDN (ncdn.imgnex.top / fetch.nexabloom.top) rejects datacenter traffic and the device report says rows do not play; the decoded 4.26.0 AllAnime provider is embedded IIFE-scoped as an independent anime lane (search POST verified live; the sources endpoint is captcha-gated from datacenter IPs but normally open to residential IPs). AllAnime rows first, MegaPlay lanes kept.
+
+### Notes
+- The WINGS backend occasionally throttles bursts of requests; on-device (one title at a time) this is rarely hit, and every provider still carries its native lane as a second source.
+- untouched per standing instruction: kisskh, asianhub, pinoyhub, tagalogtorrents, miruro, pencuri, asian-catalog addon (no CF worker redeploy needed this cycle).
+
 ## v4.26.0 — Root-cause dead-provider purge + AIO-exact rebuilds + Purstream + Torrentio debrid
 
 User supplied `all.zip` (61 "decoded" AIO ports) as a decode aid. Verdict after full verification: the `*api.xyz` endpoint family inside it (netmirrorapi.xyz, cinemacityapi.xyz, ...) is FABRICATED - every domain is DNS NXDOMAIN, so those ports cannot run. The genuine gains this cycle came from re-decoding AIO's real obfuscated sources and a full live audit of all 63 providers.
