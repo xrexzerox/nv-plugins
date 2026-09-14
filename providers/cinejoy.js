@@ -36,6 +36,43 @@
  *  The postfilter tail cap is raised 12s -> 20s so the 14s WINGS flush
  *  window survives on slow mobile networks (same treatment videasy got in
  *  4.33.0).
+ /**
+ * cinejoy - Built from src/cinejoy/ (run bun build.js to regenerate)
+ *
+ * v3.0.0 (device-realistic waterfall, 2026-09-14):
+ *  Device report: 4.34.0 AND 4.35.0 both showed 0 streams on device while
+ *  the same builds resolved 5-9 rows in node. Runtime truth read straight
+ *  from the app sources this cycle:
+ *    - NuvioMobile PluginRuntime.kt kills the whole provider call at
+ *      withTimeout(60s); each fetch is ONE BLOCKING runBlocking host call
+ *      (FetchBridge.kt), so "parallel" lanes run sequentially on device.
+ *    - The QuickJS runtime (quickjs-kt 1.0.5-nuvio AAR) ships NO timers at
+ *      all -> every Promise.race cap/deadline in v2.x was inert on device.
+ *    - Request bodies are stringified ("[object Uint8Array]") and responses
+ *      are Kotlin strings on BOTH Mobile and TV (NuvioTVSmart
+ *      pluginWorker.js: body: String(body)) -> the binary /g leg stays
+ *      impossible without the /cjg+/cjs worker relay.
+ *    => v2.x device path: native sweep (~12 doomed fetches) + Render addon
+ *       cold wake (30-60s blocking) + WINGS fan-out + subs, all sequential
+ *       and uncapped -> past the 60s kill -> 0 rows. Sandbox could never
+ *       reproduce it (node has timers + real parallelism).
+ *  v3.0.0 bounds the provider by FETCH COUNT, not timers, and early-returns
+ *  the moment a lane produces rows (typical success path 2-4 fetches):
+ *    S1  WINGS (api.speedracelight.com) one server at a time:
+ *        cdn -> m4uhd -> lamovie; TMDB meta + /seed cached per title
+ *    S2  vidlove moviebox2 (api.vidlove.cc, movie+tv, 1 fetch)
+ *    S3  native shegu chain (crush.wasm protocol, movieboxnoob.cc 4K) -
+ *        ONLY when it can work: cjRelay configured (worker /cjg+/cjs
+ *        relay, works on device) or node-class runtime (tests).
+ *        Device without relay: skipped entirely (0 fetches; was ~12 doomed).
+ *  REMOVED in v3.0.0: the onrender MovieBox addon lane - a cold Render
+ *  wake blocks the device bridge 30-60s on a single fetch and can solo-
+ *  kill the whole call; WINGS/vidlove cover the same CDN family.
+ *  v2.x history: v2.0.0 hybrid re-added cinejoy (user reference repo
+ *  jamilkkj18434-boop/CineJoyScraper; chain re-verified live from Node:
+ *  servers 8x ok -> enc-cinejoy -> binary /g 200 -> dec-cinejoy -> real
+ *  HLS on *.movieboxnoob.cc). v2.1.0 race-capped subs + merge deadline.
+ *  Settings: cjRelay (worker base URL) + wyzieKey unchanged.
  */var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
     var fulfilled = (value) => {
@@ -625,9 +662,16 @@ function withSharedSubs(streams, ctx) {
     try {
       if (!ctx || !ctx.imdbId)
         return streams;
-      const subs = (yield stremioSubtitles(ctx.imdbId, ctx.season, ctx.episode, ctx.isTv)).concat(
-        yield wyzieSubtitles(ctx.imdbId, ctx.season, ctx.episode, ctx.isTv)
-      );
+      // v3.0.0: one subs source at a time (each is a blocking device fetch)
+      let subs = [];
+      try {
+        subs = (yield stremioSubtitles(ctx.imdbId, ctx.season, ctx.episode, ctx.isTv)) || [];
+      } catch (e1) {
+        subs = [];
+      }
+      if (!subs.length) {
+        try { subs = (yield wyzieSubtitles(ctx.imdbId, ctx.season, ctx.episode, ctx.isTv)) || []; } catch (e2) { subs = []; }
+      }
       return attachSubtitles(streams, subs);
     } catch (e) {
       return streams;
@@ -945,20 +989,20 @@ function scrapeServerChain(srv, ctx, headers, type) {
   });
 }
 
-/* ===== nv-plugins universal text lanes v1.0.0 (pack 4.34.0, 2026-09-14) ====
-   ZERO-CONFIG lanes that work on EVERY Nuvio runtime (Mobile included):
-   the native shegu chain below needs a binary POST/GET round-trip which
-   NuvioMobile's UTF-8 string bridge cannot do without the user's worker
-   relay, so these TEXT-ONLY lanes guarantee rows everywhere:
+/* ===== nv-plugins universal text lanes v2.0.0 (pack 4.36.0, 2026-09-14) ====
+   ZERO-CONFIG TEXT lanes that work on EVERY Nuvio runtime (Mobile and TV
+   included - both bridges move strings only and the QuickJS runtime ships
+   no timers, so the waterfall below is bounded by FETCH COUNT, not caps):
      Lane T1  WINGS  (api.speedracelight.com, the vidking backend) - movie+tv,
              ported from the 4.33.0-verified wings lane (mvm1 keystream,
-             partial-result collection so a hung server can never zero it)
-     Lane T2  MovieBox CDN addon (stremio-moviebox-1.onrender.com, movies) -
-             serves the same MovieBox CDN family cinejoy.to streams from
+             partial-result collection so a hung server can never zero it),
+             now called ONE SERVER AT A TIME with meta+seed cached per title
+     Lane T2  vidlove moviebox2 (api.vidlove.cc) - movie+tv, 1 fetch
    The native shegu chain (8 servers, enc-dec, binary /g, worker /cjg+/cjs
-   relay) still runs in parallel: TV/PC get the authentic cinejoy.to
-   movieboxnoob.cc 4K/HLS rows; Mobile with a configured cjRelay relay gets
-   them too. Rows are merged + URL-deduped.
+   relay) is the LAST waterfall stage and only runs where it can work:
+   cjRelay configured on device, or node-class runtimes (tests). The onrender
+   MovieBox addon lane was REMOVED in 4.36.0 - a cold Render wake blocks the
+   device bridge 30-60s on a single fetch and can solo-kill the call.
    ========================================================================= */
 /* ============================================================
  * nv-plugins WINGS lane v1.0.0 (pack 4.33.0, 2026-09-13)
@@ -1111,6 +1155,10 @@ function scrapeServerChain(srv, ctx, headers, type) {
     return f(url, opts);
   }
   function _race(p, ms, fallback) {
+    if (typeof setTimeout !== 'function') {
+      /* device QuickJS ships no timers - the timer leg must never throw */
+      return Promise.resolve(p).then(function (v) { return v; }, function () { return fallback; });
+    }
     return new Promise(function (resolve) {
       var done = false;
       var t = setTimeout(function () { if (!done) { done = true; resolve(fallback); } }, ms);
@@ -1123,7 +1171,11 @@ function scrapeServerChain(srv, ctx, headers, type) {
     return Promise.resolve(resp.text()).catch(function () { return ''; });
   }
 
+  var __wingsMetaCache = {};
+  var __wingsSeedCache = {};
   function wingsTmdbMeta(tmdbId, mediaType) {
+    var ck = mediaType + ':' + parseInt(tmdbId, 10);
+    if (__wingsMetaCache[ck]) return Promise.resolve(__wingsMetaCache[ck]);
     var url = 'https://api.themoviedb.org/3/' + (mediaType === 'tv' ? 'tv' : 'movie') + '/' +
       parseInt(tmdbId, 10) + '?api_key=' + TMDB_KEY + '&append_to_response=external_ids';
     return _race(
@@ -1137,7 +1189,7 @@ function scrapeServerChain(srv, ctx, headers, type) {
             imdbId: (j.external_ids && j.external_ids.imdb_id) || j.imdb_id || ''
           };
         }),
-      6000, null);
+      6000, null).then(function (m) { if (m && m.title) __wingsMetaCache[ck] = m; return m; });
   }
 
   function wingsQueryServer(serverPath, seed, meta, mediaType, season, episode, tmdbId) {
@@ -1182,12 +1234,13 @@ function scrapeServerChain(srv, ctx, headers, type) {
       var mediaType = opts.mediaType === 'tv' || opts.mediaType === 'series' ? 'tv' : 'movie';
       return wingsTmdbMeta(tmdbId, mediaType).then(function (meta) {
         if (!meta || !meta.title) return [];
+        if (__wingsSeedCache[tmdbId]) return Promise.resolve({ seed: __wingsSeedCache[tmdbId] });
         return _fetchX(WINGS_BASE + '/seed?mediaId=' + tmdbId, { headers: WINGS_HEADERS })
           .then(function (r) { return r.ok ? r.json() : null; })
           .then(function (j) {
             if (!j || !j.seed) throw new Error('no seed');
-            var seed = j.seed;
-            var jobs = WINGS_SERVERS.map(function (sp) {
+            var seed = (__wingsSeedCache[tmdbId] = j.seed);
+            var jobs = (opts.servers && opts.servers.length ? opts.servers : WINGS_SERVERS).map(function (sp) {
               return wingsQueryServer(sp, seed, meta, mediaType, opts.season, opts.episode, tmdbId)
                 .then(function (o) { return o; }, function () { return null; });
             });
@@ -1196,8 +1249,12 @@ function scrapeServerChain(srv, ctx, headers, type) {
             return new Promise(function (resolve) {
               var results = new Array(jobs.length);
               var done = false;
-              var t = setTimeout(function () { if (!done) { done = true; resolve(results); } }, Math.max(6000, timeoutMs - 2500));
-              if (t && typeof t.unref === 'function') t.unref();
+              var t = null;
+              if (typeof setTimeout === 'function') {
+                /* device QuickJS ships no timers - guard every timer use */
+                t = setTimeout(function () { if (!done) { done = true; resolve(results); } }, Math.max(6000, timeoutMs - 2500));
+                if (t && typeof t.unref === 'function') t.unref();
+              }
               var pending = jobs.length;
               var settle = function () {
                 if (!done) { done = true; if (t) clearTimeout(t); resolve(results); }
@@ -1257,36 +1314,6 @@ function scrapeServerChain(srv, ctx, headers, type) {
 
 
 /* --- Lane T2: MovieBox CDN addon (movies only, plain GET JSON) --- */
-function cinejoyMovieBoxRows(ctx) {
-  return __async(this, null, function* () {
-    if (!ctx || ctx.isTv || !ctx.imdbId)
-      return [];
-    const out = [];
-    try {
-      const u = "https://stremio-moviebox-1.onrender.com/stream/movie/" + ctx.imdbId + ".json";
-      const txt = yield fetchText(u, { Accept: "application/json", "User-Agent": UA }, 8e3);
-      const j = JSON.parse(txt);
-      ((j && j.streams) || []).forEach(function (st) {
-        if (!st || !st.url || String(st.url).indexOf("http") !== 0)
-          return;
-        const t = String(st.title || "").replace(/\s+/g, " ").trim();
-        const qm = t.match(/(\d{3,4})\s*p/i);
-        const q = qm ? parseQuality(qm[1] + "p") : "";
-        const ph = (st.behaviorHints && st.behaviorHints.proxyHeaders && st.behaviorHints.proxyHeaders.request) || {};
-        const headers = {};
-        if (ph.Referer) headers.Referer = ph.Referer;
-        if (ph["User-Agent"]) headers["User-Agent"] = ph["User-Agent"];
-        const s = makeStream("Cinejoy", "Cinejoy MovieBox" + (q ? " " + q : "") + (t ? " - " + t : ""), st.url, q || "1080p", headers, []);
-        if (s)
-          out.push(s);
-      });
-    } catch (e) {
-      return out;
-    }
-    return out;
-  });
-}
-
 /* --- Lane T3: vidlove API moviebox2 server (movie+tv, 4.32.0-proven shape) --- */
 var _CJ_VL_BASE = "https://api.vidlove.cc";
 var _CJ_VL_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -1330,81 +1357,94 @@ function cinejoyVidloveRows(ctx) {
   });
 }
 
-/* --- text orchestrator: T1 always, T2 movies, T3 always; fail-soft --- */
-function cinejoyTextRows(ctx) {
-  return __async(this, null, function* () {
-    const out = [];
-    const jobs = [];
-    try {
-      const wings = (typeof globalThis !== "undefined" && globalThis.__nvWingsStreams) ||
-                    (typeof global !== "undefined" && global.__nvWingsStreams) || null;
-      if (wings && ctx.tmdbId) {
-        jobs.push(Promise.resolve(wings({
-          tmdbId: String(ctx.tmdbId),
-          mediaType: ctx.isTv ? "tv" : "movie",
-          season: ctx.season || 1,
-          episode: ctx.episode || 1,
-          label: "Cinejoy",
-          timeoutMs: 16500
-        })).then(function (rows) { out.push.apply(out, rows || []); }).catch(function () {}));
-      }
-    } catch (e) {}
-    jobs.push(cinejoyMovieBoxRows(ctx).then(function (rows) { out.push.apply(out, rows || []); }).catch(function () {}));
-    jobs.push(cinejoyVidloveRows(ctx).then(function (rows) { out.push.apply(out, rows || []); }).catch(function () {}));
-    yield Promise.all(jobs);
-    return out;
-  });
+/* ===== nv-plugins device-realistic waterfall v3.0.0 (pack 4.36.0) ==========
+   Runtime truth (read from NuvioMobile PluginRuntime.kt + the quickjs-kt
+   1.0.5-nuvio AAR + NuvioTVSmart pluginWorker.js):
+     - fetch = one BLOCKING host call (runBlocking in the Kotlin bridge);
+       "parallel" lanes actually run one request at a time on device.
+     - the QuickJS runtime ships NO timers -> every Promise.race cap in
+       v2.x was inert on device; nothing could preempt a slow fetch.
+     - each request can block up to 60s (OkHttp) and the app kills the
+       whole provider call at withTimeout(60s): v2.1.0's lane sum (native
+       shegu sweep + Render addon wake + WINGS fan-out + subs) blew past
+       it -> 0 rows on every device run.
+   v3.0.0 therefore bounds the provider by FETCH COUNT, not timers, and
+   early-returns the moment a lane produces rows:
+     S1  WINGS one server at a time (cdn -> m4uhd -> lamovie); TMDB meta +
+         seed cached so repeat calls cost 1 fetch each
+     S2  vidlove moviebox2 (movie+tv, 1 fetch)
+     S3  native shegu chain - ONLY when it can work: cjRelay configured
+         (worker /cjg+/cjs relay) or node-class runtime (tests). Device
+         without relay: skipped entirely (0 fetches, was ~12 doomed).
+   The onrender MovieBox addon lane is REMOVED: a cold Render wake blocks
+   the device bridge 30-60s on one fetch and can solo-kill the call.
+   Worst device path ~9 fetches; typical success path 2-4 fetches.
+========================================================================== */
+var __cjWingsServers = ["cdn/sources-with-title", "m4uhd/sources-with-title", "lamovie/sources-with-title"];
+
+function cinejoyNodeRuntime() {
+  try {
+    return typeof process !== "undefined" && !!(process.versions && process.versions.node);
+  } catch (e) { return false; }
+}
+
+function cinejoyWingsOnce(ctx, server) {
+  const wings = (typeof globalThis !== "undefined" && globalThis.__nvWingsStreams) ||
+                (typeof global !== "undefined" && global.__nvWingsStreams) || null;
+  if (!wings || !ctx.tmdbId)
+    return Promise.resolve([]);
+  return Promise.resolve(wings({
+    tmdbId: String(ctx.tmdbId),
+    mediaType: ctx.isTv ? "tv" : "movie",
+    season: ctx.season || 1,
+    episode: ctx.episode || 1,
+    label: "Cinejoy",
+    timeoutMs: 9000,
+    servers: [server]
+  })).then(function (rows) { return rows || []; }).catch(function () { return []; });
+}
+
+function cinejoyNativeOnce(ctx) {
+  // Device bridges (Mobile QuickJS + TV pluginWorker): only the /cjg+/cjs
+  // relay can carry the binary chain. Node-class runtimes (tests) go direct.
+  if (relayBase() || cinejoyNodeRuntime())
+    return Promise.resolve(scrapeNative(ctx)).catch(function () { return []; });
+  return Promise.resolve([]);
 }
 
 /**
- * v2.0.0 orchestrator (v2.1.0 hardening): native shegu chain (direct binary on
- * TV/PC, /cjg+/cjs relay on Mobile when configured) runs IN PARALLEL with the
- * universal text lanes. A 14.5s MERGE DEADLINE resolves the merge with
- * whatever lanes have settled by then - on device networks this guarantees
- * the 20s postfilter tail cap is never reached (the 4.34.0 zero-row cause).
- * First-class fail-soft everywhere.
+ * v3.0.0 orchestrator: sequential waterfall, early-return on first rows,
+ * fetch-count bounded (see the block comment above). URL-deduped output.
  */
 function scrape(ctx) {
   return __async(this, null, function* () {
-    const box = { native: null, text: null };
-    let nativeP, textP;
-    try { nativeP = scrapeNative(ctx); } catch (e) { nativeP = Promise.resolve([]); }
-    try { textP = cinejoyTextRows(ctx); } catch (e) { textP = Promise.resolve([]); }
-    Promise.resolve(nativeP).then(function (v) { box.native = v || []; }, function () { box.native = []; });
-    Promise.resolve(textP).then(function (v) { box.text = v || []; }, function () { box.text = []; });
-    let results;
-    if (hasTimers()) {
-      results = yield Promise.race([
-        Promise.all([
-          Promise.resolve(nativeP).catch(function () { return []; }),
-          Promise.resolve(textP).catch(function () { return []; })
-        ]),
-        new Promise(function (res) {
-          const t = setTimeout(function () { res([box.native || [], box.text || []]); }, 14500);
-          if (t && typeof t.unref === "function") t.unref();
-        })
-      ]);
-    } else {
-      results = yield Promise.all([
-        Promise.resolve(nativeP).catch(function () { return []; }),
-        Promise.resolve(textP).catch(function () { return []; })
-      ]);
+    const out = [];
+    const push = (rows) => { (rows || []).forEach(function (s) { if (s && s.url) out.push(s); }); };
+    // S1: WINGS, one server at a time - early exit as soon as rows exist
+    for (let i = 0; i < __cjWingsServers.length && !out.length; i++) {
+      push(yield cinejoyWingsOnce(ctx, __cjWingsServers[i]));
+    }
+    // S2: vidlove moviebox2
+    if (!out.length) {
+      try { push(yield cinejoyVidloveRows(ctx)); } catch (e) {}
+    }
+    // S3: native shegu (relay on device / direct binary in node tests)
+    if (!out.length) {
+      push(yield cinejoyNativeOnce(ctx));
     }
     const seen = {};
     const merged = [];
-    (results || []).forEach(function (arr) {
-      (arr || []).forEach(function (s) {
-        if (!s || !s.url)
-          return;
-        const nu = String(s.url).replace(/[#?].*$/, "");
-        if (seen[nu])
-          return;
-        seen[nu] = 1;
-        merged.push(s);
-      });
+    out.forEach(function (s) {
+      if (!s || !s.url)
+        return;
+      const nu = String(s.url).replace(/[#?].*$/, "");
+      if (seen[nu])
+        return;
+      seen[nu] = 1;
+      merged.push(s);
     });
     if (!merged.length)
-      console.log("[Streamline][cinejoy] 0 rows from ALL lanes (text T1/T2 + native) for \"" + (ctx.title || "?") + "\" - please report this title");
+      console.log("[Streamline][cinejoy] 0 rows from all lanes (wings cdn/m4uhd/lamovie -> vidlove moviebox2 -> native/relay) for \"" + (ctx.title || "?") + "\" - please report this title");
     return merged;
   });
 }
@@ -1415,6 +1455,13 @@ function scrapeNative(ctx) {
       return [];
     if (!ctx.title)
       return [];
+    if (!relayBase() && !cinejoyNodeRuntime()) {
+      // Device bridges stringify request bodies ("[object Uint8Array]"),
+      // so every direct /g attempt is a guaranteed 404. v2.x still burned
+      // ~12 blocking fetches on this sweep; v3.0.0 skips it entirely.
+      console.log("[Streamline][cinejoy] native shegu chain skipped: binary /g impossible on this runtime (string bridge) and no cjRelay set - text lanes cover this title");
+      return [];
+    }
     const isTv = ctx.isTv;
     const type = isTv ? "series" : "movie";
     const headers = {

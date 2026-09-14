@@ -12,6 +12,25 @@ What changed in cinejoy.js v2.0.0: NEW Lane T1 (universal, zero-config) - the 4.
 
 (Superseded the same day by v4.35.0 below - the device zero-row cause was found and fixed.)
 
+## v4.36.0 — CINEJOY v3.0.0 DEVICE-REALISTIC WATERFALL (fetch-count bounded)
+
+**Device report:** 4.34.0 and 4.35.0 both showed 0 streams on device while resolving 5-9 rows in node. This cycle the plugin runtime itself was audited instead of the lanes:
+
+- `PluginRuntime.kt`: the app kills the whole provider call at `withTimeout(60_000)`.
+- `quickjs-kt-android-1.0.5-nuvio.aar`: **no setTimeout anywhere** — every `Promise.race` cap/deadline in v2.x was inert on device (`hasTimers()` false).
+- `FetchBridge.kt`: each fetch is one **blocking** `runBlocking` host call — "parallel" lanes run sequentially on device; OkHttp allows 60s per request.
+- `NuvioTVSmart pluginWorker.js`: same string-only bridge (`body: String(body)`) — binary `/g` impossible on TV too.
+- Net effect for v2.1.0 on device: native shegu sweep (~12 doomed fetches) + Render addon cold wake (30-60s blocking) + WINGS fan-out + subs, all sequential and uncapped → past the 60s kill → **0 rows**. Node sandboxes (timers + real parallelism) could never reproduce it.
+
+**Fix (v3.0.0):** bound the provider by **fetch count**, not timers; early-return on first rows.
+- S1 WINGS one server at a time (cdn → m4uhd → lamovie), TMDB meta + /seed cached per title (repeat calls = 1 fetch)
+- S2 vidlove moviebox2 (movie+tv, 1 fetch)
+- S3 native shegu chain only when it can work: cjRelay configured (device) or node runtime (tests); skipped with 0 fetches otherwise
+- Removed the onrender MovieBox addon lane (cold wake = 30-60s blocking fetch)
+- Subs: wyzie only when the stremio source returned nothing
+
+Typical device success path: 2-4 blocking fetches (~3-6s). Worst all-fail path ~9 fetches. Live-verified lanes: WINGS 1080p rows for Spider-Man: Brand New Day (TMDB 969681) in 2.6s; WINGS 4K + native HLS for Silo S1E1 (TMDB 125988).
+
 ## v4.35.0 — CINEJOY v2.1.0 DEVICE HARDENING (the zero-row cause, fixed)
 
 Device report on 4.34.0: cinejoy registered but the sheet stayed empty, while the same build resolved 6-9 rows from the sandbox. A new Mobile-fidelity sandbox (vm context whose fetch mimics NuvioMobile's AddonPlatform bridge: string-only bodies, UTF-8-mangled binary, string responses, injectable per-call latency) reproduced the device exactly and exposed the cause:

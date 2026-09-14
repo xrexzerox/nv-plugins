@@ -1,6 +1,6 @@
 {
   "name": "NV Plugins",
-  "version": "4.35.0",
+  "version": "4.36.0",
   "description": "nv-plugins 4.32.0: torrents = ONE merged torrent provider (Torrentio + TorrentsDB backends, seeders >= 5 hard floor, 720p/1080p rows only, debrid gear-icon support) - torrentio.js removed as redundant. Playback fixes: anikototv v1.2.0 emits the tokened master plus an ALT host row (ncdn.imgnex.top; same token verified valid on both CDN hosts), miruro v2.9.0 unchanged. Stream-source fixes: videasy v2.1.0 returns the streams it finds inside the 8s budget (progressive 6.8s deadline - previously all rows were raced away), vidlove v2.0.0 re-pointed to the live player API api.vidlove.cc (routes recovered from the player bundle), xpass v2.0.0 ports the site's own AES-GCM v3 data lane (key = SHA256 over the signed token, decrypt verified against the live blob), and moviebox/vidfast/peachify gained the api.vidlove.cc fallback lane (moviebox2 / ipcloud+megaknight / warden+tcloud server subsets). moviesdrive follows the site's host rotation (new1 -> new4) and parallelizes archive resolution. peachify re-enabled. vidlink/cineby verified healthy - vidlink only returns 0 rows for titles whose upstream tops out below 720p (pack rule), and cinemacity remains Cloudflare-gated from datacenter IPs (device-validated historically).",
   "author": "xrexzerox",
   "scrapers": [
@@ -706,8 +706,8 @@
     {
       "id": "cinejoy",
       "name": "Cinejoy",
-      "description": "Cinejoy v2.1.0: hybrid provider, device-hardened. Zero-config universal text lanes (WINGS speedracelight movie+TV + MovieBox CDN addon + vidlove moviebox2 API) stream on every runtime including NuvioMobile; the authentic cinejoy.to shegu chain (crush.wasm protocol, 8 servers, movieboxnoob.cc 4K/HLS) still runs in parallel for NuvioTV/PC and for Mobile users who set the 'Cinejoy relay base URL' setting to their asian-catalog worker (v5.7.0+ bundle with /cjg + /cjs, shipped in this pack). 4.35.0 fixes the device zero-row cause: subtitle fetches were eating the stream budget on mobile networks and are now 3s-capped garnish. Chain re-verified live 2026-09-14.",
-      "version": "2.1.0",
+      "description": "Cinejoy v3.0.0: device-realistic waterfall. 4.36.0 root cause: the QuickJS plugin runtime ships NO timers and every fetch is one blocking bridge call, so v2.x parallel lanes ran sequentially with all caps inert and blew the app's 60s provider kill -> 0 rows on device. v3.0.0 bounds the provider by fetch count instead: WINGS one server at a time (cdn/m4uhd/lamovie, meta+seed cached) -> vidlove moviebox2 -> native shegu chain only when it can work (cjRelay relay on device, direct binary in node tests). Render addon lane removed (cold wake blocks the bridge 30-60s). Native 4K on Mobile: set the 'Cinejoy relay base URL' setting to your asian-catalog worker (bundle v5.7.0+ carries /cjg + /cjs). Chain re-verified live 2026-09-14.",
+      "version": "3.0.0",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
