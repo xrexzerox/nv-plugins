@@ -1,6 +1,6 @@
 {
   "name": "NV Plugins",
-  "version": "4.38.0",
+  "version": "4.39.0",
   "description": "nv-plugins 4.32.0: torrents = ONE merged torrent provider (Torrentio + TorrentsDB backends, seeders >= 5 hard floor, 720p/1080p rows only, debrid gear-icon support) - torrentio.js removed as redundant. Playback fixes: anikototv v1.2.0 emits the tokened master plus an ALT host row (ncdn.imgnex.top; same token verified valid on both CDN hosts), miruro v2.9.0 unchanged. Stream-source fixes: videasy v2.1.0 returns the streams it finds inside the 8s budget (progressive 6.8s deadline - previously all rows were raced away), vidlove v2.0.0 re-pointed to the live player API api.vidlove.cc (routes recovered from the player bundle), xpass v2.0.0 ports the site's own AES-GCM v3 data lane (key = SHA256 over the signed token, decrypt verified against the live blob), and moviebox/vidfast/peachify gained the api.vidlove.cc fallback lane (moviebox2 / ipcloud+megaknight / warden+tcloud server subsets). moviesdrive follows the site's host rotation (new1 -> new4) and parallelizes archive resolution. peachify re-enabled. vidlink/cineby verified healthy - vidlink only returns 0 rows for titles whose upstream tops out below 720p (pack rule), and cinemacity remains Cloudflare-gated from datacenter IPs (device-validated historically).",
   "author": "xrexzerox",
   "scrapers": [
@@ -119,8 +119,8 @@
     {
       "id": "4khdhub",
       "name": "4KHDHub",
-      "description": "4K/1080p/720p Movies & TV from 4KHDHub",
-      "version": "4.0.0",
+      "description": "4K/1080p/720p Movies & TV from 4KHDHub v4.39.0 device pass: atob/btoa polyfill (decodeBase64 silently returned \"\" on the device realm), sequential first-OK domain probe, and a link-sweep budget (first 6 links, early-exit) to bound the serialized device fetch bridge below the 60s plugin kill.",
+      "version": "4.1.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -393,8 +393,8 @@
     {
       "id": "topcartoons",
       "name": "TopCartoons",
-      "description": "TopCartoons: clean rewrite decoded from AIO and repaired against the live site (episode links skip # anchors, og:video:url direct mp4 extraction), 8s/12s deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet.",
-      "version": "2.4.0",
+      "description": "TopCartoons: clean rewrite decoded from AIO and repaired against the live site (episode links skip # anchors, og:video:url direct mp4 extraction), 8s/12s deadlines, nvio post-filter attached. v4.24.0 speed pass: overall provider run capped at 8s (was 12s) so a stalled lane can never hold the stream sheet. v4.39.0 device fix: removed the top-level require(\"cheerio-without-node-native\") that crashed the provider at LOAD on the device QuickJS realm (no require) - guarded loader keeps real cheerio on node and falls back to a pure-JS cheerio-lite subset on device.",
+      "version": "2.5.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -683,8 +683,8 @@
     {
       "id": "animotvslash",
       "name": "AnimeTVSlash",
-      "description": "AnimeTVSlash v7.0.0 - RESTORED the device-proven v5.4.0 implementation (site crawl, asian-catalog direct lane, WordPress search fallback, quality whitelist) and grafted the MegaPlay fallback of the site: episode pages embed animotvslash.ru/watch/{anilistId}/{ep} whose player resolves through megaplay.buzz (AES enc decrypt + signed master token, same scheme as miruro v2.9.0). When the site itself is unreachable, api.ani.zip maps TMDB -> AniList and the MegaPlay ani route answers directly. Anime series; movies fail soft (MegaPlay ani route is series-only).",
-      "version": "7.0.0",
+      "description": "AnimeTVSlash v7.0.0 - RESTORED the device-proven v5.4.0 implementation (site crawl, asian-catalog direct lane, WordPress search fallback, quality whitelist) and grafted the MegaPlay fallback of the site: episode pages embed animotvslash.ru/watch/{anilistId}/{ep} whose player resolves through megaplay.buzz (AES enc decrypt + signed master token, same scheme as miruro v2.9.0). When the site itself is unreachable, api.ani.zip maps TMDB -> AniList and the MegaPlay ani route answers directly. Anime series; movies fail soft (MegaPlay ani route is series-only). v4.39.0 device pass: atob/btoa/URLSearchParams polyfills (define-only-if-missing) and a timer-guarded 429 backoff - the admin-ajax lane and retry path no longer die on the device realm.",
+      "version": "7.1.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",

@@ -1,3 +1,65 @@
+/* ===== nv-plugins device polyfills v1.0.1 (pack 4.39.0, 2026-09-14) ============
+   The Nuvio QuickJS plugin runtime (quickjs-kt 1.0.5-nuvio AAR) is a bare
+   ES2020 realm: no atob/btoa, no URLSearchParams, no TextDecoder, no timers.
+   These polyfills are define-only-if-missing, so node/desktop runtimes are
+   completely unaffected. (v1.0.0 proven in pack 4.37.0 across 12 providers.)
+============================================================================ */
+(function () {
+  var G = typeof globalThis !== 'undefined' ? globalThis : (typeof global !== 'undefined' ? global : this);
+  if (typeof G.atob !== 'function') {
+    var _CH = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    G.atob = function (s) {
+      s = String(s).replace(/[^A-Za-z0-9+\/]/g, '');
+      var out = '', bits = 0, acc = 0, i;
+      for (i = 0; i < s.length; i++) {
+        acc = (acc << 6) | _CH.indexOf(s.charAt(i));
+        bits += 6;
+        if (bits >= 8) { bits -= 8; out += String.fromCharCode((acc >> bits) & 0xff); }
+      }
+      return out;
+    };
+  }
+  if (typeof G.btoa !== 'function') {
+    var _CH2 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    G.btoa = function (s) {
+      s = String(s);
+      var out = '', i;
+      for (i = 0; i < s.length; i += 3) {
+        var b0 = s.charCodeAt(i), b1 = s.charCodeAt(i + 1), b2 = s.charCodeAt(i + 2);
+        var has1 = !(i + 1 >= s.length || isNaN(b1)), has2 = !(i + 2 >= s.length || isNaN(b2));
+        out += _CH2.charAt(b0 >> 2);
+        out += _CH2.charAt(((b0 & 3) << 4) | (has1 ? b1 >> 4 : 0));
+        out += has1 ? _CH2.charAt(((b1 & 15) << 2) | (has2 ? b2 >> 6 : 0)) : '=';
+        out += has2 ? _CH2.charAt(b2 & 63) : '=';
+      }
+      return out;
+    };
+  }
+  if (typeof G.URLSearchParams !== 'function') {
+    var USP = function (init) {
+      this._m = {};
+      if (init && typeof init === 'object') {
+        for (var k in init) if (Object.prototype.hasOwnProperty.call(init, k)) this._m[k] = [String(init[k])];
+      }
+    };
+    USP.prototype.append = function (k, v) { (this._m[k] = this._m[k] || []).push(String(v)); };
+    USP.prototype.set = function (k, v) { this._m[k] = [String(v)]; };
+    USP.prototype.get = function (k) { var a = this._m[k]; return a && a.length ? a[0] : null; };
+    USP.prototype.has = function (k) { return Object.prototype.hasOwnProperty.call(this._m, k); };
+    USP.prototype.toString = function () {
+      var out = [];
+      for (var k in this._m) {
+        if (!Object.prototype.hasOwnProperty.call(this._m, k)) continue;
+        var vs = this._m[k];
+        for (var i = 0; i < vs.length; i++)
+          out.push(encodeURIComponent(k).replace(/%20/g, '+') + '=' + encodeURIComponent(vs[i]).replace(/%20/g, '+'));
+      }
+      return out.join('&');
+    };
+    G.URLSearchParams = USP;
+  }
+})();
+
 // providers/animotvslash.js
 // v7.0.0 (2026-09-13): RESTORED the device-proven v5.4.0 implementation as the
 // base (the 4.30.0 v6.0.0 rewrite dropped too much of it and gave users zero
@@ -496,7 +558,7 @@ async function resolveToken(token, embedUrl, retryCount = 0) {
       // Rate limited — wait and retry
       const delay = Math.pow(2, retryCount) * 1000;
       console.log(`[animotvslash] [token] 429, retrying in ${delay}ms...`);
-      await new Promise(r => setTimeout(r, delay));
+      if (typeof setTimeout === "function") await new Promise(r => setTimeout(r, delay)); /* device: no timers -> skip backoff, retry immediately */
       return resolveToken(token, embedUrl, retryCount + 1);
     }
 

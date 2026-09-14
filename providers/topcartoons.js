@@ -21,7 +21,134 @@ var __nvFetch = (function () {
   };
 })();
 
-var cheerio = require("cheerio-without-node-native");
+/* ===== nv-plugins cheerio-lite v1.0.0 (pack 4.39.0, 2026-09-14) ================
+   The Nuvio device QuickJS realm has no require(), so the original top-level
+   require("cheerio-without-node-native") threw ReferenceError at LOAD and
+   killed this provider on every device call. Node/desktop runtimes still get
+   real cheerio through the guarded loader below; the device falls back to
+   this pure-JS subset covering the exact API surface used here:
+     $("tag tag") / $(el)  ->  { length, each(fn(i,el)), attr(name),
+                                 find(sel), text() }
+   Only descendant tag-chain selectors are supported (all this file needs:
+   "article a", "article article", "a", "h3 a").
+============================================================================ */
+var __nvCheerioLite = (function () {
+  var VOID = { br:1, img:1, input:1, meta:1, link:1, hr:1, source:1, area:1, base:1, col:1, embed:1, track:1, wbr:1 };
+  function parseHtml(html) {
+    var src = String(html || "")
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, "");
+    var root = { tag: "#root", attrs: {}, children: [], parent: null };
+    var stack = [root];
+    var re = /<([a-zA-Z][a-zA-Z0-9]*)((?:\s+[^<>]*?)?)(\/?)>|<\/([a-zA-Z][a-zA-Z0-9]*)\s*>|([^<]+)/g;
+    var m;
+    while ((m = re.exec(src)) !== null) {
+      if (m[1]) {
+        var tag = m[1].toLowerCase();
+        var node = { tag: tag, attrs: {}, children: [], parent: stack[stack.length - 1] };
+        var are = /([a-zA-Z_:][a-zA-Z0-9_:.\-]*)\s*(?:=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g, am;
+        while ((am = are.exec(m[2] || "")) !== null) {
+          node.attrs[am[1].toLowerCase()] = am[2] !== undefined ? am[2] : (am[3] !== undefined ? am[3] : (am[4] !== undefined ? am[4] : ""));
+        }
+        node.parent.children.push(node);
+        if (!m[3] && !VOID[tag]) stack.push(node);
+      } else if (m[4]) {
+        var ct = m[4].toLowerCase();
+        for (var k = stack.length - 1; k > 0; k--) {
+          if (stack[k].tag === ct) { stack.length = k; break; }
+        }
+      } else if (m[5]) {
+        if (/\S/.test(m[5])) {
+          var tp = stack[stack.length - 1];
+          tp.children.push({ tag: "#text", attrs: {}, children: [], parent: tp, text: m[5] });
+        }
+      }
+    }
+    return root;
+  }
+  function chainMatch(el, chain) {
+    if (el.tag !== chain[chain.length - 1]) return false;
+    var i = chain.length - 2, p = el.parent;
+    while (i >= 0 && p) {
+      if (p.tag === chain[i]) i--;
+      p = p.parent;
+    }
+    return i < 0;
+  }
+  function select(root, selector) {
+    var chain = String(selector || "").trim().toLowerCase().split(/\s+/);
+    var out = [];
+    if (!chain.length || !chain[0]) return out;
+    (function walk(node) {
+      for (var i = 0; i < node.children.length; i++) {
+        var c = node.children[i];
+        if (c.tag === "#text") continue;
+        if (chainMatch(c, chain)) out.push(c);
+        walk(c);
+      }
+    })(root);
+    return out;
+  }
+  function collectText(el) {
+    var out = "";
+    for (var i = 0; i < el.children.length; i++) {
+      var c = el.children[i];
+      out += (c.tag === "#text") ? c.text : collectText(c);
+    }
+    return out;
+  }
+  function wrap(el) {
+    return {
+      attr: function (name) {
+        var v = el.attrs[String(name || "").toLowerCase()];
+        return v === undefined ? undefined : String(v);
+      },
+      find: function (sel) { return makeColl(select(el, sel)); },
+      text: function () { return collectText(el); }
+    };
+  }
+  function makeColl(els) {
+    var coll = {
+      length: els.length,
+      each: function (fn) {
+        for (var i = 0; i < els.length; i++) fn(i, els[i]);
+        return coll;
+      },
+      attr: function (name) { return els.length ? wrap(els[0]).attr(name) : undefined; },
+      find: function (sel) {
+        var all = [];
+        for (var i = 0; i < els.length; i++) all = all.concat(select(els[i], sel));
+        return makeColl(all);
+      },
+      text: function () {
+        var out = "";
+        for (var i = 0; i < els.length; i++) out += collectText(els[i]);
+        return out;
+      }
+    };
+    return coll;
+  }
+  return {
+    load: function (html) {
+      var root = parseHtml(html);
+      var $ = function (selOrEl, ctx) {
+        if (selOrEl && selOrEl.tag) return makeColl([selOrEl]);
+        return makeColl(select(ctx || root, selOrEl));
+      };
+      return $;
+    }
+  };
+})();
+
+var cheerio = (function () {
+  try {
+    if (typeof require === "function") {
+      var _ch = require("cheerio-without-node-native");
+      if (_ch && typeof _ch.load === "function") return _ch;
+    }
+  } catch (e) { /* device: no require -> cheerio-lite below */ }
+  return __nvCheerioLite;
+})();
 
 var BASE_URL = "https://www.topcartoons.tv";
 var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";

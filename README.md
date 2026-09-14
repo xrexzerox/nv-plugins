@@ -1,5 +1,38 @@
 # NV Plugins
 
+## v4.39.0 (2026-09-14) - FULL device-killer sweep (all 32 providers audited)
+
+Every provider was audited two ways: (1) a static sweep for the known device-killer
+classes (raw setTimeout/atob/URLSearchParams/require/AbortController/binary fetch,
+while(true) loops, top-level load work, unbounded fetch fan-out) and (2) a live run
+of all 32 in the strict device-fidelity sandbox (bare QuickJS realm - no timers, no
+atob, no URLSearchParams, no URL, no require - serialized blocking fetch, String(body)
+semantics, 700ms/call) on TMDB 969681 (movie) + 125988 S1E1 (TV). 29 providers are
+clean (every raw timer site is behind hasTimers/typeof guards; netmirror, torrents,
+kisskh, pencuri, asianhub verified line-by-line). Three files shipped real killers:
+
+- **DEVICE FIX topcartoons 2.5.0** - top-level `require("cheerio-without-node-native")`
+  threw ReferenceError at LOAD on the device QuickJS realm: the provider was 100% dead
+  on device (0 fetches ever). Now a guarded loader (real cheerio on node, pure-JS
+  cheerio-lite subset on device covering the exact API surface: tag-chain selectors,
+  each/attr/find/text).
+- **DEVICE FIX animotvslash 7.1.0** - raw `new URLSearchParams()` (admin-ajax lane)
+  and an unguarded 429-backoff sleep (`await new Promise(r => setTimeout(r, delay))`)
+  threw on device. Polyfill preamble v1.0.1 (atob/btoa/URLSearchParams,
+  define-only-if-missing) + timer-guarded backoff (device retries immediately).
+- **DEVICE FIX 4khdhub 4.1.0** - `decodeBase64` used raw `atob` inside try/catch, so it
+  silently returned "" on every device call; and the link sweep was unbounded
+  (Silo S1E1 = 32 blocking fetches on the serialized device bridge; each link costs
+  2-3 hops through hubdrive/hubcloud/gamerxyt -> 60s plugin kill on slow networks).
+  Polyfill preamble + sequential first-OK domain probe (was Promise.all over 3
+  mirrors) + link budget (first 6 links, early-exit at 6 streams; links arrive in
+  page priority order so the same rows survive).
+
+Untouched per standing rule: netmirror (English-only, byte-identical sentinel),
+cinejoy v3.0.0, cinemacity (Tagalog), kisskh, asianhub, pinoyhub, tagalogtorrents,
+miruro, pencuri, torrents, and every provider fixed in 4.36.0-4.38.0 - all
+byte-identical this cycle. Confirmed clean by the same sweep, no changes needed.
+
 ## v4.38.0 (2026-09-14) - Deobfuscation pass + MovieBlast/AnikotoTV device fixes
 
 Deobfuscated 11 providers to torrents.js-style readable source. Behavior is

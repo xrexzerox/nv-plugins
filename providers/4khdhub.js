@@ -1,3 +1,65 @@
+/* ===== nv-plugins device polyfills v1.0.1 (pack 4.39.0, 2026-09-14) ============
+   The Nuvio QuickJS plugin runtime (quickjs-kt 1.0.5-nuvio AAR) is a bare
+   ES2020 realm: no atob/btoa, no URLSearchParams, no TextDecoder, no timers.
+   These polyfills are define-only-if-missing, so node/desktop runtimes are
+   completely unaffected. (v1.0.0 proven in pack 4.37.0 across 12 providers.)
+============================================================================ */
+(function () {
+  var G = typeof globalThis !== 'undefined' ? globalThis : (typeof global !== 'undefined' ? global : this);
+  if (typeof G.atob !== 'function') {
+    var _CH = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    G.atob = function (s) {
+      s = String(s).replace(/[^A-Za-z0-9+\/]/g, '');
+      var out = '', bits = 0, acc = 0, i;
+      for (i = 0; i < s.length; i++) {
+        acc = (acc << 6) | _CH.indexOf(s.charAt(i));
+        bits += 6;
+        if (bits >= 8) { bits -= 8; out += String.fromCharCode((acc >> bits) & 0xff); }
+      }
+      return out;
+    };
+  }
+  if (typeof G.btoa !== 'function') {
+    var _CH2 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    G.btoa = function (s) {
+      s = String(s);
+      var out = '', i;
+      for (i = 0; i < s.length; i += 3) {
+        var b0 = s.charCodeAt(i), b1 = s.charCodeAt(i + 1), b2 = s.charCodeAt(i + 2);
+        var has1 = !(i + 1 >= s.length || isNaN(b1)), has2 = !(i + 2 >= s.length || isNaN(b2));
+        out += _CH2.charAt(b0 >> 2);
+        out += _CH2.charAt(((b0 & 3) << 4) | (has1 ? b1 >> 4 : 0));
+        out += has1 ? _CH2.charAt(((b1 & 15) << 2) | (has2 ? b2 >> 6 : 0)) : '=';
+        out += has2 ? _CH2.charAt(b2 & 63) : '=';
+      }
+      return out;
+    };
+  }
+  if (typeof G.URLSearchParams !== 'function') {
+    var USP = function (init) {
+      this._m = {};
+      if (init && typeof init === 'object') {
+        for (var k in init) if (Object.prototype.hasOwnProperty.call(init, k)) this._m[k] = [String(init[k])];
+      }
+    };
+    USP.prototype.append = function (k, v) { (this._m[k] = this._m[k] || []).push(String(v)); };
+    USP.prototype.set = function (k, v) { this._m[k] = [String(v)]; };
+    USP.prototype.get = function (k) { var a = this._m[k]; return a && a.length ? a[0] : null; };
+    USP.prototype.has = function (k) { return Object.prototype.hasOwnProperty.call(this._m, k); };
+    USP.prototype.toString = function () {
+      var out = [];
+      for (var k in this._m) {
+        if (!Object.prototype.hasOwnProperty.call(this._m, k)) continue;
+        var vs = this._m[k];
+        for (var i = 0; i < vs.length; i++)
+          out.push(encodeURIComponent(k).replace(/%20/g, '+') + '=' + encodeURIComponent(vs[i]).replace(/%20/g, '+'));
+      }
+      return out.join('&');
+    };
+    G.URLSearchParams = USP;
+  }
+})();
+
 /**
  * 4KHDHub Nuvio Plugin - Auto-detect Movie/TV by TMDB ID
  * Domain: 4khdhub.link
@@ -374,23 +436,27 @@ function getActiveDomain() {
   if (cachedDomain && now - domainCacheTime < DOMAIN_CACHE_TTL) {
     return Promise.resolve(cachedDomain);
   }
-  return Promise.all(FALLBACK_DOMAINS.map(function(domain) {
+  /* nv 4.39.0: sequential probe with early-return (was Promise.all over
+     all mirrors = 3 blocking fetches per uncached call on the
+     serialized device bridge); first-OK wins in the same order. */
+  var idx = 0;
+  function nextDomain() {
+    if (idx >= FALLBACK_DOMAINS.length) {
+      cachedDomain = DEFAULT_DOMAIN;
+      domainCacheTime = now;
+      return Promise.resolve(cachedDomain);
+    }
+    var domain = FALLBACK_DOMAINS[idx++];
     return probeDomain(domain).then(function(ok) {
-      return { domain: domain, ok: ok };
-    });
-  })).then(function(results) {
-    var i;
-    for (i = 0; i < results.length; i++) {
-      if (results[i].ok) {
-        cachedDomain = results[i].domain;
+      if (ok) {
+        cachedDomain = domain;
         domainCacheTime = now;
         return cachedDomain;
       }
-    }
-    cachedDomain = DEFAULT_DOMAIN;
-    domainCacheTime = now;
-    return cachedDomain;
-  });
+      return nextDomain();
+    });
+  }
+  return nextDomain();
 }
 
 // ===== TMDB AUTO-DETECT =====
@@ -1097,10 +1163,19 @@ function resolveLink(rawUrl, label, referer, quality, langHint, meta, depth) {
 
 function resolveLinksInBatches(links, contentUrl, meta) {
   var maxConcurrent = 3;
+  /* nv 4.39.0 device cap: the serialized device fetch bridge turned
+     unbounded link sweeps into 30+ blocking fetches (Silo S1E1 = 32;
+     each link costs 2-3 hops through hubdrive/hubcloud/gamerxyt),
+     risking the 60s plugin kill on slow networks. First 6 links plus
+     early-exit at 6 streams keep the same rows in practice (links
+     arrive in page priority order). */
+  var MAX_LINKS = 6;
+  var MAX_STREAMS = 6;
+  links = (links || []).slice(0, MAX_LINKS);
   var allStreams = [];
 
   function processBatch(startIdx) {
-    if (startIdx >= links.length) {
+    if (startIdx >= links.length || allStreams.length >= MAX_STREAMS) {
       return Promise.resolve(allStreams);
     }
     var batch = links.slice(startIdx, startIdx + maxConcurrent);
