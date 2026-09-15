@@ -8,6 +8,18 @@
  *   Movie: getStreams("1007757")
  *   TV:    getStreams("287011", "1", "1")
  *
+ * v4.4.0 (2026-09-15) - device-killer fix (pack 4.43.1 review): fetchJson
+ *   called the runtime's fetch() with NO timeout cap. The device fetch
+ *   bridge just HANGS on a black-holed host (TCP connect to a blocked IP
+ *   never settles), so one dead mirror stalled kisskhApi's rotation chain
+ *   (nl -> ovh -> co = 3 hangs) and getStreams never resolved - the app
+ *   burned its whole 60s plugin budget and the screen showed zero rows.
+ *   Fix: repo-standard guarded fetchWithTimeout (hasTimers() gate - the
+ *   QuickJS device realm has NO timers, so bare fetch is kept there and
+ *   the app's 60s budget stays the hard cap; with timers we race a 12s
+ *   cap per request so the full 3-mirror rotation stays inside budget).
+ *   Same pattern proven on devices by asianhub 2.3.0 / pinoyhub 5.5.0 /
+ *   pencuri 1.2.0. No lane logic changed.
  * v4.3.0 (2026-09-10) - app arg-shape hardening (same class of fixes as
  * pinoyhub 5.6.0, root cause of "movies work / series don't"):
  *   - IMDb tt-id inputs (app without TMDB key) resolved via TMDB find API
@@ -65,9 +77,35 @@ function safeJsonParse(text) {
     }
 }
 
+// v4.4.0 device-killer fix: every request is now capped. hasTimers() gate
+// mirrors pencuri/pinoyhub/asianhub - the QuickJS device realm has no
+// setTimeout, so there we call fetch bare (the native fetch bridge owns the
+// wait; the app's 60s plugin budget is the hard cap) instead of throwing
+// ReferenceError on the timer call (the 4.13.0 zero-rows device bug).
+function hasTimers() {
+    return typeof setTimeout === "function";
+}
+
+function fetchWithTimeout(url, options, ms) {
+    options = options || {};
+    if (!hasTimers()) return fetch(url, options);
+    var timer = null;
+    var killer = new Promise(function(resolve, reject) {
+        timer = setTimeout(function() {
+            reject(new Error("fetch timeout"));
+        }, ms || 12000);
+    });
+    return Promise.race([fetch(url, options), killer]).then(
+        function(res) { clearTimeout(timer); return res; },
+        function(err) { clearTimeout(timer); throw err; }
+    );
+}
+
 function fetchJson(url, headers) {
     var opts = { headers: headers || {}, skipSizeCheck: true };
-    return fetch(url, opts)
+    // 12s cap: light JSON APIs. Worst case (TMDB miss + all 3 mirrors hung)
+    // stays ~48s, inside the app's 60s plugin budget.
+    return fetchWithTimeout(url, opts, 12000)
         .then(function(response) {
             if (!response.ok) throw new Error("HTTP " + response.status);
             return response.text();

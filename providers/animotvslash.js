@@ -61,6 +61,18 @@
 })();
 
 // providers/animotvslash.js
+// v7.1.0 (2026-09-15): device-killer fix (pack 4.43.1 review) - fetchWithCookies
+//   and parseHlsVariants called the runtime's fetch() with NO timeout cap. The
+//   device fetch bridge just HANGS on a black-holed host (TCP connect to a
+//   blocked IP never settles), so a dead animotvslash.org / tryembed / plyr CDN
+//   stalled that lane forever and burned the app's 60s plugin budget -> zero
+//   rows. Fix: repo-standard guarded fetchWithTimeout (hasTimers() gate - the
+//   QuickJS device realm has NO timers, so bare fetch is kept there and the
+//   app's budget stays the hard cap; with timers we race a 15s cap per request,
+//   12s for the master-playlist variant probe). Same pattern proven on devices
+//   by asianhub 2.3.0 / pinoyhub 5.5.0 / pencuri 1.2.0. All fetchWithCookies
+//   callers already try/catch or .catch, so a timeout now degrades that lane to
+//   null/skipped instead of stalling it. No lane logic changed.
 // v7.0.0 (2026-09-13): RESTORED the device-proven v5.4.0 implementation as the
 // base (the 4.30.0 v6.0.0 rewrite dropped too much of it and gave users zero
 // streams) and grafted the site's own MegaPlay fallback lane onto it:
@@ -176,18 +188,44 @@ function mergeCookies(newCookies) {
   cookieJar = { ...cookieJar, ...newCookies };
 }
 
+// v7.1.0 device-killer fix: every request is now capped. hasTimers() gate
+// mirrors pencuri/pinoyhub/asianhub - the QuickJS device realm has no
+// setTimeout, so there we call fetch bare (the native fetch bridge owns the
+// wait; the app's 60s plugin budget is the hard cap) instead of throwing
+// ReferenceError on the timer call (the 4.13.0 zero-rows device bug).
+function hasTimers() {
+  return typeof setTimeout === 'function';
+}
+
+const FETCH_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeout(url, options = {}, ms = FETCH_TIMEOUT_MS) {
+  if (!hasTimers()) return fetch(url, options);
+  let timer = null;
+  const killer = new Promise((resolve, reject) => {
+    timer = setTimeout(() => reject(new Error('fetch timeout')), ms);
+  });
+  try {
+    return await Promise.race([fetch(url, options), killer]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchWithCookies(url, options = {}) {
+  // timeoutMs rides alongside the fetch init; strip it before spreading.
+  const { timeoutMs, ...fetchOpts } = options;
   const cookieHeader = buildCookieHeader();
   const headers = {
     ...(options.headers || HEADERS),
     ...(cookieHeader ? { 'Cookie': cookieHeader } : {}),
   };
 
-  const res = await fetch(url, {
-    ...options,
+  const res = await fetchWithTimeout(url, {
+    ...fetchOpts,
     headers,
     redirect: 'follow',
-  });
+  }, timeoutMs || FETCH_TIMEOUT_MS);
 
   const newCookies = extractCookies(res);
   if (Object.keys(newCookies).length > 0) {
@@ -387,7 +425,9 @@ function absolutizeUrl(base, rel) {
 // The plyr master playlist is public (headerless) — parse its variants so
 // Nuvio gets concrete quality rows instead of a single blind Auto row.
 function parseHlsVariants(masterUrl) {
-  return fetch(masterUrl).then(function (res) {
+  // v7.1.0: was a bare fetch() - now capped (12s, headerless exactly as
+  // before: the plyr master is public, keep the request shape identical).
+  return fetchWithTimeout(masterUrl, {}, 12000).then(function (res) {
     if (!res.ok) return [];
     return res.text().then(function (txt) {
       if (txt.indexOf('#EXT-X-STREAM-INF') === -1) return [];

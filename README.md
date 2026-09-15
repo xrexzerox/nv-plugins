@@ -1,5 +1,21 @@
 # NV Plugins
 
+## v4.43.1 (2026-09-15) - device-killer review of the 5 Asian/Pinoy providers
+
+User directive: review asianhub.js, pinoyhub.js, animotvslash.js, pencuri.js, kisskh.js and fix any
+device killer.
+
+- Clean (already guarded, byte-identical to 4.43.0): asianhub 2.6.0 (guarded fetchWithTimeout +
+  body-read race + global deadline), pinoyhub 5.8.0 (guarded, 25s/15s/9s caps), pencuri 2.1.x
+  (guarded fetchRaw + 8-10s caps + 9s ranged probes).
+- Fixed kisskh.js (v4.4.0): fetchJson called bare fetch() with NO cap - one black-holed mirror hung
+  the nl/ovh/co rotation chain and the whole getStreams call until the app's 60s budget died.
+  Now rides the repo-standard guarded fetchWithTimeout (hasTimers() gate, 12s per request).
+- Fixed animotvslash.js (v7.1.0): fetchWithCookies (choke point for every lane) and the plyr
+  master-playlist probe called bare fetch() with NO cap. Now capped 15s/12s via the same guarded
+  pattern; every caller already try/catches, so a dead host now skips its lane instead of stalling.
+- Node syntax check 42/42 OK; sandbox: all 5 providers settle fail-soft (no throw, no hang).
+
 ## v4.43.0 (2026-09-15) - eclipsia swap-in (13 replaced, 10 added; 32 -> 42 providers)
 
 User directive: replace the listed providers with the codeberg eclipsia/nuvio-plugin sources and
