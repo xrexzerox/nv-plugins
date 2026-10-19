@@ -131,7 +131,8 @@
  *      IDENTICAL row sets — both are just "recently added" lists on this
  *      site, so they would only duplicate rows and were not added.)
  *
- * 4. kisskh — JSON API (kisskh.nl -> kisskh.ovh -> kisskh.co rotation).
+ * 4. kisskh — JSON API (kisskh.co -> kisskh.do -> kisskh.is -> kisskh.ovh rotation;
+ *    kisskh.nl removed in v5.7.1 - NXDOMAIN since 2026-10).
  *    Datacenter egresses are Cloudflare-challenged (verified 403 from the
  *    DEPLOYED worker on 2026-09-10 — no transport lane exists from that
  *    runtime). v4.1.0: when every mirror fails, the 7 KissKH catalogs are
@@ -219,7 +220,11 @@
   // v5.2.0: Pencuri — user-provided mirror (ww44. subdomain rotates with the
   // site's own numbering; override with PENCURI_SITE when it moves again)
   var PENCURI_SITE_DEFAULT = 'https://ww44.pencurimovie.baby';
-  var KISSKH_HOSTS_DEFAULT = ['https://kisskh.nl', 'https://kisskh.ovh', 'https://kisskh.co'];
+  // v5.7.1 (pack 4.49.0 sync): kisskh.nl is NXDOMAIN-dead since 2026-10 - removed.
+  // Live candidates 2026-10-18: kisskh.co (API reports OK 2026-04), kisskh.do (top
+  // traffic), kisskh.is (site-announced), kisskh.ovh. TMDB rescue still engages
+  // when every mirror is blocked.
+  var KISSKH_HOSTS_DEFAULT = ['https://kisskh.co', 'https://kisskh.do', 'https://kisskh.is', 'https://kisskh.ovh'];
   // v5.0.0: Anikoto API — the library MegaPlay documents for /stream/s-2 and
   // the id system HiAnime used. Rows carry mal_id + ani_id + status.
   var ANIKOTO_API_DEFAULT = 'https://anikotoapi.site';
