@@ -8,7 +8,7 @@
  *   raw.githubusercontent.com/phisher98/TVVVV/.../domains.json + pingora search
  *   search.pingora.fyi kept from 4.39; Eclipsia base https://4khdhub.one kept as
  *   sequential fallback candidate (also alive; same WP theme + hubcloud fleet).
- *   TMDB key 439c478a771f35c05022f9feabcca01c (pack key; hexion shipped its own).
+ *   TMDB key 6dc830f9624b43261325bed3bf7d0dfa (pack key; hexion shipped its own).
  * Device notes: preamble polyfills (atob/btoa/URLSearchParams), 8s __nvFetch
  *   deadline, sequential domain probes (max 3, cached) + sequential hubcloud
  *   resolves (max 8 links, early exit at 6 streams), no require/cheerio/TextDecoder,
@@ -139,7 +139,7 @@ var __nvFetch = (function() {
  */
 var PROVIDER_NAME = "4kHdHub";
 var TMDB_API_URL = "https://api.themoviedb.org/3";
-var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c"; /* pack key (4.39); Eclipsia hexion shipped its own */
+var TMDB_API_KEY = "6dc830f9624b43261325bed3bf7d0dfa"; /* pack key (4.39); Eclipsia hexion shipped its own */
 var DOMAINS_JSON_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json"; /* 4.39 rotation source */
 var DOMAIN_FALLBACKS = ["https://new1.hdhub4u.cl", "https://4khdhub.one"];
 var PINGORA_SEARCH_URL = "https://search.pingora.fyi/collections/post/documents/search?q="; /* 4.39 search lane */
@@ -161,6 +161,33 @@ var RE_QUALITY = /(2160|1080|720|480)p|(4K|UHD)/i;
 var RE_YEAR = /\b(19\d{2}|20\d{2})\b/;
 var RE_SIZE_CTX = /(?:^|[\s>])(\d+\.?\d*)\s*(GB|MB)\b/i;
 var RE_HUBCLOUD = /https?:\/\/hubcloud\.[a-z0-9]+\/drive\/[a-z0-9]+/ig;
+
+/* v5.1.0: quality must come from the tokens NEAREST the link. The old
+ * RE_QUALITY.exec(context) took the FIRST match inside the whole 1500-char
+ * window - on today's posts that is a different (earlier, often 480p)
+ * download row, so real 1080p/720p links were mislabeled and dropped by
+ * the 480P filter. Match all quality tokens and take the LAST one. */
+var RE_QUALITY_G = /(2160|1080|720|480)p|(4K|UHD)/gi;
+function nearestQuality(context) {
+  var qm, last = null;
+  RE_QUALITY_G.lastIndex = 0;
+  while ((qm = RE_QUALITY_G.exec(context)) !== null) {
+    last = qm[1] || qm[2];
+    if (RE_QUALITY_G.lastIndex >= context.length) break;
+  }
+  if (!last) return "HD";
+  return (String(last).toUpperCase() === "4K" || String(last).toUpperCase() === "UHD")
+    ? "2160P" : String(last).toUpperCase() + "P";
+}
+var RE_SIZE_CTX_G = /(?:^|[\s>])(\d+\.?\d*)\s*(GB|MB)\b/gi;
+function nearestSize(context) {
+  var sm, last = null;
+  RE_SIZE_CTX_G.lastIndex = 0;
+  while ((sm = RE_SIZE_CTX_G.exec(context)) !== null) {
+    last = sm[1] + " " + sm[2];
+  }
+  return last;
+}
 /* hdhub4u.cl family hops one level wider than 4khdhub.one: post pages link
  * out to hubdrive.sbs file pages (which embed the hubcloud drive link) and
  * sometimes straight to hubcdn.lol redirectors (?r=base64 -> link=<direct>). */
@@ -411,29 +438,17 @@ function extractHubcloudLinks(html, season, episode, isSeries) {
       else { e = +epMatch[1]; }
       if (s !== season || e !== episode) continue;
 
-      var qm = RE_QUALITY.exec(ctxBefore);
-      var quality = "HD";
-      if (qm) {
-        var v = qm[1] || qm[2];
-        quality = (v.toUpperCase() === "4K" || v.toUpperCase() === "UHD") ? "2160P" : v.toUpperCase() + "P";
-      }
+      var quality = nearestQuality(ctxBefore);
       if (quality === "480P") continue;
 
-      var sm = RE_SIZE_CTX.exec(ctxBefore);
-      results.push({ url: url, quality: quality, size: sm ? sm[1] + " " + sm[2] : "" });
+      results.push({ url: url, quality: quality, size: nearestSize(ctxBefore) || "" });
     } else {
       var context = scope.substring(Math.max(0, m.index - 1500), m.index);
 
-      var qm2 = RE_QUALITY.exec(context);
-      var quality2 = "HD";
-      if (qm2) {
-        var v2 = qm2[1] || qm2[2];
-        quality2 = (v2.toUpperCase() === "4K" || v2.toUpperCase() === "UHD") ? "2160P" : v2.toUpperCase() + "P";
-      }
+      var quality2 = nearestQuality(context);
       if (quality2 === "480P") continue;
 
-      var sm2 = RE_SIZE_CTX.exec(context);
-      results.push({ url: url, quality: quality2, size: sm2 ? sm2[1] + " " + sm2[2] : "" });
+      results.push({ url: url, quality: quality2, size: nearestSize(context) || "" });
     }
   }
   return results;
@@ -465,15 +480,10 @@ function extractHubdriveLinks(html, isSeries) {
     if (seen[url]) continue;
     seen[url] = 1;
     var context = scope.substring(Math.max(0, m.index - 1500), m.index);
-    var qm = RE_QUALITY.exec(context);
-    var quality = "HD";
-    if (qm) {
-      var v = qm[1] || qm[2];
-      quality = (v.toUpperCase() === "4K" || v.toUpperCase() === "UHD") ? "2160P" : v.toUpperCase() + "P";
-    }
+    var quality = nearestQuality(context);
     if (quality === "480P") continue;
-    var sm = RE_SIZE_CTX.exec(context);
-    results.push({ url: url, quality: quality, size: sm ? sm[1] + " " + sm[2] : "" });
+    var size = nearestSize(context);
+    results.push({ url: url, quality: quality, size: size || "" });
   }
   return results;
 }
@@ -1017,6 +1027,189 @@ module.exports = { getStreams };
       rows = clean(rows);
       if (rows.length) return rows;
       return Promise.resolve().then(laneB).then(function (rows2) { return clean(rows2); });
+    });
+  };
+})();
+
+
+/* ===== nv universal subtitle lane v1.0.0 (pack 4.48.0) =====================
+   Every scraper's stream rows now carry multi-language sidecar subtitles:
+   English, Tagalog/Filipino, Korean, Japanese, Indonesian, Malay, Chinese,
+   Thai + all other tracks the source offers.
+
+   Source: Stremio's official keyless OpenSubtitles-v3 addon
+     GET https://opensubtitles-v3.strem.io/subtitles/{movie|series}/{imdbId}[:s:e].json
+     -> { subtitles: [{ url, lang(ISO-639-3), ... }] }
+   The subs5.strem.io URLs serve UTF-8 SRT; NuvioTV's player converts SRT to
+   WebVTT transparently (playerScreenMethods-42.createSubtitleObjectUrl), and
+   the player merges stream.sidecar `subtitles` rows (lang/url/headers) into
+   the subtitle rail - the same path the Pencuri English lane uses.
+
+   Design: ES2020-safe, zero-dependency, fail-soft. The IMDb id is resolved
+   once per title via TMDB external_ids (cached), the subtitle JSON once per
+   (imdb, s, e) (cached 6h). The wrapper runs in PARALLEL with the provider's
+   own lane and only fills rows that have no subtitles of their own, so
+   provider-specific tracks (vidlove/anikoto/megaplay vtt, pencuri en) always
+   win. Never throws; never delays the stream lane by more than the host's
+   own 8s deadline.
+=========================================================================== */
+(function () {
+  var G = typeof globalThis !== "undefined" ? globalThis : this;
+  if (G.__nvOsv3Subs) return;
+
+  var OSV3_BASE = "https://opensubtitles-v3.strem.io/subtitles/";
+  var TMDB_KEY = (typeof TMDB_API_KEY === "string" && TMDB_API_KEY) || "6dc830f9624b43261325bed3bf7d0dfa";
+  var TTL_MS = 6 * 60 * 60 * 1000;
+  var DEADLINE_MS = 8000;
+
+  /* ISO-639-3 -> ISO-639-1 (+ display names) for the pack's languages */
+  var CODE_MAP = {
+    eng: "en", tgl: "tl", fil: "fil", ko: "ko", kor: "ko", jpn: "ja",
+    ind: "id", may: "ms", zho: "zh", zhe: "zh", zht: "zh-TW", tha: "th",
+    hin: "hi", ben: "bn", tam: "ta", tel: "te", spa: "es", por: "pt",
+    pob: "pt-BR", fre: "fr", ger: "de", ita: "it", rus: "ru", ara: "ar",
+    tur: "tr", vie: "vi", pol: "pl", nld: "nl", ukr: "uk", pes: "fa",
+    per: "fa", swe: "sv", nor: "no", dan: "da", fin: "fi", ell: "el",
+    heb: "he", hun: "hu", ces: "cs", cze: "cs", ron: "ro", rum: "ro",
+    hrv: "hr", srp: "sr", bul: "bg", slo: "sk", slv: "sl", bos: "bs",
+    mac: "mk", mkd: "mk", est: "et", lav: "lv", lit: "lt", ind2: "id"
+  };
+  var NAME_MAP = {
+    en: "English", tl: "Tagalog", fil: "Filipino", ko: "Korean", ja: "Japanese",
+    id: "Indonesian", ms: "Malay", zh: "Chinese", "zh-TW": "Chinese (Traditional)",
+    th: "Thai", hi: "Hindi", bn: "Bengali", ta: "Tamil", te: "Telugu",
+    es: "Spanish", pt: "Portuguese", "pt-BR": "Portuguese (BR)", fr: "French",
+    de: "German", it: "Italian", ru: "Russian", ar: "Arabic", tr: "Turkish",
+    vi: "Vietnamese", pl: "Polish", nl: "Dutch", uk: "Ukrainian", fa: "Persian",
+    sv: "Swedish", no: "Norwegian", da: "Danish", fi: "Finnish", el: "Greek",
+    he: "Hebrew", hu: "Hungarian", cs: "Czech", sk: "Slovak", ro: "Romanian",
+    hr: "Croatian", sr: "Serbian", bg: "Bulgarian", sl: "Slovenian",
+    bs: "Bosnian", mk: "Macedonian", et: "Estonian", lv: "Latvian", lt: "Lithuanian"
+  };
+
+  var _cache = {};   /* key -> { t: ms, rows: [...] } */
+  var _imdbCache = {}; /* tmdbKey -> { t: ms, imdb } */
+  var _inflight = {};  /* key -> Promise */
+
+  function _hasTimers() {
+    return typeof setTimeout === "function" && typeof Promise !== "undefined" && Promise.race;
+  }
+  function _withDeadline(p) {
+    if (!_hasTimers()) return p;
+    return Promise.race([p, new Promise(function (res) {
+      var t = setTimeout(function () { res(null); }, DEADLINE_MS);
+      if (t && typeof t.unref === "function") t.unref();
+    })]);
+  }
+  function _normType(mediaType) {
+    var t = String(mediaType || "").toLowerCase();
+    return (t === "series" || t === "show" || t === "tvshow" || t === "tv") ? "series" : "movie";
+  }
+  function _fetchJson(url) {
+    return _withDeadline(
+      (typeof fetch === "function" ? fetch(url) : Promise.reject(new Error("no fetch")))
+        .then(function (res) {
+          if (!res || !res.ok) return null;
+          return res.json().catch(function () { return null; });
+        })
+        .catch(function () { return null; })
+    );
+  }
+  function _resolveImdb(tmdbId, mediaType) {
+    var key = _normType(mediaType) + ":" + String(tmdbId);
+    var now = Date.now();
+    if (_imdbCache[key] && now - _imdbCache[key].t < TTL_MS) {
+      return Promise.resolve(_imdbCache[key].imdb);
+    }
+    if (_inflight["imdb:" + key]) return _inflight["imdb:" + key];
+    var kind = _normType(mediaType) === "series" ? "tv" : "movie";
+    var url = "https://api.themoviedb.org/3/" + kind + "/" + encodeURIComponent(String(tmdbId)) +
+      "/external_ids?api_key=" + TMDB_KEY;
+    _inflight["imdb:" + key] = _fetchJson(url).then(function (data) {
+      var imdb = data && data.imdb_id && /^tt\d+$/.test(String(data.imdb_id)) ? String(data.imdb_id) : null;
+      _imdbCache[key] = { t: now, imdb: imdb };
+      delete _inflight["imdb:" + key];
+      return imdb;
+    });
+    return _inflight["imdb:" + key];
+  }
+  function _osv3Rows(imdbId, mediaType, season, episode) {
+    var isSeries = _normType(mediaType) === "series";
+    var path = isSeries
+      ? "series/" + encodeURIComponent(imdbId) + ":" + (parseInt(season, 10) || 1) + ":" + (parseInt(episode, 10) || 1) + ".json"
+      : "movie/" + encodeURIComponent(imdbId) + ".json";
+    var key = path;
+    var now = Date.now();
+    if (_cache[key] && now - _cache[key].t < TTL_MS) return Promise.resolve(_cache[key].rows);
+    if (_inflight[key]) return _inflight[key];
+    _inflight[key] = _fetchJson(OSV3_BASE + path).then(function (data) {
+      var list = (data && Array.isArray(data.subtitles)) ? data.subtitles : [];
+      var seen = {};
+      var rows = [];
+      for (var i = 0; i < list.length; i++) {
+        var t = list[i];
+        if (!t || !t.url) continue;
+        var code = CODE_MAP[String(t.lang || "").toLowerCase()] || String(t.lang || "").toLowerCase();
+        if (!code) continue;
+        var dedupeKey = code + "|" + (t.id || t.url);
+        if (seen[dedupeKey]) continue;
+        seen[dedupeKey] = 1;
+        rows.push({
+          url: String(t.url),
+          lang: code,
+          language: code,
+          name: NAME_MAP[code] || (String(t.lang || "subtitle").charAt(0).toUpperCase() + String(t.lang || "subtitle").slice(1))
+        });
+        if (rows.length >= 60) break;
+      }
+      _cache[key] = { t: now, rows: rows };
+      delete _inflight[key];
+      return rows;
+    });
+    return _inflight[key];
+  }
+
+  G.__nvOsv3Subs = {
+    get: function (tmdbId, mediaType, season, episode) {
+      try {
+        return _resolveImdb(tmdbId, mediaType).then(function (imdb) {
+          if (!imdb) return [];
+          return _osv3Rows(imdb, mediaType, season, episode);
+        }).catch(function () { return []; });
+      } catch (e) { return Promise.resolve([]); }
+    }
+  };
+})();
+
+/* ===== nv universal subtitle wrapper v1.0.0 (pack 4.48.0) ==================
+   Re-wraps module.exports.getStreams: runs the provider lane and the OSv3
+   subtitle lane concurrently, then attaches the language tracks to every
+   row that has no subtitles of its own. Provider-specific tracks always
+   win; rows keep their originals untouched. Fail-soft end to end.
+=========================================================================== */
+(function () {
+  var G = typeof globalThis !== "undefined" ? globalThis : this;
+  var lane = G.__nvOsv3Subs;
+  var orig = null;
+  try { orig = module.exports && module.exports.getStreams; } catch (e) { orig = null; }
+  if (!lane || typeof orig !== "function") return;
+  module.exports.getStreams = function (tmdbId, mediaType, season, episode) {
+    var rowsP;
+    try {
+      rowsP = Promise.resolve(orig.apply(this, arguments));
+    } catch (e) {
+      rowsP = Promise.resolve([]);
+    }
+    var subsP = lane.get(tmdbId, mediaType, season, episode).catch(function () { return []; });
+    return Promise.all([rowsP.catch(function () { return []; }), subsP]).then(function (arr) {
+      var rows = Array.isArray(arr[0]) ? arr[0] : [];
+      var subs = Array.isArray(arr[1]) ? arr[1] : [];
+      if (!rows.length || !subs.length) return rows;
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (r && (!r.subtitles || !r.subtitles.length)) r.subtitles = subs;
+      }
+      return rows;
     });
   };
 })();

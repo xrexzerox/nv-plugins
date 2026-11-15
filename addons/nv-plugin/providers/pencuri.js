@@ -1,5 +1,5 @@
 /**
- * Pencuri — Nuvio provider (v1.4.0)
+ * Pencuri — Nuvio provider (v1.4.1)
  *
  * Paired with asian-catalog v5.5.0: the addon's Pencuri catalogs (Movies
  * /movies/ + Series /series/ + the Malaysia / Indonesia / Japan / Thailand
@@ -186,7 +186,7 @@
  */
 
 var PENCURI_BASE = 'https://ww44.pencurimovie.baby';
-var TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
+var TMDB_API_KEY = '6dc830f9624b43261325bed3bf7d0dfa';
 var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 var EMBED_TIMEOUT_MS = 8000;
 var PAGE_TIMEOUT_MS = 10000;
@@ -612,13 +612,17 @@ function doodIsDead(html) {
 }
 
 function doodFindMd5Path(html) {
-  var m = String(html || '').match(/['"]\/(pass_md5\/[a-z0-9]+(?:\/[a-z0-9]+)?)['"]/i);
+  // v1.4.1 (pack 4.49.0): the first path segment now carries DASHES
+  // (device-verified 2026-10-18: '/pass_md5/284165262-47-57-<expiry>-<sig>/<seg>'
+  // — the old [a-z0-9]+ matched only the numeric prefix and every /pass_md5
+  // call 404'd). Dashes allowed in both segments; fallback loosened likewise.
+  var m = String(html || '').match(/['"]\/(pass_md5\/[a-z0-9-]+(?:\/[a-z0-9]+)?)['"]/i);
   if (!m) {
     var unpacked = unpackPackedScript(html);
-    if (unpacked) m = unpacked.match(/['"]\/(pass_md5\/[a-z0-9]+(?:\/[a-z0-9]+)?)['"]/i);
+    if (unpacked) m = unpacked.match(/['"]\/(pass_md5\/[a-z0-9-]+(?:\/[a-z0-9]+)?)['"]/i);
   }
   if (m) return m[1];
-  m = String(html || '').match(/\/pass_md5\/([a-z0-9]+)/i);
+  m = String(html || '').match(/\/pass_md5\/([a-z0-9-]+)/i);
   return m ? 'pass_md5/' + m[1] : null;
 }
 
@@ -626,6 +630,9 @@ function doodFromMd5Path(host, md5Path, refererUrl, q, hostLabel) {
   var passUrl = 'https://' + host + '/' + md5Path;
   return fetchText(passUrl, { Referer: refererUrl, 'X-Requested-With': 'XMLHttpRequest', 'User-Agent': UA }, EMBED_TIMEOUT_MS).then(function (body) {
     var base = String(body || '').trim();
+    // v1.4.1: Dood answers RELOAD when the signed path was already spent —
+    // surfaced to the caller so it can refetch the page for a fresh path.
+    if (base === 'RELOAD') return 'RELOAD';
     if (base.indexOf('http') !== 0 || base.length > 300) return null;
     var token = md5Path.split('/')[1] || '';
     var expiry = Date.now() + 2 * 60 * 60 * 1000;
@@ -639,6 +646,23 @@ function doodFromMd5Path(host, md5Path, refererUrl, q, hostLabel) {
 function doodExtract(embedUrl) {
   var idm = String(embedUrl).match(/\/e\/([a-z0-9]+)/i);
   var embedId = idm ? idm[1] : '';
+  // v1.4.1 (pack 4.49.0): three Dood nodes are NXDOMAIN-dead since 2026-10
+  // (dsvplay.com / d000g.com / dsvtbs.com — TV log: getaddrinfo ENOTFOUND on
+  // every pencuri stream tap). The Dood family serves the SAME /e/<id> embed
+  // on every sibling domain, and playmogo.com + d000d.com are live (playmogo
+  // served the exact dead dsvplay embed, 200 with the full player). Rewrite
+  // dead hosts onto live siblings before fetching; live hosts pass through.
+  var DOOD_DEAD_TO_LIVE = {
+    'dsvplay.com': 'playmogo.com',
+    'd000g.com': 'd000d.com',
+    'dsvtbs.com': 'playmogo.com',
+    'dsvplayz.com': 'playmogo.com'
+  };
+  embedUrl = String(embedUrl).replace(/^(https?:\/\/)([^\/]+)/i, function (all, proto, host) {
+    var bare = String(host).toLowerCase().replace(/^www\./, '');
+    var live = DOOD_DEAD_TO_LIVE[bare];
+    return live ? proto + live : all;
+  });
   return fetchTextFollow(embedUrl, PENCURI_BASE + '/', EMBED_TIMEOUT_MS).then(function (page) {
     if (!page || !page.text) return null;
     var html = page.text;
@@ -650,7 +674,20 @@ function doodExtract(embedUrl) {
     var title = html.match(/<title[^>]*>([^<]*)<\/title>/i);
     var q = qualityFromText(title ? title[1] : '');
     var md5Path = doodFindMd5Path(html);
-    if (md5Path) return doodFromMd5Path(host, md5Path, 'https://' + host + '/e/' + (embedId || 'x'), q, hostLabel);
+    // v1.4.1: single RELOAD retry — refetch the page (fresh signed path) once.
+    if (md5Path) {
+      return doodFromMd5Path(host, md5Path, 'https://' + host + '/e/' + (embedId || 'x'), q, hostLabel)
+        .then(function (row) {
+          if (row !== 'RELOAD') return row;
+          return fetchTextFollow(embedUrl, PENCURI_BASE + '/', EMBED_TIMEOUT_MS).then(function (page2) {
+            if (!page2 || !page2.text) return null;
+            var md5Path2 = doodFindMd5Path(page2.text);
+            if (!md5Path2 || md5Path2 === md5Path) return null;
+            return doodFromMd5Path(host, md5Path2, 'https://' + host + '/e/' + (embedId || 'x'), q, hostLabel)
+              .then(function (row2) { return (row2 === 'RELOAD' ? null : row2); });
+          });
+        });
+    }
     // legacy /d/{id} download-page fallback (dref_url cookie set client-side)
     if (!embedId) return null;
     var embedAbs = 'https://' + host + '/e/' + embedId;
@@ -938,8 +975,14 @@ function titleScore(a, b) {
   var na = normalizeTitle(a), nb = normalizeTitle(b);
   if (!na || !nb) return 0;
   if (na === nb) return 1;
-  if (na.indexOf(nb) === 0 || nb.indexOf(na) === 0) return 0.85;
-  if (na.indexOf(nb) >= 0 || nb.indexOf(na) >= 0) return 0.7;
+  // v4.50.0 ACCURACY FIX: substring bands used to score in BOTH directions,
+  // so a short site page like "Hello" scored 0.85 against the TMDB title
+  // "Hello, Love, Again" and the wrong page got played. The site item must
+  // now be AT LEAST as long as the TMDB title (subtitle words allowed,
+  // shortening not) for any substring band.
+  var la = na.split(" ").length, lb = nb.split(" ").length;
+  if (na.indexOf(nb) === 0 && la >= lb) return 0.85;
+  if (na.indexOf(nb) >= 0 && la >= lb) return 0.7;
   var wa = na.split(' '), wb = nb.split(' '), hit = 0;
   for (var i = 0; i < wa.length; i++) {
     if (wb.indexOf(wa[i]) >= 0) hit++;
@@ -1112,7 +1155,10 @@ function englishSubsFor(imdbId, mediaType, season, episode) {
       var u = eng[i].s.url;
       if (seen[u]) continue;
       seen[u] = true;
-      out.push({ url: u, language: 'en', name: eng[i].hi ? 'English (HI)' : 'English' });
+      // v1.4.1: lang AND language — the TV app's sidecar collector reads
+      // .lang (wl(): language || lang both accepted, but other tooling
+      // expects the Stremio .lang key; emit both, same value).
+      out.push({ url: u, lang: 'en', language: 'en', name: eng[i].hi ? 'English (HI)' : 'English' });
     }
     _subsCache[key] = { ts: Date.now(), value: out };
     return out;
@@ -1268,6 +1314,17 @@ function getStreams(videoId, mediaType, season, episode) {
     });
   }
 
+  // v1.4.2 (pack 4.52.0): unknown-prefix ids (mal:/anilist:/kitsu:/
+  // anikoto: - those rows belong to miruro/animotvslash; asian: non-pen
+  // rows belong to their own plugins; tmdb:/tt: handled above) must NOT
+  // reach the slug-ish title search: "mal:61634" used to collapse to the
+  // title "mal" and pencuri served 4 unrelated rows (wrong-title streams
+  // through the addon fan-out). Honest 0 instead.
+  if (/^(mal|anilist|kitsu|anikoto|asian)[:\/]/i.test(idStr)) {
+    console.log('[Pencuri] ' + idStr.split(':')[0] + ': id -> not a pencuri lane, skipping');
+    return Promise.resolve([]);
+  }
+
   // bare slug-ish id (stale caches): strip any numeric decorations first
   var slugish = idStr.replace(/(?:[:\/]\d+)+$/, '');
   if (/^[a-z0-9][a-z0-9-]*$/i.test(slugish)) {
@@ -1302,3 +1359,208 @@ if (typeof module !== 'undefined' && module.exports) {
 } else if (typeof global !== 'undefined') {
   global.getStreams = getStreams;
 }
+
+
+/* ===== nv universal subtitle lane v1.0.0 (pack 4.48.0) =====================
+   Every scraper's stream rows now carry multi-language sidecar subtitles:
+   English, Tagalog/Filipino, Korean, Japanese, Indonesian, Malay, Chinese,
+   Thai + all other tracks the source offers.
+
+   Source: Stremio's official keyless OpenSubtitles-v3 addon
+     GET https://opensubtitles-v3.strem.io/subtitles/{movie|series}/{imdbId}[:s:e].json
+     -> { subtitles: [{ url, lang(ISO-639-3), ... }] }
+   The subs5.strem.io URLs serve UTF-8 SRT; NuvioTV's player converts SRT to
+   WebVTT transparently (playerScreenMethods-42.createSubtitleObjectUrl), and
+   the player merges stream.sidecar `subtitles` rows (lang/url/headers) into
+   the subtitle rail - the same path the Pencuri English lane uses.
+
+   Design: ES2020-safe, zero-dependency, fail-soft. The IMDb id is resolved
+   once per title via TMDB external_ids (cached), the subtitle JSON once per
+   (imdb, s, e) (cached 6h). The wrapper runs in PARALLEL with the provider's
+   own lane and only fills rows that have no subtitles of their own, so
+   provider-specific tracks (vidlove/anikoto/megaplay vtt, pencuri en) always
+   win. Never throws; never delays the stream lane by more than the host's
+   own 8s deadline.
+=========================================================================== */
+(function () {
+  var G = typeof globalThis !== "undefined" ? globalThis : this;
+  if (G.__nvOsv3Subs) return;
+
+  var OSV3_BASE = "https://opensubtitles-v3.strem.io/subtitles/";
+  var TMDB_KEY = (typeof TMDB_API_KEY === "string" && TMDB_API_KEY) || "6dc830f9624b43261325bed3bf7d0dfa";
+  var TTL_MS = 6 * 60 * 60 * 1000;
+  var DEADLINE_MS = 8000;
+
+  /* ISO-639-3 -> ISO-639-1 (+ display names) for the pack's languages */
+  var CODE_MAP = {
+    eng: "en", tgl: "tl", fil: "fil", ko: "ko", kor: "ko", jpn: "ja",
+    ind: "id", may: "ms", zho: "zh", zhe: "zh", zht: "zh-TW", tha: "th",
+    hin: "hi", ben: "bn", tam: "ta", tel: "te", spa: "es", por: "pt",
+    pob: "pt-BR", fre: "fr", ger: "de", ita: "it", rus: "ru", ara: "ar",
+    tur: "tr", vie: "vi", pol: "pl", nld: "nl", ukr: "uk", pes: "fa",
+    per: "fa", swe: "sv", nor: "no", dan: "da", fin: "fi", ell: "el",
+    heb: "he", hun: "hu", ces: "cs", cze: "cs", ron: "ro", rum: "ro",
+    hrv: "hr", srp: "sr", bul: "bg", slo: "sk", slv: "sl", bos: "bs",
+    mac: "mk", mkd: "mk", est: "et", lav: "lv", lit: "lt", ind2: "id"
+  };
+  var NAME_MAP = {
+    en: "English", tl: "Tagalog", fil: "Filipino", ko: "Korean", ja: "Japanese",
+    id: "Indonesian", ms: "Malay", zh: "Chinese", "zh-TW": "Chinese (Traditional)",
+    th: "Thai", hi: "Hindi", bn: "Bengali", ta: "Tamil", te: "Telugu",
+    es: "Spanish", pt: "Portuguese", "pt-BR": "Portuguese (BR)", fr: "French",
+    de: "German", it: "Italian", ru: "Russian", ar: "Arabic", tr: "Turkish",
+    vi: "Vietnamese", pl: "Polish", nl: "Dutch", uk: "Ukrainian", fa: "Persian",
+    sv: "Swedish", no: "Norwegian", da: "Danish", fi: "Finnish", el: "Greek",
+    he: "Hebrew", hu: "Hungarian", cs: "Czech", sk: "Slovak", ro: "Romanian",
+    hr: "Croatian", sr: "Serbian", bg: "Bulgarian", sl: "Slovenian",
+    bs: "Bosnian", mk: "Macedonian", et: "Estonian", lv: "Latvian", lt: "Lithuanian"
+  };
+
+  var _cache = {};   /* key -> { t: ms, rows: [...] } */
+  var _imdbCache = {}; /* tmdbKey -> { t: ms, imdb } */
+  var _inflight = {};  /* key -> Promise */
+
+  function _hasTimers() {
+    return typeof setTimeout === "function" && typeof Promise !== "undefined" && Promise.race;
+  }
+  function _withDeadline(p) {
+    if (!_hasTimers()) return p;
+    return Promise.race([p, new Promise(function (res) {
+      var t = setTimeout(function () { res(null); }, DEADLINE_MS);
+      if (t && typeof t.unref === "function") t.unref();
+    })]);
+  }
+  function _normType(mediaType) {
+    var t = String(mediaType || "").toLowerCase();
+    return (t === "series" || t === "show" || t === "tvshow" || t === "tv") ? "series" : "movie";
+  }
+  function _fetchJson(url) {
+    return _withDeadline(
+      (typeof fetch === "function" ? fetch(url) : Promise.reject(new Error("no fetch")))
+        .then(function (res) {
+          if (!res || !res.ok) return null;
+          return res.json().catch(function () { return null; });
+        })
+        .catch(function () { return null; })
+    );
+  }
+  function _resolveImdb(tmdbId, mediaType) {
+    var key = _normType(mediaType) + ":" + String(tmdbId);
+    var now = Date.now();
+    if (_imdbCache[key] && now - _imdbCache[key].t < TTL_MS) {
+      return Promise.resolve(_imdbCache[key].imdb);
+    }
+    if (_inflight["imdb:" + key]) return _inflight["imdb:" + key];
+    var kind = _normType(mediaType) === "series" ? "tv" : "movie";
+    var url = "https://api.themoviedb.org/3/" + kind + "/" + encodeURIComponent(String(tmdbId)) +
+      "/external_ids?api_key=" + TMDB_KEY;
+    _inflight["imdb:" + key] = _fetchJson(url).then(function (data) {
+      var imdb = data && data.imdb_id && /^tt\d+$/.test(String(data.imdb_id)) ? String(data.imdb_id) : null;
+      _imdbCache[key] = { t: now, imdb: imdb };
+      delete _inflight["imdb:" + key];
+      return imdb;
+    });
+    return _inflight["imdb:" + key];
+  }
+  function _osv3Rows(imdbId, mediaType, season, episode) {
+    var isSeries = _normType(mediaType) === "series";
+    var path = isSeries
+      ? "series/" + encodeURIComponent(imdbId) + ":" + (parseInt(season, 10) || 1) + ":" + (parseInt(episode, 10) || 1) + ".json"
+      : "movie/" + encodeURIComponent(imdbId) + ".json";
+    var key = path;
+    var now = Date.now();
+    if (_cache[key] && now - _cache[key].t < TTL_MS) return Promise.resolve(_cache[key].rows);
+    if (_inflight[key]) return _inflight[key];
+    _inflight[key] = _fetchJson(OSV3_BASE + path).then(function (data) {
+      var list = (data && Array.isArray(data.subtitles)) ? data.subtitles : [];
+      var seen = {};
+      var rows = [];
+      for (var i = 0; i < list.length; i++) {
+        var t = list[i];
+        if (!t || !t.url) continue;
+        var code = CODE_MAP[String(t.lang || "").toLowerCase()] || String(t.lang || "").toLowerCase();
+        if (!code) continue;
+        var dedupeKey = code + "|" + (t.id || t.url);
+        if (seen[dedupeKey]) continue;
+        seen[dedupeKey] = 1;
+        rows.push({
+          url: String(t.url),
+          lang: code,
+          language: code,
+          name: NAME_MAP[code] || (String(t.lang || "subtitle").charAt(0).toUpperCase() + String(t.lang || "subtitle").slice(1))
+        });
+        if (rows.length >= 60) break;
+      }
+      _cache[key] = { t: now, rows: rows };
+      delete _inflight[key];
+      return rows;
+    });
+    return _inflight[key];
+  }
+
+  G.__nvOsv3Subs = {
+    get: function (tmdbId, mediaType, season, episode) {
+      try {
+        return _resolveImdb(tmdbId, mediaType).then(function (imdb) {
+          if (!imdb) return [];
+          return _osv3Rows(imdb, mediaType, season, episode);
+        }).catch(function () { return []; });
+      } catch (e) { return Promise.resolve([]); }
+    }
+  };
+})();
+
+/* ===== nv universal subtitle wrapper v1.0.0 (pack 4.48.0) ==================
+   Re-wraps module.exports.getStreams: runs the provider lane and the OSv3
+   subtitle lane concurrently, then attaches the language tracks to every
+   row that has no subtitles of its own. Provider-specific tracks always
+   win; rows keep their originals untouched. Fail-soft end to end.
+=========================================================================== */
+(function () {
+  var G = typeof globalThis !== "undefined" ? globalThis : this;
+  var lane = G.__nvOsv3Subs;
+  var orig = null;
+  try { orig = module.exports && module.exports.getStreams; } catch (e) { orig = null; }
+  if (!lane || typeof orig !== "function") return;
+  module.exports.getStreams = function (tmdbId, mediaType, season, episode) {
+    var rowsP;
+    try {
+      rowsP = Promise.resolve(orig.apply(this, arguments));
+    } catch (e) {
+      rowsP = Promise.resolve([]);
+    }
+    var subsP = lane.get(tmdbId, mediaType, season, episode).catch(function () { return []; });
+    return Promise.all([rowsP.catch(function () { return []; }), subsP]).then(function (arr) {
+      var rows = Array.isArray(arr[0]) ? arr[0] : [];
+      var subs = Array.isArray(arr[1]) ? arr[1] : [];
+      if (!rows.length || !subs.length) return rows;
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (r && (!r.subtitles || !r.subtitles.length)) r.subtitles = subs;
+      }
+      return rows;
+    });
+  };
+})();
+
+// v4.54.3 pack deadline guard (appended): this provider was among the slowest
+// lanes of the pack results screen on mobile networks. The app renders the
+// whole pack together, so every provider must answer even when a fetch chain
+// hangs; the app budget kills the pack at 60s which reads as "very slow".
+(function () {
+  var DEADLINE_MS = 18000;
+  var prev = module.exports.getStreams;
+  if (typeof prev !== "function") return;
+  module.exports.getStreams = function () {
+    var args = arguments;
+    var timer;
+    return Promise.race([
+      Promise.resolve().then(function () { return prev.apply(null, args); })
+        .then(function (v) { clearTimeout(timer); return v; })
+        .catch(function () { clearTimeout(timer); return []; }),
+      new Promise(function (resolve) {
+        timer = setTimeout(function () { resolve([]); }, DEADLINE_MS);
+      })
+    ]);
+  };
+})();

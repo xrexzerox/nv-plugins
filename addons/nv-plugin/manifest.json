@@ -1,14 +1,14 @@
 {
   "name": "NV Plugins",
-  "version": "4.46.0",
-  "description": "42 scrapers. v4.46.0 device-speed round: the pack's provider files are revalidated UNTOUCHED (all live-verified chains preserved) and the device-side slowness is fixed at the correct layer - NuvioTV v1.2.7 now coalesces the ~35 duplicate TMDB/IMDb metadata GETs every search used to fire into the TV's 6-connection-per-host queue, caps each scraper at 25s (global 90s hard cap, was 150s+), keeps the persistent QuickJS worker pool, and persists a finished source search in a high cache (instant re-open, survives app restarts). Server-side equivalents ship in nuvio-all-addon / RexHub v1.6.1 (gate false-fail fixes + playback-header passthrough + wired egress). Accuracy gates from 4.44/4.45 unchanged.",
+  "version": "4.54.20",
+  "description": "v4.54.20 MIXDROP FALLBACK FIX: pinoyhub v5.9.15 keeps a freshly extracted Mixdrop row visible when device preflight is inconclusive, and restores the previous 20-second Mixdrop extraction window.",
   "author": "xrexzerox",
   "scrapers": [
     {
       "id": "pinoymovieshub",
       "name": "PinoyMoviesHub",
       "description": "Pinoy movies & series from pinoymovieshub.win: direct pmh- slug lanes, and headerless-probe emission for Mixdrop/Dood direct links (TV-safe when the CDN allows; Byse stays first). v5.8.0: tolerant catalog-id parsing for the addon's new episode ids (asian:pmh-<slug>:<s>:<e>) so every pmh series episode tap keeps its season/episode even when the app passes no args.",
-      "version": "5.8.0",
+      "version": "5.9.15",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -97,7 +97,7 @@
     {
       "id": "cinemacity",
       "name": "CinemaCity",
-      "description": "CinemaCity v3.0.0 - replaced with the eclipsia svartok.js source (readable netmirror-style, codeberg v10.0.0). Device fixes: guarded atob fallback prepended (device realm may lack global atob). same CinemaCity upstream, Tagalog/Filipino content unchanged. Subtitles pass through as upstream emits them (English/Tagalog kept when provided).",
+      "description": "PARKED in 4.49.0: Cloudflare-challenged on both cinemacity.cc and the cc.realbestia.com reverse proxy (residential too, TV log 403 x10). Re-enable if a clean proxy appears. CinemaCity v3.0.0 - replaced with the eclipsia svartok.js source (readable netmirror-style, codeberg v10.0.0). Device fixes: guarded atob fallback prepended (device realm may lack global atob). same CinemaCity upstream, Tagalog/Filipino content unchanged. Subtitles pass through as upstream emits them (English/Tagalog kept when provided).",
       "version": "3.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
@@ -105,7 +105,7 @@
         "tv"
       ],
       "filename": "providers/cinemacity.js",
-      "enabled": true,
+      "enabled": false,
       "formats": [
         "mp4",
         "m3u8"
@@ -115,28 +115,6 @@
       ],
       "logo": "https://i.postimg.cc/XYjKhS3b/cinemacity.png",
       "hasSettings": false
-    },
-    {
-      "id": "4khdhub",
-      "name": "4KHDHub",
-      "description": "4KHDHub v5.0.0 - replaced with the eclipsia hexion.js source (readable netmirror-style, codeberg v10.0.0). Device fixes: verbatim (device-clean). keeps sort-order toggle (onSettings). Subtitles pass through as upstream emits them (English/Tagalog kept when provided).",
-      "version": "5.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/4khdhub.js",
-      "enabled": true,
-      "formats": [
-        "mp4",
-        "m3u8"
-      ],
-      "contentLanguage": [
-        "en"
-      ],
-      "logo": "https://i.postimg.cc/DZpW6Xfb/4khdhub.png",
-      "hasSettings": true
     },
     {
       "id": "kisskh",
@@ -190,7 +168,7 @@
       "id": "asianhub",
       "name": "AsianHub",
       "description": "Asian movies & series (Korean/Chinese/Japanese/Thai) from KissAsian + ViewAsian + KissKH: Mixdrop /v/3/ server extractor, headerless-probe TV-safe Dood/Mixdrop rows (webOS can't send Referer)",
-      "version": "2.6.0",
+      "version": "2.8.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -236,7 +214,7 @@
       "id": "miruro",
       "name": "Miruro",
       "description": "Miruro v2.9.0 - DEVICE FIX: restores the device-proven v2.7.0 base (fail-open post-filter, CDN hint rotation, ani.zip mal+ani dual-route, pipe circuit breaker, deadline) and grafts the 2026-09 MegaPlay API fix: getSourcesNew AES \"enc\" decrypt + signed master.m3u8 token. Root cause of the device zero-rows: v2.8.0 took CryptoJS from the harness-only __nvRequire shim which does not exist in the real Nuvio runtime (require(\"crypto-js\") is what the app provides) - so every decrypt failed silently on devices. Serves anikoto:* catalog ids as before.",
-      "version": "2.9.0",
+      "version": "2.9.2",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -250,6 +228,7 @@
       "logo": "https://www.google.com/s2/favicons?domain=miruro.tv&sz=128",
       "contentLanguage": [
         "en",
+        "ja",
         "tl"
       ],
       "categories": [
@@ -260,7 +239,7 @@
       "id": "pencuri",
       "name": "Pencuri",
       "description": "Malaysian/Indonesian/Japanese/Thai movies & series from pencurimovie.baby (paired with the asian-catalog addon's 9 Pencuri sections: Movies, Series, Malaysia, Indonesia, Japan, Thailand, Most Viewed, Most Rating, Top IMDb). Plays catalog rows DIRECTLY by navigating the site's real page or episode page (asian:pen-<slug> rows, zero title searching) and resolves TMDB ids by site search for everything else. v1.4.0 ENGLISH SUBTITLES on every row (opensubtitles-v3, parallel fail-soft lanes). v1.3.0 MULTI-SERVER FIX (user report: only 1 stream and its not playing - have 8 server): Streamtape /e/ pages carry TWO get_video links and the #robotlink DIV token (v1.2.0's pick) is a DECOY answering 403/500; the provider now evaluates the innerHTML expression (eval-free: string literals + chained .substring with JS semantics) to get the REAL token, which 302s to tapecontent.net (verified 720p + 1080p) and re-signs per request at play time; quality labels come from the embed page's own filename with zero extra requests. NEW StreamHG lane for hgcloud.to/hglink.to (2 of 8 servers, was an unparseable stub): loader rotates to audinifer.com whose radix-36 packed script unpacks to a signed master.m3u8 (206 verified); quality from the playlist RESOLUTION line. unpackPackedScript is now radix-aware (10..62). Dead-filler voe embeds (Big Buck Bunny placeholder, verified on the sample) are rejected via a placeholder guard. dedupeRows keys the FULL url (Streamtape file ids live in the query - the old query-strip collapsed both embeds into one row). Dood (playmogo/dsvplay) stays turnstile-aware: the gate is unconditional (verified desktop UA / mobile UA / cookie attempts), so gated pages skip in milliseconds. Lanes: MixDrop packed unpack to mxcontent.net mp4, Streamtape expression-token get_video, StreamHG signed m3u8, Dood pass_md5, Voe JS-redirect follow, inline probe for unknown hosts - all parallel, all fail-soft, all hasTimers()-guarded. Hermes-safe: no unescape/escape/btoa/atob.",
-      "version": "1.4.0",
+      "version": "1.4.2",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -308,7 +287,7 @@
       "id": "cineby",
       "name": "Cineby",
       "description": "v7.2.0: visible 'Cineby v7.2' chip on wings + native rows; native-lane seed fetch retries once on ANY failure (fresh-seed 401/500 churn). Live check 2026-09-25: api.speedracelight.com seed 200, Inception payload decrypts; the backend no longer carries RE2026 ('No streams available' = correct 0), and the site's new cinesrc.st player is fingerprint-locked (not replicable server-side).",
-      "version": "7.2.0",
+      "version": "7.2.1",
       "author": "Nuvio Team (AIO merge)",
       "supportedTypes": [
         "movie",
@@ -328,8 +307,8 @@
     {
       "id": "movieshunt",
       "name": "MoviesHunt",
-      "description": "MoviesHunt v7.1.0 folds the addon-side v1.2 fix back into the pack: the site moved to movieshunt.monster and its search became client-rendered (static entry-title markup gone; results come from the internal JSON endpoint). lookupApiSearch() calls the site's own lookup.php JSON API first with the old HTML lane as fallback, and the hubcloud TLD regex was widened for the .cx -> .ist rotation. Byte-identity with the deployed addon restored.",
-      "version": "7.1.0",
+      "description": "v7.2.0 (addon v1.3): the site now rotates domains (movieshunt.beer canonical, .run/.monster 301 to it). lookup.php, the HTML search lane and post-page fetches now fail over across all three domains, so a blocked or dead domain no longer zeroes the provider. Chain verified end-to-end (lookup -> post -> abhilinks -> hubcloud.ist -> hubcloud.php -> r2.cloudflarestorage direct links, 1080p/2160p).",
+      "version": "7.2.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie"
@@ -362,8 +341,8 @@
         "mp4"
       ],
       "contentLanguage": [
-        "fr",
-        "en"
+        "en",
+        "fr"
       ],
       "logo": "https://i.postimg.cc/bvXqCcz7/purstream.png",
       "hasSettings": false
@@ -371,7 +350,7 @@
     {
       "id": "playimdb",
       "name": "PlayIMDb",
-      "description": "PlayIMDb v7.0.0 - replaced with the eclipsia zevran.js source (readable netmirror-style, codeberg v10.0.0). Device fixes: verbatim (device-clean). VAplayer source. Subtitles pass through as upstream emits them (English/Tagalog kept when provided).",
+      "description": "PARKED in 4.50.0 (accuracy): the VAplayer lane serves 360p YouTube re-hosts from rotating junk-farm domains (smartmarketingacademy.site / startupscalingsystem.site / nicheauthorityengine.site - HLS probed live: RESOLUTION=640x360, YT-EXT loudness tags), rows labeled bare 'VAplayer' with no quality/subtitle metadata. Re-enable only if a proper VAplayer endpoint appears. PlayIMDb v7.0.0 - replaced with the eclipsia zevran.js source (readable netmirror-style, codeberg v10.0.0). Device fixes: verbatim (device-clean). VAplayer source. Subtitles pass through as upstream emits them (English/Tagalog kept when provided).",
       "version": "7.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
@@ -379,7 +358,7 @@
         "tv"
       ],
       "filename": "providers/playimdb.js",
-      "enabled": true,
+      "enabled": false,
       "formats": [
         "mp4",
         "mkv",
@@ -439,7 +418,7 @@
     {
       "id": "cinefreak",
       "name": "CineFreak",
-      "description": "CineFreak v7.0.0 - replaced with the eclipsia novus.js source (readable netmirror-style, codeberg v10.0.0). Device fixes: cheerio -> embedded nv cheerio-lite v2, guarded atob, fixed 1 corrupted a-href selector. Subtitles pass through as upstream emits them (English/Tagalog kept when provided).",
+      "description": "PARKED in 4.49.0: yagaverse stream-api.php 404 + site dataset moved to per-episode cinecloud /f/ links behind a Turnstile-gated /unlock. Re-enable when the unlock flow is portable. CineFreak v7.0.0 - replaced with the eclipsia novus.js source (readable netmirror-style, codeberg v10.0.0). Device fixes: cheerio -> embedded nv cheerio-lite v2, guarded atob, fixed 1 corrupted a-href selector. Subtitles pass through as upstream emits them (English/Tagalog kept when provided).",
       "version": "7.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
@@ -447,14 +426,15 @@
         "tv"
       ],
       "filename": "providers/cinefreak.js",
-      "enabled": true,
+      "enabled": false,
       "formats": [
         "mkv",
         "mp4"
       ],
       "logo": "https://i.postimg.cc/rpDB2284/cinefreak.png",
       "contentLanguage": [
-        "en"
+        "en",
+        "hi"
       ],
       "hasSettings": false
     },
@@ -483,7 +463,7 @@
     {
       "id": "hdhub4u",
       "name": "HDHub4u",
-      "description": "HDHub4u with the live domains source (phisher98 TVVVV repo) + link-hub hops. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). • readable rebuild",
+      "description": "PARKED in 4.49.0: wp-json 403, HTML search redirects to a JS-driven homepage, pingora lane CF-challenged - all three search paths dead. Re-enable when a lane returns. HDHub4u with the live domains source (phisher98 TVVVV repo) + link-hub hops. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). • readable rebuild",
       "version": "5.0.0",
       "author": "xrexzerox",
       "supportedTypes": [
@@ -491,36 +471,15 @@
         "tv"
       ],
       "filename": "providers/hdhub4u.js",
-      "enabled": true,
+      "enabled": false,
       "formats": [
         "mp4",
         "m3u8"
       ],
       "logo": "https://i.postimg.cc/mryRTf0R/hdhub4u.png",
       "contentLanguage": [
-        "en"
-      ],
-      "hasSettings": true
-    },
-    {
-      "id": "moviebox",
-      "name": "MovieBox",
-      "description": "v7.2.0: IMDb-search verification (details call's external_ids) before the title+year search; 'MovieBox v7.2' chip on rows; ad filter widened (adcreative/preroll/pre-roll//adv/ paths). api4.aoneroom.com remains device-only (403s datacenter IPs).",
-      "version": "7.2.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/moviebox.js",
-      "enabled": true,
-      "formats": [
-        "mp4",
-        "m3u8"
-      ],
-      "logo": "https://i.postimg.cc/TPwkfqHh/moviebox.png",
-      "contentLanguage": [
-        "en"
+        "en",
+        "hi"
       ],
       "hasSettings": true
     },
@@ -543,59 +502,16 @@
       ],
       "logo": "https://i.postimg.cc/bwDbhq9q/moviesdrive.png",
       "contentLanguage": [
-        "en"
+        "en",
+        "hi"
       ],
       "hasSettings": false
-    },
-    {
-      "id": "nakios",
-      "name": "Nakios",
-      "description": "Nakios with the live domains source (wooodyhood repo) + player extraction. FULLY DECODED port of the All-in-One-Nuvio provider (4.24.0 merge pass): string tables resolved, decoder machinery stripped, 8s per-call + 8s overall deadlines, node-core requires fail-soft, nvio post-filter attached (en/tl audio gate, >=720p quality gate, cross-provider dedupe). • readable rebuild",
-      "version": "2.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/nakios.js",
-      "enabled": true,
-      "formats": [
-        "mp4",
-        "m3u8"
-      ],
-      "logo": "https://i.postimg.cc/nLwY1pJB/nakios.png",
-      "contentLanguage": [
-        "en"
-      ],
-      "hasSettings": true
-    },
-    {
-      "id": "peachify",
-      "name": "Peachify",
-      "description": "Deobfuscated 4.38.0: mangled identifiers renamed, obfuscated literals resolved, formatted; endpoints/behavior identical to 4.37.0 (equivalence-verified). • readable rebuild",
-      "version": "6.0.0",
-      "author": "xrexzerox",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/peachify.js",
-      "enabled": true,
-      "formats": [
-        "m3u8",
-        "mp4"
-      ],
-      "logo": "https://i.postimg.cc/tCz8CDH3/peachify.png",
-      "contentLanguage": [
-        "en"
-      ],
-      "hasSettings": true
     },
     {
       "id": "videasy",
       "name": "VidEasy",
       "description": "Deobfuscated 4.38.0: dead string-table machinery removed, mangled identifiers renamed, obfuscated literals resolved, formatted; endpoints/behavior identical to 4.37.0 (equivalence-verified). • readable rebuild",
-      "version": "7.0.0",
+      "version": "7.0.1",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -617,7 +533,7 @@
       "id": "vidlove",
       "name": "VidLove",
       "description": "Deobfuscated 4.38.0: mangled identifiers renamed, obfuscated literals resolved, formatted; endpoints/behavior identical to 4.37.0 (equivalence-verified). • readable rebuild",
-      "version": "7.0.0",
+      "version": "7.0.1",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -677,15 +593,16 @@
       ],
       "logo": "https://i.postimg.cc/JhL3HBR4/anikototv.png",
       "contentLanguage": [
-        "en"
+        "en",
+        "ja"
       ],
       "hasSettings": true
     },
     {
       "id": "animotvslash",
       "name": "AnimeTVSlash",
-      "description": "AnimeTVSlash v7.1.0 - device-killer fix: fetchWithCookies and the plyr master-playlist probe now ride the repo-standard guarded fetchWithTimeout (hasTimers() gate, 15s/12s caps) so a dead host degrades its lane to a skipped row instead of stalling it forever. No lane logic changed.",
-      "version": "7.1.0",
+      "description": "AnimeTVSlash v7.2.0 - accuracy+subs round: restored the ani.zip TMDB->AniList/MAL mapping (the 4.49.0 probe misread the API - ?themoviedb_id= works), MegaPlay ani<->mal cross-resolve (anime movies live under the mal route), a tryembed 403 circuit breaker, and English OSv3 subtitles attached to every row.",
+      "version": "7.3.0",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -698,7 +615,8 @@
       ],
       "logo": "https://www.google.com/s2/favicons?domain=animotvslash.org&sz=128",
       "contentLanguage": [
-        "en"
+        "en",
+        "ja"
       ],
       "categories": [
         "other"
@@ -708,7 +626,7 @@
       "id": "cinejoy",
       "name": "Cinejoy",
       "description": "v3.2.0: visible 'Cinejoy v3.2' chip on every row (richName choke point + wings label) so stale device caches are diagnosable at a glance; wings TMDB-meta and seed fetches retry once on a null/failed body (shared-IP 429 hardening). Chain re-verified live 2026-09-25 on api.wing.st: /info -> /servers -> binary /g 200 -> ok.*.cc HLS, plus wings moon.quietridge rows with vidking referer.",
-      "version": "3.2.0",
+      "version": "3.2.1",
       "author": "Streamline",
       "supportedTypes": [
         "movie",
@@ -794,11 +712,12 @@
       "logo": "",
       "contentLanguage": [
         "en",
-        "bn",
-        "hi",
+        "zh",
         "ja",
-        "pt",
-        "ar"
+        "ko",
+        "th",
+        "id",
+        "ms"
       ],
       "hasSettings": true
     },
@@ -806,7 +725,7 @@
       "id": "reanime",
       "name": "Re:ANIME",
       "description": "v1.4.0: visible 'Re:ANIME v1.4' chip on row names for stale-cache diagnosis. Matching stays id-exact (anilist-id equality or exact slug), which already enforces the accuracy rule.",
-      "version": "1.4.0",
+      "version": "1.4.2",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
@@ -905,7 +824,7 @@
         "tv"
       ],
       "filename": "providers/vidking.js",
-      "enabled": true,
+      "enabled": false,
       "formats": [
         "m3u8"
       ],
@@ -960,7 +879,8 @@
         "bn",
         "hi",
         "ja",
-        "ko"
+        "ko",
+        "th"
       ],
       "hasSettings": false
     }

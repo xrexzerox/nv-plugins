@@ -61,6 +61,40 @@
 })();
 
 // providers/animotvslash.js
+// v7.3.0 (2026-10-19, pack 4.52.0) player-migration fix:
+//   - the site moved its player to an EXTERNAL iframe
+//     player.animotv.ru/#{base64 JSON} (shape {title, master, alt[], dl,
+//     anilist, mal, ep}). decodePlayerConfigs only knows the old self-hosted
+//     /plyr-player|jw-player/{b64} + {url} wrappers -> every migrated page
+//     returned 0 streams (proven live: Dragon Ball Super: Beerus E1, both the
+//     TMDB lane and the asian:an- catalog direct lane).
+//   - NEW lane: decodeAnimoRuConfigs + buildAnimoRuRows. master + alt/.m3u8
+//     + dl hls opts -> Auto row + concrete variants (parseHlsVariants, same
+//     as the legacy lane); dl file opts / alt .mp4 -> direct MP4 rows with
+//     the site's own labels ("1080p MP4" -> 1080p, -480p.mp4 -> 480p,
+//     -mp4-source.mp4 -> 1080p). dl "link" opts (p2pplay SPA mirrors) are
+//     skipped: CF-locked SPAs are unplayable in native players.
+//   - anilist/mal ids lifted from the config feed the MegaPlay fallback
+//     (idHints) - titles ani.zip does not map yet (Beerus: ani 206814 /
+//     mal 63367 live in the page config, NOT in ani.zip) keep a fallback.
+// v7.2.0 (2026-10-19, pack 4.51.0) accuracy+subs round:
+//   - RESTORED ani.zip TMDB->AniList/MAL mapping: the 4.49.0 probe
+//     conflated the REQUEST param with the RESPONSE key. Live re-probe
+//     2026-10-19: /mappings?themoviedb_id={id} answers fine (tmdb_id is
+//     what 400s). v7.1.1's hard stub zeroed the MegaPlay fallback for
+//     every TMDB-lane anime (verified Frieren/Princess Lover 0 rows).
+//   - MegaPlay ani<->mal cross-resolve via ani.zip: MegaPlay's ani
+//     route 404s for entries that only exist under mal (proven: Cadenza
+//     ani 20764 -> Error page, mal 18857 -> File 60948) and vice versa.
+//   - tryembed circuit breaker: the stream_data API is now signature-
+//     gated (403 "Forbidden: Invalid Request Signature", bot-fight we
+//     cannot honor from the device). First 403 opens a 10-minute circuit
+//     so later titles skip the dead lane instantly instead of burning
+//     the 15s fetch cap per attempt.
+//   - English sidecar subtitles on ALL rows (OSv3, pencuri v1.4.0
+//     pattern): TMDB lane via external_ids, site lane via the episode
+//     page og:title -> TMDB search -> external_ids. MegaPlay rows keep
+//     their site VTT tracks; OSv3 only fills rows without any.
 // v7.1.0 (2026-09-15): device-killer fix (pack 4.43.1 review) - fetchWithCookies
 //   and parseHlsVariants called the runtime's fetch() with NO timeout cap. The
 //   device fetch bridge just HANGS on a black-holed host (TCP connect to a
@@ -412,6 +446,153 @@ function decodePlayerConfigs(html) {
   return out;
 }
 
+/**
+ * v7.3.0: quality label for a direct MP4 row - the site's own dl label wins
+ * ("1080p MP4" -> 1080p), else the URL (-480p.mp4 -> 480p, -mp4-source.mp4
+ * -> 1080p "source" tier per the site's dl opts), else Auto.
+ */
+function mpQualityLabel(url, label) {
+  var m = String(label || '').match(/(\d{3,4})\s*p/i);
+  if (m) return m[1] + 'p';
+  var s = String(url || '');
+  var u = s.match(/-(\d{3,4})p\.mp4/i);
+  if (u) return u[1] + 'p';
+  if (s.toLowerCase().indexOf('-mp4-source.mp4') !== -1) return '1080p';
+  if (s.toLowerCase().indexOf('-source.mp4') !== -1) return '1080p';
+  return 'Auto';
+}
+
+/**
+ * v7.3.0: decode the EXTERNAL player iframe the site migrated to:
+ *   <iframe src="https://player.animotv.ru/#{base64 JSON}">
+ * Normalizes every config to
+ *   { master, alts:[{label,url}], dlOpts:[{label,url}], anilist, mal, title }
+ * so buildAnimoRuRows can consume it. Same b64 alphabet as the legacy
+ * wrappers (b64Decode tolerates URL-safe chars and missing padding).
+ * dl "link" opts (p2pplay SPA mirrors) are dropped - CF-locked SPAs are
+ * unplayable in native players (same cleanup as the v5.0.0 embed-row
+ * removal).
+ */
+function decodeAnimoRuConfigs(html) {
+  if (!html) return [];
+  var out = [], seen = {};
+  var re = /player\.animotv\.ru\/#([A-Za-z0-9+\/=,_-]{20,})/g;
+  var m;
+  while ((m = re.exec(String(html))) !== null) {
+    if (seen[m[1]]) continue;
+    seen[m[1]] = 1;
+    var raw = b64Decode(m[1]);
+    if (!raw || raw.indexOf('{') === -1) continue;
+    try {
+      var cfg = JSON.parse(raw);
+      if (!cfg || typeof cfg !== 'object') continue;
+      var master = /^https?:\/\//i.test(String(cfg.master || '')) ? String(cfg.master) : '';
+      var alts = [];
+      if (Array.isArray(cfg.alt)) {
+        for (var ai = 0; ai < cfg.alt.length; ai++) {
+          var au = String(cfg.alt[ai] || '');
+          if (/^https?:\/\//i.test(au)) alts.push({ label: '', url: au });
+        }
+      }
+      var dlOpts = [];
+      var dm = String(cfg.dl || '').match(/#([A-Za-z0-9+\/=,_-]{20,})/);
+      if (dm) {
+        var draw = b64Decode(dm[1]);
+        if (draw && draw.indexOf('{') !== -1) {
+          try {
+            var dcfg = JSON.parse(draw);
+            var opts = Array.isArray(dcfg.opts) ? dcfg.opts : [];
+            for (var oi = 0; oi < opts.length; oi++) {
+              var o = opts[oi] || {};
+              if (String(o.type || '') === 'link') continue;
+              var ou = String(o.url || o.master || '');
+              if (!/^https?:\/\//i.test(ou)) continue;
+              dlOpts.push({ label: String(o.label || ''), url: ou });
+            }
+          } catch (e2) {}
+        }
+      }
+      if (!master && !alts.length && !dlOpts.length) continue;
+      out.push({
+        master: master,
+        alts: alts,
+        dlOpts: dlOpts,
+        anilist: cfg.anilist ? String(cfg.anilist) : null,
+        mal: cfg.mal ? String(cfg.mal) : null,
+        title: String(cfg.title || '')
+      });
+    } catch (e) {}
+  }
+  return out;
+}
+
+/**
+ * v7.3.0: build stream rows from the external .ru player configs.
+ *   - every unique .m3u8 (master + alt + dl hls opts) -> Auto row + concrete
+ *     variants via parseHlsVariants (best-first), server-tagged
+ *   - every unique MP4 (dl file opts first - their labels are the site's own
+ *     - then alts) -> direct row, best-first
+ *   - duplicate URLs collapse across lanes/configs (rumble master repeats in
+ *     alt[] AND dl "HLS Server 2" opts on live pages)
+ * anilist/mal ids are pushed into idSink (if given) for MegaPlay.
+ */
+async function buildAnimoRuRows(configs, label, idSink) {
+  const rows = [];
+  const seenUrl = {};
+  var hlsMasters = [];
+  var mp4s = [];
+  for (var ci = 0; ci < configs.length; ci++) {
+    var cfg = configs[ci];
+    if (idSink && (cfg.anilist || cfg.mal)) idSink.push({ ani: cfg.anilist, mal: cfg.mal });
+    var labeled = {};
+    if (cfg.master) labeled[cfg.master] = '';
+    var dlOpts = cfg.dlOpts || [];
+    for (var di = 0; di < dlOpts.length; di++) {
+      if (dlOpts[di] && dlOpts[di].url && !(dlOpts[di].url in labeled)) {
+        labeled[dlOpts[di].url] = dlOpts[di].label || '';
+      }
+    }
+    var alts = cfg.alts || [];
+    for (var ai = 0; ai < alts.length; ai++) {
+      if (alts[ai] && alts[ai].url && !(alts[ai].url in labeled)) labeled[alts[ai].url] = '';
+    }
+    for (var u in labeled) {
+      if (seenUrl[u]) continue;
+      seenUrl[u] = 1;
+      if (/\.m3u8(\?|$)/i.test(u)) hlsMasters.push(u);
+      else mp4s.push({ url: u, label: labeled[u] });
+    }
+  }
+  for (var hi = 0; hi < hlsMasters.length; hi++) {
+    var masterUrl = hlsMasters[hi];
+    var tag = hi === 0 ? '' : ' ' + (hi + 1);
+    var variants = [];
+    try { variants = (await parseHlsVariants(masterUrl)) || []; } catch (eV) { variants = []; }
+    rows.push({ name: `ANIMOTVSLASH${tag} - Auto`, title: label, url: masterUrl, quality: 'Auto', provider: 'animotvslash' });
+    variants.sort(function (a, b) { return variantRank(b.name) - variantRank(a.name); });
+    for (var vi = 0; vi < variants.length; vi++) {
+      if (seenUrl[variants[vi].url]) continue;
+      seenUrl[variants[vi].url] = 1;
+      rows.push({ name: `ANIMOTVSLASH${tag} - ${variants[vi].name}`, title: label, url: variants[vi].url, quality: variants[vi].name, provider: 'animotvslash' });
+    }
+  }
+  mp4s.sort(function (a, b) {
+    return variantRank(mpQualityLabel(b.url, b.label)) - variantRank(mpQualityLabel(a.url, a.label));
+  });
+  var nameCount = {};
+  for (var mi = 0; mi < mp4s.length; mi++) {
+    var q = mpQualityLabel(mp4s[mi].url, mp4s[mi].label);
+    var nm = `ANIMOTVSLASH - ${q}`;
+    nameCount[nm] = (nameCount[nm] || 0) + 1;
+    if (nameCount[nm] > 1) nm = `ANIMOTVSLASH ${nameCount[nm]} - ${q}`;
+    rows.push({ name: nm, title: label, url: mp4s[mi].url, quality: q, provider: 'animotvslash' });
+  }
+  if (rows.length) {
+    console.log(`[animotvslash] .ru player lane: ${hlsMasters.length} HLS master(s) + ${mp4s.length} MP4 -> ${rows.length} row(s)`);
+  }
+  return rows;
+}
+
 function absolutizeUrl(base, rel) {
   if (/^https?:\/\//i.test(rel)) return rel;
   if (rel.indexOf('//') === 0) return 'https:' + rel;
@@ -624,7 +805,13 @@ async function resolveToken(token, embedUrl, retryCount = 0) {
 // ------------------------------------------------------------------
 // STREAM DATA API
 // ------------------------------------------------------------------
+var tryembedDeadUntil = 0; /* v7.2.0 signature-403 circuit breaker */
+
 async function extractTryEmbed(embedUrl) {
+  if (Date.now() < tryembedDeadUntil) {
+    console.log(`[animotvslash] [tryembed] circuit open (signature-gated) - skipping`);
+    return [];
+  }
   console.log(`[animotvslash] [tryembed] Extracting: ${embedUrl}`);
 
   const match = embedUrl.match(/\/embed\/anime\/(\d+)\/(\d+)\/(sub|dub)/);
@@ -639,10 +826,24 @@ async function extractTryEmbed(embedUrl) {
   const apiUrl = `https://tryembed.us.cc/api/stream_data?id=${animeId}&episode=${episode}&audio=${audio}`;
   console.log(`[animotvslash] [tryembed] API: ${apiUrl}`);
 
-  const streamData = await fetchJSONWithCookies(apiUrl, {
-    ...EMBED_HEADERS,
-    'Referer': embedUrl,
-  });
+  /* v7.2.0: fetch directly so a 403 signature gate is distinguishable from
+     a plain no-response; a 403 opens the 10-minute circuit immediately. */
+  let streamData = null;
+  try {
+    const apiRes = await fetchWithCookies(apiUrl, {
+      ...EMBED_HEADERS,
+      'Referer': embedUrl,
+      redirect: 'follow',
+    });
+    if (apiRes && apiRes.status === 403) {
+      tryembedDeadUntil = Date.now() + 10 * 60 * 1000;
+      console.log(`[animotvslash] [tryembed] API 403 (signature-gated) - circuit open 10min`);
+      return [];
+    }
+    if (apiRes && apiRes.ok) streamData = await apiRes.json();
+  } catch (eTex) {
+    streamData = null;
+  }
 
   if (!streamData) {
     console.log(`[animotvslash] [tryembed] API no response`);
@@ -1038,14 +1239,22 @@ function anilistFromTmdb(tmdbId) {
   if (hit && Date.now() - hit.ts < (hit.ani || hit.mal ? MP_AZ_TTL : MP_AZ_MISS_TTL)) {
     return Promise.resolve({ ani: hit.ani || null, mal: hit.mal || null });
   }
-  return fetchJSONWithCookies('https://api.ani.zip/mappings?themoviedb_id=' + encodeURIComponent(key))
+  // v7.2.0 (pack 4.51.0): the 4.49.0 probe conflated the REQUEST param
+  // with the RESPONSE key. Live re-probe 2026-10-19: /mappings?themoviedb_id=
+  // returns the full mapping (tmdb_id is the param that 400s). The ids nest
+  // under data.mappings (top-level fallback kept for older shapes).
+  var azUrl = 'https://api.ani.zip/mappings?themoviedb_id=' + encodeURIComponent(key);
+  return fetchJSONWithCookies(azUrl, { headers: { 'Accept': 'application/json' } })
     .then(function (data) {
-      var mp = (data && data.mappings) || {};
-      var ani = mp.anilist_id != null && parseInt(mp.anilist_id, 10) > 0 ? String(parseInt(mp.anilist_id, 10)) : null;
-      var mal = mp.mal_id != null && parseInt(mp.mal_id, 10) > 0 ? String(parseInt(mp.mal_id, 10)) : null;
-      _mpAzCache[key] = { ts: Date.now(), ani: ani, mal: mal };
-      return { ani: ani, mal: mal };
-    }).catch(function () {
+      var m = (data && (data.mappings || data)) || {};
+      var out = {
+        ani: (m.anilist_id != null && String(m.anilist_id) !== '') ? String(m.anilist_id) : null,
+        mal: (m.mal_id != null && String(m.mal_id) !== '') ? String(m.mal_id) : null,
+      };
+      _mpAzCache[key] = { ts: Date.now(), ani: out.ani, mal: out.mal };
+      return out;
+    })
+    .catch(function () {
       _mpAzCache[key] = { ts: Date.now(), ani: null, mal: null };
       return { ani: null, mal: null };
     });
@@ -1159,7 +1368,42 @@ function mpRowsFromMaster(masterUrl, side, subs, meta) {
     });
 }
 
+// v7.2.0: ani<->mal cross-resolve via ani.zip — MegaPlay serves some
+// entries only under /stream/mal and others only under /stream/ani (proven:
+// Cadenza ani 20764 -> "Error - MegaPlay", mal 18857 -> File 60948). When
+// only one id is known, fetch the other so BOTH routes get tried.
+function mpAzCrossResolve(ids) {
+  if (!ids || (!ids.ani && !ids.mal)) return Promise.resolve(ids || { ani: null, mal: null });
+  if (ids.ani && ids.mal) return Promise.resolve(ids);
+  var ckey = 'x:' + (ids.ani ? 'a' + ids.ani : 'm' + ids.mal);
+  var hit = _mpAzCache[ckey];
+  if (hit && Date.now() - hit.ts < MP_AZ_TTL) return Promise.resolve(hit.ids);
+  var q = ids.ani ? 'anilist_id=' + encodeURIComponent(String(ids.ani))
+                  : 'mal_id=' + encodeURIComponent(String(ids.mal));
+  return fetchJSONWithCookies('https://api.ani.zip/mappings?' + q, { headers: { 'Accept': 'application/json' } })
+    .then(function (data) {
+      var m = (data && (data.mappings || data)) || {};
+      var out = {
+        ani: ids.ani || (m.anilist_id != null && String(m.anilist_id) !== '' ? String(m.anilist_id) : null),
+        mal: ids.mal || (m.mal_id != null && String(m.mal_id) !== '' ? String(m.mal_id) : null),
+      };
+      _mpAzCache[ckey] = { ts: Date.now(), ids: out };
+      return out;
+    })
+    .catch(function () { return ids; });
+}
+
 function megaPlayAniLanes(ids, ep, meta, sink) {
+  var routes = [];
+  if (ids && ids.ani) routes.push(['ani', ids.ani]);
+  if (ids && ids.mal) routes.push(['mal', ids.mal]);
+  if (!routes.length) return Promise.resolve(null);
+  return mpAzCrossResolve(ids).then(function (both) {
+    return megaPlayAniLanesBoth(both || ids, ep, meta, sink);
+  });
+}
+
+function megaPlayAniLanesBoth(ids, ep, meta, sink) {
   var routes = [];
   if (ids && ids.ani) routes.push(['ani', ids.ani]);
   if (ids && ids.mal) routes.push(['mal', ids.mal]);
@@ -1194,9 +1438,17 @@ function megaPlayAniLanes(ids, ep, meta, sink) {
  *   2. api.ani.zip themoviedb_id -> anilist_id (TMDB shows)
  * Rows pass the v5.4.0 quality whitelist before returning. Series only.
  */
-async function megaPlayFallbackStreams(html, tmdbData, mediaType, seasonNum, episodeNum) {
+async function megaPlayFallbackStreams(html, tmdbData, mediaType, seasonNum, episodeNum, idHints) {
   if (mediaType !== 'tv') return []; // MegaPlay ani/mal routes = series-only
   var idList = [];
+  // v7.3.0: anilist/mal ids lifted from the page's player.animotv.ru configs
+  // (titles ani.zip does not map yet keep a MegaPlay route: Beerus config
+  // carries ani 206814 / mal 63367 while ani.zip has no mapping).
+  (Array.isArray(idHints) ? idHints : []).forEach(function (h) {
+    if (!h || (!h.ani && !h.mal)) return;
+    var dup = idList.some(function (x) { return x.ani === h.ani && x.mal === h.mal; });
+    if (!dup) idList.push({ ani: h.ani ? String(h.ani) : null, mal: h.mal ? String(h.mal) : null });
+  });
   var mm, ru = /animotvslash\.ru\/watch\/(\d+)\/(?:\d+)/gi;
   while ((mm = ru.exec(String(html || ''))) !== null) {
     var aid = parseInt(mm[1], 10);
@@ -1231,15 +1483,25 @@ async function megaPlayFallbackStreams(html, tmdbData, mediaType, seasonNum, epi
 async function finishStreams(pageResult, tmdbData, mediaType, seasonNum, episodeNum) {
     const { html, pageUrl } = pageResult;
 
+    // v7.3.0: hoisted above the postId gate so the .ru player lane can also
+    // rescue pages whose WP post id disappeared; idHints carries anilist/mal
+    // ids from the page configs into the MegaPlay fallback.
+    const label = mediaType === 'tv' ? `S${seasonNum}E${episodeNum}` : 'Movie';
+    const idHints = [];
+
     const postId = await getPostId(html, slugify(tmdbData.title));
     if (!postId) {
-        console.log('[animotvslash] No post_id found - trying MegaPlay fallback before giving up');
-        return megaPlayFallbackStreams(html, tmdbData, mediaType, seasonNum, episodeNum);
+        console.log('[animotvslash] No post_id found - trying .ru player lane, then MegaPlay fallback');
+        const ruRows0 = await buildAnimoRuRows(decodeAnimoRuConfigs(html), label, idHints);
+        if (ruRows0.length) {
+            return withAnimoSubs(ruRows0, html, tmdbData, mediaType, seasonNum, episodeNum);
+        }
+        return megaPlayFallbackStreams(html, tmdbData, mediaType, seasonNum, episodeNum, idHints)
+            .then(function (rows) { return withAnimoSubs(rows, html, tmdbData, mediaType, seasonNum, episodeNum); });
     }
     console.log(`[animotvslash] post_id: ${postId}`);
 
     const streams = [];
-    const label = mediaType === 'tv' ? `S${seasonNum}E${episodeNum}` : 'Movie';
 
         // PRIMARY (v5.0.0): self-hosted player configs -> direct headerless HLS
         // (plyr-player/videas and jw-player/rumble verified 200 with zero headers)
@@ -1280,6 +1542,16 @@ async function finishStreams(pageResult, tmdbData, mediaType, seasonNum, episode
             }
         }
 
+        // v7.3.0 SECONDARY: external .ru player lane (site migration). Runs
+        // before tryembed (signature-gated 403) - on migrated pages this is
+        // the PRIMARY lane and tryembed/megaPlay stay untouched.
+        const ruConfigs = decodeAnimoRuConfigs(html);
+        if (ruConfigs.length) {
+            console.log(`[animotvslash] ${ruConfigs.length} animotv.ru player config(s)`);
+            const ruRows = await buildAnimoRuRows(ruConfigs, label, idHints);
+            for (let rri = 0; rri < ruRows.length; rri++) streams.push(ruRows[rri]);
+        }
+
         if (streams.length === 0) {
             // FALLBACK: legacy tryembed flow (older pages; its API is now
             // signature-gated so this only fires if tryembed comes back)
@@ -1309,8 +1581,8 @@ async function finishStreams(pageResult, tmdbData, mediaType, seasonNum, episode
         if (streams.length === 0) {
             // v7.0.0: the site's own extract lanes are dead upstream -> the
             // site's own MegaPlay fallback (same lane the .ru watch player uses).
-            const mpRows = await megaPlayFallbackStreams(html, tmdbData, mediaType, seasonNum, episodeNum);
-            if (mpRows.length) return mpRows;
+            const mpRows = await megaPlayFallbackStreams(html, tmdbData, mediaType, seasonNum, episodeNum, idHints);
+            if (mpRows.length) return withAnimoSubs(mpRows, html, tmdbData, mediaType, seasonNum, episodeNum);
         }
 
         // v5.4.0: quality whitelist - 480p/720p/1080p/Auto only (user request).
@@ -1320,7 +1592,7 @@ async function finishStreams(pageResult, tmdbData, mediaType, seasonNum, episode
         }
         console.log(`[animotvslash] Returning ${kept.length} stream(s) ` +
             `after 480/720/1080p/auto filter (dropped ${streams.length - kept.length})`);
-        return kept;
+        return withAnimoSubs(kept, html, tmdbData, mediaType, seasonNum, episodeNum);
 }
 
 /**
@@ -1460,3 +1732,323 @@ if (typeof module !== "undefined" && module.exports) {
 } else if (typeof global !== "undefined") {
     global.getStreams = getStreams;
 }
+
+
+/* ===== v7.2.0 English sidecar subtitles (OSv3, pencuri v1.4.0 pattern) ====
+   TMDB-lane rows resolve their IMDb id via external_ids; site-lane rows
+   (asian:an-* catalog ids) use the touched page's og:title -> TMDB search ->
+   external_ids. The tracks only fill rows that carry no subtitles of their
+   own, so MegaPlay's site VTT tracks always win. Fail-soft everywhere. */
+var ANIMO_OSV3_BASE = 'https://opensubtitles-v3.strem.io';
+var _animoImdbCache = {};
+var _animoSubsCache = {};
+
+function animoImdbForTmdb(kind, tmdbId) {
+  var ck = kind + ':' + String(tmdbId);
+  var hit = _animoImdbCache[ck];
+  if (hit && Date.now() - hit.ts < 6 * 60 * 60 * 1000) return Promise.resolve(hit.v);
+  var url = 'https://api.themoviedb.org/3/' + (kind === 'tv' ? 'tv' : 'movie') + '/' +
+    encodeURIComponent(String(tmdbId)) + '/external_ids?api_key=' + TMDB_API_KEY;
+  return fetchJSONWithCookies(url, { headers: { 'Accept': 'application/json' } })
+    .then(function (d) {
+      var v = (d && typeof d.imdb_id === 'string' && d.imdb_id) || '';
+      _animoImdbCache[ck] = { ts: Date.now(), v: v };
+      return v;
+    })
+    .catch(function () { return ''; });
+}
+
+function animoPageTitle(html) {
+  var s = String(html || '');
+  var m = s.match(/property=["']og:title["']\s+content=["']([^"']+)["']/i) ||
+          s.match(/content=["']([^"']+)["']\s+property=["']og:title["']/i) ||
+          s.match(/<title>([^<]+)<\/title>/i);
+  var t = m ? String(m[1]).trim() : '';
+  if (!t) return null;
+  t = t.replace(/\s*[-|]\s*ANIMOTVSLASH.*$/i, '')
+       .replace(/\s*[-|]\s*Watch\s+.*$/i, '')
+       .replace(/\s+Episode\s+\d+.*$/i, '')
+       .trim();
+  var ym = t.match(/\b(19|20)\d{2}\b/);
+  var year = ym ? ym[0] : '';
+  var title = t.replace(/\b(19|20)\d{2}\b/g, '').replace(/[,:\-–]+\s*$/, '').trim();
+  if (!title) return null;
+  return { title: title, year: year };
+}
+
+function animoImdbFromPage(html, kind) {
+  var ty = animoPageTitle(html);
+  if (!ty || !ty.title) return Promise.resolve('');
+  var q = encodeURIComponent(ty.title);
+  var url = 'https://api.themoviedb.org/3/search/' + (kind === 'tv' ? 'tv' : 'movie') +
+    '?api_key=' + TMDB_API_KEY + '&query=' + q +
+    (ty.year ? '&' + (kind === 'tv' ? 'first_air_date_year' : 'year') + '=' + ty.year : '');
+  return fetchJSONWithCookies(url, { headers: { 'Accept': 'application/json' } })
+    .then(function (d) {
+      var r = (d && Array.isArray(d.results) && d.results[0]) || null;
+      if (!r || r.id == null) return '';
+      return animoImdbForTmdb(kind, r.id);
+    })
+    .catch(function () { return ''; });
+}
+
+function animoEnglishSubs(imdb, kind, s, e) {
+  if (!imdb || !/^tt\d+/.test(String(imdb))) return Promise.resolve([]);
+  var key = imdb + ':' + kind + ':' + (parseInt(s, 10) || 0) + ':' + (parseInt(e, 10) || 0);
+  var hit = _animoSubsCache[key];
+  if (hit && Date.now() - hit.ts < 6 * 60 * 60 * 1000) return Promise.resolve(hit.v);
+  var path = kind === 'tv'
+    ? '/subtitles/series/' + encodeURIComponent(String(imdb)) + ':' + (parseInt(s, 10) || 1) + ':' + (parseInt(e, 10) || 1) + '.json'
+    : '/subtitles/movie/' + encodeURIComponent(String(imdb)) + '.json';
+  return fetchJSONWithCookies(ANIMO_OSV3_BASE + path, { headers: { 'Accept': 'application/json' } })
+    .then(function (data) {
+      var list = (data && Array.isArray(data.subtitles)) ? data.subtitles : [];
+      var out = [], seen = {}, i, t;
+      for (i = 0; i < list.length && out.length < 4; i++) {
+        t = list[i];
+        if (!t || !t.url) continue;
+        var lang = String(t.lang || t.language || '').toLowerCase();
+        if (lang !== 'eng' && lang.indexOf('en') !== 0) continue;
+        if (seen[t.url]) continue;
+        seen[t.url] = true;
+        var fname = String(t.subtitleFileName || t.movieReleaseName || '');
+        var hi = /(^|[.\-_ ])(hi|sdh)([.\-_ ])|hearing\.impaired/i.test(fname);
+        out.push({ url: t.url, lang: 'en', language: 'en', name: hi ? 'English (HI)' : 'English' });
+      }
+      _animoSubsCache[key] = { ts: Date.now(), v: out };
+      return out;
+    })
+    .catch(function () { return []; });
+}
+
+function withAnimoSubs(rows, html, tmdbData, kind, s, e) {
+  return Promise.resolve(rows == null ? [] : rows).then(function (rs) {
+    if (!Array.isArray(rs) || !rs.length) return rs;
+    var i, have = false;
+    for (i = 0; i < rs.length; i++) {
+      if (rs[i] && Array.isArray(rs[i].subtitles) && rs[i].subtitles.length) { have = true; break; }
+    }
+    if (have) return rs; /* MegaPlay/site VTT already present - keep as-is */
+    var imdbJob = (tmdbData && tmdbData.raw && tmdbData.raw.id != null)
+      ? animoImdbForTmdb(kind, tmdbData.raw.id)
+      : animoImdbFromPage(html, kind);
+    return imdbJob.then(function (im) {
+      return animoEnglishSubs(im, kind, s, e).then(function (subs) {
+        if (!subs.length) return rs;
+        var n = 0;
+        for (i = 0; i < rs.length; i++) {
+          if (!rs[i]) continue;
+          if (Array.isArray(rs[i].subtitles) && rs[i].subtitles.length) continue;
+          try { rs[i].subtitles = subs; n++; } catch (e2) {}
+        }
+        if (n) console.log('[animotvslash] ' + subs.length + ' English subtitle track(s) attached to ' + n + ' row(s)');
+        return rs;
+      });
+    });
+  }).catch(function () {
+    return Promise.resolve(rows == null ? [] : rows);
+  });
+}
+/* ===== nv universal subtitle lane v1.0.0 (pack 4.48.0) =====================
+   Every scraper's stream rows now carry multi-language sidecar subtitles:
+   English, Tagalog/Filipino, Korean, Japanese, Indonesian, Malay, Chinese,
+   Thai + all other tracks the source offers.
+
+   Source: Stremio's official keyless OpenSubtitles-v3 addon
+     GET https://opensubtitles-v3.strem.io/subtitles/{movie|series}/{imdbId}[:s:e].json
+     -> { subtitles: [{ url, lang(ISO-639-3), ... }] }
+   The subs5.strem.io URLs serve UTF-8 SRT; NuvioTV's player converts SRT to
+   WebVTT transparently (playerScreenMethods-42.createSubtitleObjectUrl), and
+   the player merges stream.sidecar `subtitles` rows (lang/url/headers) into
+   the subtitle rail - the same path the Pencuri English lane uses.
+
+   Design: ES2020-safe, zero-dependency, fail-soft. The IMDb id is resolved
+   once per title via TMDB external_ids (cached), the subtitle JSON once per
+   (imdb, s, e) (cached 6h). The wrapper runs in PARALLEL with the provider's
+   own lane and only fills rows that have no subtitles of their own, so
+   provider-specific tracks (vidlove/anikoto/megaplay vtt, pencuri en) always
+   win. Never throws; never delays the stream lane by more than the host's
+   own 8s deadline.
+=========================================================================== */
+(function () {
+  var G = typeof globalThis !== "undefined" ? globalThis : this;
+  if (G.__nvOsv3Subs) return;
+
+  var OSV3_BASE = "https://opensubtitles-v3.strem.io/subtitles/";
+  var TMDB_KEY = (typeof TMDB_API_KEY === "string" && TMDB_API_KEY) || "6dc830f9624b43261325bed3bf7d0dfa";
+  var TTL_MS = 6 * 60 * 60 * 1000;
+  var DEADLINE_MS = 8000;
+
+  /* ISO-639-3 -> ISO-639-1 (+ display names) for the pack's languages */
+  var CODE_MAP = {
+    eng: "en", tgl: "tl", fil: "fil", ko: "ko", kor: "ko", jpn: "ja",
+    ind: "id", may: "ms", zho: "zh", zhe: "zh", zht: "zh-TW", tha: "th",
+    hin: "hi", ben: "bn", tam: "ta", tel: "te", spa: "es", por: "pt",
+    pob: "pt-BR", fre: "fr", ger: "de", ita: "it", rus: "ru", ara: "ar",
+    tur: "tr", vie: "vi", pol: "pl", nld: "nl", ukr: "uk", pes: "fa",
+    per: "fa", swe: "sv", nor: "no", dan: "da", fin: "fi", ell: "el",
+    heb: "he", hun: "hu", ces: "cs", cze: "cs", ron: "ro", rum: "ro",
+    hrv: "hr", srp: "sr", bul: "bg", slo: "sk", slv: "sl", bos: "bs",
+    mac: "mk", mkd: "mk", est: "et", lav: "lv", lit: "lt", ind2: "id"
+  };
+  var NAME_MAP = {
+    en: "English", tl: "Tagalog", fil: "Filipino", ko: "Korean", ja: "Japanese",
+    id: "Indonesian", ms: "Malay", zh: "Chinese", "zh-TW": "Chinese (Traditional)",
+    th: "Thai", hi: "Hindi", bn: "Bengali", ta: "Tamil", te: "Telugu",
+    es: "Spanish", pt: "Portuguese", "pt-BR": "Portuguese (BR)", fr: "French",
+    de: "German", it: "Italian", ru: "Russian", ar: "Arabic", tr: "Turkish",
+    vi: "Vietnamese", pl: "Polish", nl: "Dutch", uk: "Ukrainian", fa: "Persian",
+    sv: "Swedish", no: "Norwegian", da: "Danish", fi: "Finnish", el: "Greek",
+    he: "Hebrew", hu: "Hungarian", cs: "Czech", sk: "Slovak", ro: "Romanian",
+    hr: "Croatian", sr: "Serbian", bg: "Bulgarian", sl: "Slovenian",
+    bs: "Bosnian", mk: "Macedonian", et: "Estonian", lv: "Latvian", lt: "Lithuanian"
+  };
+
+  var _cache = {};   /* key -> { t: ms, rows: [...] } */
+  var _imdbCache = {}; /* tmdbKey -> { t: ms, imdb } */
+  var _inflight = {};  /* key -> Promise */
+
+  function _hasTimers() {
+    return typeof setTimeout === "function" && typeof Promise !== "undefined" && Promise.race;
+  }
+  function _withDeadline(p) {
+    if (!_hasTimers()) return p;
+    return Promise.race([p, new Promise(function (res) {
+      var t = setTimeout(function () { res(null); }, DEADLINE_MS);
+      if (t && typeof t.unref === "function") t.unref();
+    })]);
+  }
+  function _normType(mediaType) {
+    var t = String(mediaType || "").toLowerCase();
+    return (t === "series" || t === "show" || t === "tvshow" || t === "tv") ? "series" : "movie";
+  }
+  function _fetchJson(url) {
+    return _withDeadline(
+      (typeof fetch === "function" ? fetch(url) : Promise.reject(new Error("no fetch")))
+        .then(function (res) {
+          if (!res || !res.ok) return null;
+          return res.json().catch(function () { return null; });
+        })
+        .catch(function () { return null; })
+    );
+  }
+  function _resolveImdb(tmdbId, mediaType) {
+    var key = _normType(mediaType) + ":" + String(tmdbId);
+    var now = Date.now();
+    if (_imdbCache[key] && now - _imdbCache[key].t < TTL_MS) {
+      return Promise.resolve(_imdbCache[key].imdb);
+    }
+    if (_inflight["imdb:" + key]) return _inflight["imdb:" + key];
+    var kind = _normType(mediaType) === "series" ? "tv" : "movie";
+    var url = "https://api.themoviedb.org/3/" + kind + "/" + encodeURIComponent(String(tmdbId)) +
+      "/external_ids?api_key=" + TMDB_KEY;
+    _inflight["imdb:" + key] = _fetchJson(url).then(function (data) {
+      var imdb = data && data.imdb_id && /^tt\d+$/.test(String(data.imdb_id)) ? String(data.imdb_id) : null;
+      _imdbCache[key] = { t: now, imdb: imdb };
+      delete _inflight["imdb:" + key];
+      return imdb;
+    });
+    return _inflight["imdb:" + key];
+  }
+  function _osv3Rows(imdbId, mediaType, season, episode) {
+    var isSeries = _normType(mediaType) === "series";
+    var path = isSeries
+      ? "series/" + encodeURIComponent(imdbId) + ":" + (parseInt(season, 10) || 1) + ":" + (parseInt(episode, 10) || 1) + ".json"
+      : "movie/" + encodeURIComponent(imdbId) + ".json";
+    var key = path;
+    var now = Date.now();
+    if (_cache[key] && now - _cache[key].t < TTL_MS) return Promise.resolve(_cache[key].rows);
+    if (_inflight[key]) return _inflight[key];
+    _inflight[key] = _fetchJson(OSV3_BASE + path).then(function (data) {
+      var list = (data && Array.isArray(data.subtitles)) ? data.subtitles : [];
+      var seen = {};
+      var rows = [];
+      for (var i = 0; i < list.length; i++) {
+        var t = list[i];
+        if (!t || !t.url) continue;
+        var code = CODE_MAP[String(t.lang || "").toLowerCase()] || String(t.lang || "").toLowerCase();
+        if (!code) continue;
+        var dedupeKey = code + "|" + (t.id || t.url);
+        if (seen[dedupeKey]) continue;
+        seen[dedupeKey] = 1;
+        rows.push({
+          url: String(t.url),
+          lang: code,
+          language: code,
+          name: NAME_MAP[code] || (String(t.lang || "subtitle").charAt(0).toUpperCase() + String(t.lang || "subtitle").slice(1))
+        });
+        if (rows.length >= 60) break;
+      }
+      _cache[key] = { t: now, rows: rows };
+      delete _inflight[key];
+      return rows;
+    });
+    return _inflight[key];
+  }
+
+  G.__nvOsv3Subs = {
+    get: function (tmdbId, mediaType, season, episode) {
+      try {
+        return _resolveImdb(tmdbId, mediaType).then(function (imdb) {
+          if (!imdb) return [];
+          return _osv3Rows(imdb, mediaType, season, episode);
+        }).catch(function () { return []; });
+      } catch (e) { return Promise.resolve([]); }
+    }
+  };
+})();
+
+/* ===== nv universal subtitle wrapper v1.0.0 (pack 4.48.0) ==================
+   Re-wraps module.exports.getStreams: runs the provider lane and the OSv3
+   subtitle lane concurrently, then attaches the language tracks to every
+   row that has no subtitles of its own. Provider-specific tracks always
+   win; rows keep their originals untouched. Fail-soft end to end.
+=========================================================================== */
+(function () {
+  var G = typeof globalThis !== "undefined" ? globalThis : this;
+  var lane = G.__nvOsv3Subs;
+  var orig = null;
+  try { orig = module.exports && module.exports.getStreams; } catch (e) { orig = null; }
+  if (!lane || typeof orig !== "function") return;
+  module.exports.getStreams = function (tmdbId, mediaType, season, episode) {
+    var rowsP;
+    try {
+      rowsP = Promise.resolve(orig.apply(this, arguments));
+    } catch (e) {
+      rowsP = Promise.resolve([]);
+    }
+    var subsP = lane.get(tmdbId, mediaType, season, episode).catch(function () { return []; });
+    return Promise.all([rowsP.catch(function () { return []; }), subsP]).then(function (arr) {
+      var rows = Array.isArray(arr[0]) ? arr[0] : [];
+      var subs = Array.isArray(arr[1]) ? arr[1] : [];
+      if (!rows.length || !subs.length) return rows;
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (r && (!r.subtitles || !r.subtitles.length)) r.subtitles = subs;
+      }
+      return rows;
+    });
+  };
+})();
+
+// v4.54.3 pack deadline guard (appended): this provider was among the slowest
+// lanes of the pack results screen on mobile networks. The app renders the
+// whole pack together, so every provider must answer even when a fetch chain
+// hangs; the app budget kills the pack at 60s which reads as "very slow".
+(function () {
+  var DEADLINE_MS = 18000;
+  var prev = module.exports.getStreams;
+  if (typeof prev !== "function") return;
+  module.exports.getStreams = function () {
+    var args = arguments;
+    var timer;
+    return Promise.race([
+      Promise.resolve().then(function () { return prev.apply(null, args); })
+        .then(function (v) { clearTimeout(timer); return v; })
+        .catch(function () { clearTimeout(timer); return []; }),
+      new Promise(function (resolve) {
+        timer = setTimeout(function () { resolve([]); }, DEADLINE_MS);
+      })
+    ]);
+  };
+})();
