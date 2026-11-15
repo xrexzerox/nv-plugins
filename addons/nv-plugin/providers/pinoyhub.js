@@ -4,7 +4,13 @@
  * Supports: Movies & TV Shows
  * Language: Filipino / Tagalog / English
  * Author: xrexzerox
- * Version: 5.9.15
+ * Version: 5.9.16
+ *
+ * v5.9.16 changelog (pack 4.54.21):
+ *  - FIX: allow an 8-second grace window after Mixdrop becomes available so
+ *    the slower Byse attestation/PoW lane can return its valid source too.
+ *    The old collector returned immediately at the first Mixdrop result and
+ *    discarded Byse even when Byse finished a few seconds later.
  *
  * v5.9.15 changelog (pack 4.54.20):
  *  - FIX: retain a freshly extracted Mixdrop row when device preflight returns
@@ -2159,35 +2165,56 @@ function resolvePageUrlDirect(slug, mediaType, season, episode) {
 // Return as soon as two direct rows are ready. The remaining lane promises
 // are intentionally allowed to finish in the background; the old all-at-once
 // join made one dead provider hold every usable provider until its deadline.
+var FAST_LANE_GRACE_MS = 8000;
+
 function collectFastLaneResults(lanes) {
   var pending = lanes.slice();
   var output = [];
   var hasMixdrop = pending.some(function(lane) { return lane.kind === "mixdrop"; });
   var mixdropSettled = !hasMixdrop;
-  function step() {
-    // A Byse lane may return multiple qualities. That must not count as
-    // completion of the Mixdrop lane, or a working Mixdrop source can be
-    // hidden before it is collected.
-    if (!pending.length || (mixdropSettled && output.length)) return Promise.resolve(output);
+  var graceStartedAt = 0;
+
+  function consume(hit) {
+    if (!hit || hit.timeout) return output;
+    pending.splice(hit.index, 1);
+    if (hit.lane.kind === "mixdrop") mixdropSettled = true;
+    if (Array.isArray(hit.value)) {
+      for (var i = 0; i < hit.value.length; i++) {
+        if (hit.value[i]) output.push(hit.value[i]);
+      }
+    } else if (hit.value) {
+      output.push(hit.value);
+    }
+    return step();
+  }
+
+  function racePending() {
     return Promise.race(pending.map(function(lane, index) {
       return Promise.resolve(lane.promise).then(function(value) {
         return { index: index, lane: lane, value: value };
       }, function() {
         return { index: index, lane: lane, value: null };
       });
-    })).then(function(hit) {
-      pending.splice(hit.index, 1);
-      if (hit.lane.kind === "mixdrop") mixdropSettled = true;
-      if (Array.isArray(hit.value)) {
-        for (var i = 0; i < hit.value.length; i++) {
-          if (hit.value[i]) output.push(hit.value[i]);
-        }
-      } else if (hit.value) {
-        output.push(hit.value);
-      }
-      return step();
-    });
+    }));
   }
+
+  function step() {
+    if (!pending.length) return Promise.resolve(output);
+    // Once Mixdrop is ready, give the slower Byse attestation/PoW lane a
+    // bounded grace period. This keeps normal results fast while preserving
+    // both sources when Byse finishes a few seconds after Mixdrop.
+    if (mixdropSettled && output.length) {
+      if (!graceStartedAt) graceStartedAt = Date.now();
+      var remaining = FAST_LANE_GRACE_MS - (Date.now() - graceStartedAt);
+      if (remaining <= 0) return Promise.resolve(output);
+      var timeout = new Promise(function(resolve) {
+        setTimeout(function() { resolve({ timeout: true }); }, remaining);
+      });
+      return Promise.race([racePending(), timeout]).then(consume);
+    }
+    return racePending().then(consume);
+  }
+
   return step();
 }
 
