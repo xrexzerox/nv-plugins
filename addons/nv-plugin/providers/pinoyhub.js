@@ -178,7 +178,6 @@
  *    (source-scoped fallback ids; user report: "the reason why plugin not
  *    fetches because the url is different to the website"). The tail slug
  *    IS pinoymovieshub's own movie/series slug, so resolution now goes
-
  *    STRAIGHT to the real page — no title search that can diverge from the
  *    site's URL structure:
  *        movies  -> /movies/{slug}            (verified: /movies/tayo-sa-wakas)
@@ -359,7 +358,6 @@ function fetchTextFollow(url, options) {
   options = options || {};
   return fetchWithTimeout(url, {
     method: "GET",
-
     redirect: "follow",
     headers: merge(HEADERS, options.headers || {})
   }, options.timeoutMs || 25000).then(function(res) {
@@ -540,7 +538,6 @@ function deepProbeHls(url, headers) {
         return { ok: true, status: s.status, hard: false, stage: "segment" };
       });
     });
-
   });
 }
 
@@ -721,7 +718,6 @@ function bytesToUtf8(bytes) {
       i += 3;
     } else {
       cp = ((c & 0x07) << 18) | ((bytes[i + 1] & 0x3f) << 12) | ((bytes[i + 2] & 0x3f) << 6) | (bytes[i + 3] & 0x3f);
-
       cp -= 0x10000;
       out += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3ff));
       i += 4;
@@ -902,7 +898,6 @@ function byseUtf8Bytes(text) {
     else if (c < 0x800) bytes.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
     else if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
       lo = s.charCodeAt(++i);
-
       cp = 0x10000 + ((c - 0xd800) << 10) + (lo - 0xdc00);
       bytes.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
     } else {
@@ -1082,7 +1077,6 @@ function byseSolvePow(nonce, difficulty, timeoutMs) {
     batch();
   });
 }
-
 
 function bysePlaybackToken(host, code, frame, requestHeaders, fingerprint) {
   var captchaUrl = "https://" + host + "/api/videos/" + code + "/embed/captcha";
@@ -1264,7 +1258,6 @@ function scoreEpisodeResults(results, tmdbSlug, season, episode) {
  * next numerando marker. Episode slugs frequently differ from the series
  * slug (e.g. series "cobra-kai-tagalog-dubbed" -> episodes "cobra-kai-5x1"),
  * so guessing from the series slug alone is not reliable.
-
  */
 function findEpisodeUrlInSeries(html, season, episode) {
   var re = /numerando['"]>\s*(\d+)\s*-\s*(\d+)\s*</gi;
@@ -1445,7 +1438,6 @@ function callDooPlayerAPI(player, pageUrl) {
     if (!data) return "";
     var embedUrl = data.embed_url || data.url || data.source || data.link || data.file || data.src;
     if (!embedUrl && data.data) {
-
       embedUrl = data.data.embed_url || data.data.url || data.data.source;
     }
     if (!embedUrl && (data.html || data.iframe)) {
@@ -1626,7 +1618,6 @@ function withLaneDeadline(promise, ms) {
     }, ms || LANE_TIMEOUT_MS);
     promise.then(function(r) {
       if (!settled) { settled = true; clearTimeout(timer); resolve(r); }
-
     }, function() {
       if (!settled) { settled = true; clearTimeout(timer); resolve(null); }
     });
@@ -1806,7 +1797,6 @@ function extractByseDirect(embedUrl) {
 }
 
 // ===== EXTRACTOR: DOODSTREAM FAMILY (pass_md5 flow + gate detection) =====
-
 
 function isDoodFamily(host) {
   var h = String(host || "").toLowerCase();
@@ -1989,7 +1979,6 @@ function buildStream(displayTitle, player, resolved, meta, embedHost) {
   var label = shortLabel(player);
   var q = resolved.quality && resolved.quality !== "Auto" ? resolved.quality : parseQuality(label);
 
-
   var line1 = meta.isSeries
     ? "S" + meta.season + "E" + meta.episode + (meta.episodeTitle ? " - " + meta.episodeTitle : "") + " | " + displayTitle
     : displayTitle;
@@ -2169,7 +2158,6 @@ function extractStreamsFromPage(page, displayTitle, meta) {
       } else if (isDoodFamily(host)) {
         extractor = extractDoodDirect(embedUrl);
       } else {
-
         // Unknown host: content-sniff for a mixdrop-style player
         // (auto-covers future mirror domains), then try the Byse API
         // shape (covers rebranded domains), else give up.
@@ -2350,7 +2338,6 @@ function getStreamsCore(tmdbId, mt, season, episode) {
 
   var tmdbPromise = mt === "movie"
     ? tmdbLookup("movie", tmdbId).then(function(r) { return r || getTmdbInfoAuto(tmdbId); })
-
     : forceTv
       ? tmdbLookup("tv", tmdbId).then(function(r) { return r || { type: "", title: "", original: "", year: "", raw: null }; })
       : getTmdbInfoAuto(tmdbId);
@@ -2531,7 +2518,6 @@ if (typeof module !== "undefined" && module.exports) {
           language: code,
           name: NAME_MAP[code] || (String(t.lang || "subtitle").charAt(0).toUpperCase() + String(t.lang || "subtitle").slice(1))
         });
-
         if (rows.length >= 60) break;
       }
       _cache[key] = { t: now, rows: rows };
@@ -2585,3 +2571,4 @@ if (typeof module !== "undefined" && module.exports) {
     });
   };
 })();
+
