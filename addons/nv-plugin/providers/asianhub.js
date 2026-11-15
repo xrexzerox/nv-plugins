@@ -140,31 +140,12 @@
  */
 
 var PROVIDER_NAME = "AsianHub";
-var TMDB_API_KEY = "6dc830f9624b43261325bed3bf7d0dfa";
+var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 
-// v2.8.0 (2026-10-19, pack 4.52.0) site-migration round:
-//   - KissAsian: /series/{slug}/ no longer lists own episodes for many shows;
-//     single-release shows moved to a root watch page /{slug}/ with
-//     /v/{1,2,3}/ servers (v1 justplay, v2 firestream.to, v3 strcloud.in);
-//     episode posts survive under the CANONICAL (year-suffixed) slug and the
-//     old strict prefix test broke on the rename. NEW
-//     kissasianResolveWatchUrls: year-tolerant episode-prefix grouping +
-//     root-watch discovery + construct-by-scheme, candidate-loop extract.
-//   - ViewAsian: the kisskh.space player hop is GONE - the episode page now
-//     iframes a zumivids.com wrapper which iframes the vidmoly embed. NEW
-//     zumivids lane in viewasianExtract (legacy kisskh.space lane kept).
-//   - Proven live 2026-10-19: dutdot-2026 (single-release justplay),
-//     the-vanishing-beauty (21 ep posts under -2026 slug),
-//     hana-korea-2025->2026 rename, dear-song-2026 (zumivids->vidmoly m3u8).
 var KISSASIAN_BASE = "https://kissasian.cam";
 var JUSTPLAY_BASE = "https://justplay.cam";
 var VIEWASIAN_BASE = "https://viewasian.lol";
-// v2.6.1 (pack 4.49.0): kisskh.nl is NXDOMAIN-dead since 2026-10 (TV log:
-// getaddrinfo ENOTFOUND on every asianhub+kisskh tap). Live candidates as of
-// 2026-10-18: kisskh.co (API verified by user reports 2026-04), kisskh.do
-// (highest traffic per traffic-rank data), kisskh.is (site's own announced
-// domain), kisskh.ovh. Rotation stays first-success-wins per session.
-var KISSKH_BASES = ["https://kisskh.co", "https://kisskh.do", "https://kisskh.is", "https://kisskh.ovh"];
+var KISSKH_BASES = ["https://kisskh.nl", "https://kisskh.co", "https://kisskh.ovh"];
 var KISSKH_KEY_API = "https://script.google.com/macros/s/AKfycbzn8B31PuDxzaMa9_CQ0VGEDasFqfzI5bXvjaIZH4DM8DNq9q6xj1ALvZNz_JT3jF0suA/exec";
 
 var HEADERS = {
@@ -876,14 +857,6 @@ function extractDoodDirect(embedUrl, refererUrl) {
   if (!embedIdMatch) return Promise.resolve(null);
   var embedId = embedIdMatch[1];
   var qualityHint = "";
-  // v2.6.1 (pack 4.49.0): rewrite NXDOMAIN-dead Dood nodes onto live
-  // siblings — the Dood family serves the same /e/<id> embed on every
-  // domain; playmogo/d000d verified live 2026-10-18 (see pencuri.js).
-  embedUrl = String(embedUrl).replace(/^(https?:\/\/)([^\/]+)/i, function (all, proto, host) {
-    var bare = String(host).toLowerCase().replace(/^www\./, "");
-    var live = { "dsvplay.com": "playmogo.com", "d000g.com": "d000d.com", "dsvtbs.com": "playmogo.com" }[bare];
-    return live ? proto + live : all;
-  });
   return fetchWithTimeout(embedUrl, {
     method: "GET", redirect: "follow",
     headers: merge(HEADERS, { "Referer": refererUrl || "" })
@@ -1043,103 +1016,28 @@ function kissasianSearchSeriesUrl(tmdb) {
  * widget matching unrelated shows). Exact-episode or bust for TV (a wrong
  * episode is worse than none).
  */
-/**
- * v2.8.0: base form of a kissasian slug with the trailing year stripped
- * ("the-vanishing-beauty-2026" -> "the-vanishing-beauty"). The site renames
- * shows across years and links episodes/watch pages under the CURRENT slug,
- * so matching must be year-tolerant.
- */
-function ksBaseOf(slug) {
-  return String(slug || "").toLowerCase().replace(/-20\d{2}$/i, "");
-}
-
-/**
- * v2.8.0: resolve WATCH page candidates from a kissasian /series/{slug}/
- * info page. The 2026-10 site redesign removed the old
- * "/series/{slug}/ lists its own /{slug}-episode-{N}/ links" contract:
- *   - multi-episode shows list their episodes under the CANONICAL (often
- *     year-suffixed) slug, latest ~20 only (scroll list)
- *   - single-release shows have NO episode links at all - the info page
- *     links the ROOT watch page /{slug}/ (justplay embed + /v/{1,2,3}/
- *     servers)
- * Returns candidate watch URLs (best first):
- *   1. /{winningPrefix}-episode-{wantEp}/  (constructed - the scheme is
- *      deterministic, so early episodes resolve even when unlisted)
- *   2. root watch pages (exact slug first, renamed variants next)
- *   3. legacy constructed /{slug}-episode-{wantEp}/
- * The caller probes each with kissasianExtract (which itself walks
- * /v/2/ + /v/3/); a 404 candidate simply yields no iframe and is skipped.
- */
-function kissasianResolveWatchUrls(infoHtml, slug, wantEp) {
-  var out = [];
-  var html = String(infoHtml || "");
-  var base = ksBaseOf(slug);
-  if (!base) return out;
-  // 1) own multi-episode posts, grouped by prefix; widget links to OTHER
-  //    shows are excluded by the base test, same-show duplicates by grouping.
-  var groups = {}, gcount = {};
-  var re = /href="https?:\/\/kissasian\.cam\/([a-z0-9-]+)-episode-(\d+)\//gi;
-  var m;
-  while ((m = re.exec(html)) !== null) {
-    var X = m[1];
-    if (ksBaseOf(X) !== base) continue;
-    var n = parseInt(m[2], 10);
-    groups[X] = groups[X] || [];
-    if (groups[X].indexOf(n) === -1) groups[X].push(n);
-    gcount[X] = (gcount[X] || 0) + 1;
-  }
-  var bestX = "";
-  for (var G in groups) {
-    if (groups[G].indexOf(wantEp) !== -1) { bestX = G; break; }
-  }
-  if (!bestX) {
-    var bestC = 0;
-    for (var G2 in groups) {
-      if (gcount[G2] > bestC) { bestC = gcount[G2]; bestX = G2; }
-    }
-  }
-  if (bestX) out.push(KISSASIAN_BASE + "/" + bestX + "-episode-" + wantEp + "/");
-  // 2) root watch page(s) of the same show (single-release shows)
-  var roots = [], seenR = {};
-  var reR = /href="https?:\/\/kissasian\.cam\/([a-z0-9-]+)\//gi;
-  while ((m = reR.exec(html)) !== null) {
-    var R = m[1];
-    if (seenR[R]) continue;
-    seenR[R] = 1;
-    if (R.indexOf("-episode-") !== -1) continue;
-    if (/^(az-list|watch|genre|country|type|search|user|contact|dmca|privacy|terms)$/.test(R)) continue;
-    if (ksBaseOf(R) !== base) continue;
-    roots.push(R);
-  }
-  roots.sort(function (a, b) { return (a === slug ? 0 : 1) - (b === slug ? 0 : 1); });
-  for (var ri = 0; ri < roots.length && out.length < 4; ri++) {
-    out.push(KISSASIAN_BASE + "/" + roots[ri] + "/");
-  }
-  // 3) legacy constructed URL last (old posts may still resolve)
-  if (roots.indexOf(slug) === -1 && groups[slug] === undefined) {
-    out.push(KISSASIAN_BASE + "/" + slug + "-episode-" + wantEp + "/");
-  }
-  return out;
-}
-
-/** v2.8.0: probe watch-page candidates one by one until one extracts. */
-function kissasianExtractCandidates(cands, idx) {
-  if (!cands || idx >= cands.length) return Promise.resolve(null);
-  return kissasianExtract(cands[idx]).then(function (r) {
-    if (r) return r;
-    return kissasianExtractCandidates(cands, idx + 1);
-  }).catch(function () {
-    return kissasianExtractCandidates(cands, idx + 1);
-  });
-}
-
 function kissasianFindEpisodeUrl(seriesUrl, wantEp) {
-  if (!seriesUrl) return Promise.resolve([]);
+  if (!seriesUrl) return Promise.resolve("");
   return fetchText(seriesUrl, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
     var slugm = seriesUrl.match(/\/series\/([a-z0-9-]+)\/?/i);
-    return kissasianResolveWatchUrls(html, slugm ? slugm[1] : "", wantEp);
+    var slug = slugm ? slugm[1] : "";
+    var eps = [];
+    var re = /href="https?:\/\/kissasian\.cam\/([a-z0-9-]+-episode-(\d+))\/"/gi;
+    var m;
+    while ((m = re.exec(html)) !== null) {
+      if (slug && m[1].indexOf(slug + "-episode-") !== 0) continue;
+      eps.push({ path: m[1], num: parseInt(m[2], 10) });
+    }
+    var i;
+    for (i = 0; i < eps.length; i++) {
+      if (eps[i].num === wantEp) return KISSASIAN_BASE + "/" + eps[i].path + "/";
+    }
+    // construct fallback (slug pattern is uniform on this site)
+    if (slug) return KISSASIAN_BASE + "/" + slug + "-episode-" + wantEp + "/";
+    return "";
   }).catch(function() {
-    return [];
+    var slugm = seriesUrl.match(/\/series\/([a-z0-9-]+)\/?/i);
+    return slugm ? KISSASIAN_BASE + "/" + slugm[1] + "-episode-" + wantEp + "/" : "";
   });
 }
 
@@ -1291,9 +1189,8 @@ function kissasianLane(tmdb, isSeries, season, episode) {
   var wantEp = isSeries ? (parseInt(episode, 10) || 1) : 1;
   return kissasianSearchSeriesUrl(tmdb).then(function(seriesUrl) {
     if (!seriesUrl) return null;
-    // v2.8.0: candidates from the info page, extract loop (new site scheme)
-    return kissasianFindEpisodeUrl(seriesUrl, wantEp).then(function(cands) {
-      return kissasianExtractCandidates(Array.isArray(cands) ? cands : [], 0);
+    return kissasianFindEpisodeUrl(seriesUrl, wantEp).then(function(epUrl) {
+      return kissasianExtract(epUrl);
     });
   });
 }
@@ -1430,61 +1327,25 @@ function vidmolyEmbedM3u8(embedUrl, referer) {
  * page obfuscates its player with an eval packer but the playlist URL
  * leaks as a plain string.
  */
-function viewasianLegacyExtract(html, episodeUrl) {
-  // NOTE (v2.8.0): the old inline regex captured the trailing quote INSIDE
-  // the group ("...+\/?")" ) so playerUrl ended with a '"' and every
-  // kisskh.space fetch failed - a pre-existing latent bug, now corrected.
-  var m = html.match(/<iframe[^>]*src="(https?:\/\/kisskh\.space\/[a-z0-9-]+\/?)/i);
-  if (!m) m = html.match(/(https?:\/\/kisskh\.space\/[a-z0-9-]+\/?)/i);
-  if (!m) return Promise.resolve(null);
-  var playerUrl = m[1].replace(/\\u002F/gi, "/");
-  return fetchText(playerUrl, {
-    headers: { "Referer": VIEWASIAN_BASE + "/" },
-    timeoutMs: EMBED_TIMEOUT_MS
-  }).then(function(playerHtml) {
-    var embedUrl = findVidmolyEmbed(playerHtml);
-    if (!embedUrl) return null;
-    return vidmolyEmbedM3u8(embedUrl, playerUrl).then(function(r) {
-      if (!r) return null;
-      r.source = "ViewAsian";
-      r.host = hostOf(r.url);
-      return r;
-    });
-  }).catch(function() { return null; });
-}
-
 function viewasianExtract(episodeUrl) {
   if (!episodeUrl) return Promise.resolve(null);
   return fetchText(episodeUrl, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(html) {
-    // v2.8.0 PRIMARY: the episode page iframes a zumivids.com WRAPPER which
-    // itself iframes the vidmoly embed (the old kisskh.space hop is gone;
-    // chain proven live 2026-10-19 on dear-song-2026-episode-1-english-sub:
-    // viewasian -> zumivids embed page -> vidmoly.biz/embed-{id}.html ->
-    // plain m3u8 leak). The wrapper adds a server panel but the first inner
-    // iframe is the vidmoly player this file already knows how to resolve.
-    var zm = html.match(/(?:data-src|src)="((?:https?:)?\/\/zumivids\.com\/[^"]+)"/i);
-    if (!zm) return viewasianLegacyExtract(html, episodeUrl);
-    var wrapUrl = zm[1];
-    if (wrapUrl.indexOf("//") === 0) wrapUrl = "https:" + wrapUrl;
-    return fetchText(wrapUrl, {
+    var m = html.match(/<iframe[^>]*src="(https?:\/\/kisskh\.space\/[a-z0-9-]+\/?)"/i);
+    if (!m) m = html.match(/(https?:\/\/kisskh\.space\/[a-z0-9-]+\/?)/i);
+    if (!m) return null;
+    var playerUrl = m[1].replace(/\\u002F/gi, "/");
+    return fetchText(playerUrl, {
       headers: { "Referer": VIEWASIAN_BASE + "/" },
       timeoutMs: EMBED_TIMEOUT_MS
-    }).then(function(wrapHtml) {
-      var im = wrapHtml.match(/<iframe[^>]*src="(https?:\/\/[^"]+)"/i);
-      var inner = im ? im[1] : "";
-      if (inner && (/vidmoly/i.test(inner) || /\/embed-[a-z0-9]+\.html/i.test(inner))) {
-        return vidmolyEmbedM3u8(inner, wrapUrl).then(function(r) {
-          if (r) {
-            r.source = "ViewAsian";
-            r.host = hostOf(r.url);
-            return r;
-          }
-          return viewasianLegacyExtract(html, episodeUrl);
-        });
-      }
-      return viewasianLegacyExtract(html, episodeUrl);
-    }).catch(function() {
-      return viewasianLegacyExtract(html, episodeUrl);
+    }).then(function(playerHtml) {
+      var embedUrl = findVidmolyEmbed(playerHtml);
+      if (!embedUrl) return null;
+      return vidmolyEmbedM3u8(embedUrl, playerUrl).then(function(r) {
+        if (!r) return null;
+        r.source = "ViewAsian";
+        r.host = hostOf(r.url);
+        return r;
+      });
     });
   }).catch(function() { return null; });
 }
@@ -1499,12 +1360,11 @@ function viewasianLane(tmdb, isSeries, season, episode) {
   });
 }
 
-// ===== SOURCE 3: KissKH (kisskh.co API, do/is/ovh fallbacks) =====
+// ===== SOURCE 3: KissKH (kisskh.co API, kisskh.ovh fallback) =====
 // Ported from providers/kisskh.js v4.0.0 (proven on devices). KissKH is
 // Cloudflare-challenged from datacenter IPs but serves Nuvio clients
-// normally; kisskh.nl is dead (NXDOMAIN, removed in pack 4.49.0), so
-// kisskh.co is tried first, then kisskh.do / kisskh.is / kisskh.ovh as
-// automatic fallbacks when a request errors.
+// normally; kisskh.nl (proven working on mobile ISPs) is tried first, then
+// kisskh.co, kisskh.ovh as automatic fallbacks when a request errors.
 
 function kisskhFetchJson(path) {
   var idx = 0;
@@ -1877,16 +1737,8 @@ function kissasianDirectLane(slug, season, episode) {
   if (!slug) return Promise.resolve(null);
   var wantEp = parseInt(episode, 10) || 1;
   var seriesUrl = KISSASIAN_BASE + "/series/" + slug + "/";
-  // v2.8.0: info page -> watch candidates (episode posts, root watch page,
-  // legacy scheme) -> first extract wins. Handles the 2026-10 redesign.
-  return fetchText(seriesUrl, { timeoutMs: EMBED_TIMEOUT_MS }).then(function(infoHtml) {
-    var cands = kissasianResolveWatchUrls(infoHtml, slug, wantEp);
-    return kissasianExtractCandidates(cands, 0);
-  }).catch(function() {
-    return kissasianExtractCandidates([
-      KISSASIAN_BASE + "/" + slug + "-episode-" + wantEp + "/",
-      KISSASIAN_BASE + "/" + slug + "/"
-    ], 0);
+  return kissasianFindEpisodeUrl(seriesUrl, wantEp).then(function(epUrl) {
+    return kissasianExtract(epUrl);
   });
 }
 
@@ -2112,209 +1964,3 @@ if (typeof module !== "undefined" && module.exports) {
 } else {
   global.getStreams = getStreams;
 }
-
-
-/* ===== nv universal subtitle lane v1.0.0 (pack 4.48.0) =====================
-   Every scraper's stream rows now carry multi-language sidecar subtitles:
-   English, Tagalog/Filipino, Korean, Japanese, Indonesian, Malay, Chinese,
-   Thai + all other tracks the source offers.
-
-   Source: Stremio's official keyless OpenSubtitles-v3 addon
-     GET https://opensubtitles-v3.strem.io/subtitles/{movie|series}/{imdbId}[:s:e].json
-     -> { subtitles: [{ url, lang(ISO-639-3), ... }] }
-   The subs5.strem.io URLs serve UTF-8 SRT; NuvioTV's player converts SRT to
-   WebVTT transparently (playerScreenMethods-42.createSubtitleObjectUrl), and
-   the player merges stream.sidecar `subtitles` rows (lang/url/headers) into
-   the subtitle rail - the same path the Pencuri English lane uses.
-
-   Design: ES2020-safe, zero-dependency, fail-soft. The IMDb id is resolved
-   once per title via TMDB external_ids (cached), the subtitle JSON once per
-   (imdb, s, e) (cached 6h). The wrapper runs in PARALLEL with the provider's
-   own lane and only fills rows that have no subtitles of their own, so
-   provider-specific tracks (vidlove/anikoto/megaplay vtt, pencuri en) always
-   win. Never throws; never delays the stream lane by more than the host's
-   own 8s deadline.
-=========================================================================== */
-(function () {
-  var G = typeof globalThis !== "undefined" ? globalThis : this;
-  if (G.__nvOsv3Subs) return;
-
-  var OSV3_BASE = "https://opensubtitles-v3.strem.io/subtitles/";
-  var TMDB_KEY = (typeof TMDB_API_KEY === "string" && TMDB_API_KEY) || "6dc830f9624b43261325bed3bf7d0dfa";
-  var TTL_MS = 6 * 60 * 60 * 1000;
-  var DEADLINE_MS = 8000;
-
-  /* ISO-639-3 -> ISO-639-1 (+ display names) for the pack's languages */
-  var CODE_MAP = {
-    eng: "en", tgl: "tl", fil: "fil", ko: "ko", kor: "ko", jpn: "ja",
-    ind: "id", may: "ms", zho: "zh", zhe: "zh", zht: "zh-TW", tha: "th",
-    hin: "hi", ben: "bn", tam: "ta", tel: "te", spa: "es", por: "pt",
-    pob: "pt-BR", fre: "fr", ger: "de", ita: "it", rus: "ru", ara: "ar",
-    tur: "tr", vie: "vi", pol: "pl", nld: "nl", ukr: "uk", pes: "fa",
-    per: "fa", swe: "sv", nor: "no", dan: "da", fin: "fi", ell: "el",
-    heb: "he", hun: "hu", ces: "cs", cze: "cs", ron: "ro", rum: "ro",
-    hrv: "hr", srp: "sr", bul: "bg", slo: "sk", slv: "sl", bos: "bs",
-    mac: "mk", mkd: "mk", est: "et", lav: "lv", lit: "lt", ind2: "id"
-  };
-  var NAME_MAP = {
-    en: "English", tl: "Tagalog", fil: "Filipino", ko: "Korean", ja: "Japanese",
-    id: "Indonesian", ms: "Malay", zh: "Chinese", "zh-TW": "Chinese (Traditional)",
-    th: "Thai", hi: "Hindi", bn: "Bengali", ta: "Tamil", te: "Telugu",
-    es: "Spanish", pt: "Portuguese", "pt-BR": "Portuguese (BR)", fr: "French",
-    de: "German", it: "Italian", ru: "Russian", ar: "Arabic", tr: "Turkish",
-    vi: "Vietnamese", pl: "Polish", nl: "Dutch", uk: "Ukrainian", fa: "Persian",
-    sv: "Swedish", no: "Norwegian", da: "Danish", fi: "Finnish", el: "Greek",
-    he: "Hebrew", hu: "Hungarian", cs: "Czech", sk: "Slovak", ro: "Romanian",
-    hr: "Croatian", sr: "Serbian", bg: "Bulgarian", sl: "Slovenian",
-    bs: "Bosnian", mk: "Macedonian", et: "Estonian", lv: "Latvian", lt: "Lithuanian"
-  };
-
-  var _cache = {};   /* key -> { t: ms, rows: [...] } */
-  var _imdbCache = {}; /* tmdbKey -> { t: ms, imdb } */
-  var _inflight = {};  /* key -> Promise */
-
-  function _hasTimers() {
-    return typeof setTimeout === "function" && typeof Promise !== "undefined" && Promise.race;
-  }
-  function _withDeadline(p) {
-    if (!_hasTimers()) return p;
-    return Promise.race([p, new Promise(function (res) {
-      var t = setTimeout(function () { res(null); }, DEADLINE_MS);
-      if (t && typeof t.unref === "function") t.unref();
-    })]);
-  }
-  function _normType(mediaType) {
-    var t = String(mediaType || "").toLowerCase();
-    return (t === "series" || t === "show" || t === "tvshow" || t === "tv") ? "series" : "movie";
-  }
-  function _fetchJson(url) {
-    return _withDeadline(
-      (typeof fetch === "function" ? fetch(url) : Promise.reject(new Error("no fetch")))
-        .then(function (res) {
-          if (!res || !res.ok) return null;
-          return res.json().catch(function () { return null; });
-        })
-        .catch(function () { return null; })
-    );
-  }
-  function _resolveImdb(tmdbId, mediaType) {
-    var key = _normType(mediaType) + ":" + String(tmdbId);
-    var now = Date.now();
-    if (_imdbCache[key] && now - _imdbCache[key].t < TTL_MS) {
-      return Promise.resolve(_imdbCache[key].imdb);
-    }
-    if (_inflight["imdb:" + key]) return _inflight["imdb:" + key];
-    var kind = _normType(mediaType) === "series" ? "tv" : "movie";
-    var url = "https://api.themoviedb.org/3/" + kind + "/" + encodeURIComponent(String(tmdbId)) +
-      "/external_ids?api_key=" + TMDB_KEY;
-    _inflight["imdb:" + key] = _fetchJson(url).then(function (data) {
-      var imdb = data && data.imdb_id && /^tt\d+$/.test(String(data.imdb_id)) ? String(data.imdb_id) : null;
-      _imdbCache[key] = { t: now, imdb: imdb };
-      delete _inflight["imdb:" + key];
-      return imdb;
-    });
-    return _inflight["imdb:" + key];
-  }
-  function _osv3Rows(imdbId, mediaType, season, episode) {
-    var isSeries = _normType(mediaType) === "series";
-    var path = isSeries
-      ? "series/" + encodeURIComponent(imdbId) + ":" + (parseInt(season, 10) || 1) + ":" + (parseInt(episode, 10) || 1) + ".json"
-      : "movie/" + encodeURIComponent(imdbId) + ".json";
-    var key = path;
-    var now = Date.now();
-    if (_cache[key] && now - _cache[key].t < TTL_MS) return Promise.resolve(_cache[key].rows);
-    if (_inflight[key]) return _inflight[key];
-    _inflight[key] = _fetchJson(OSV3_BASE + path).then(function (data) {
-      var list = (data && Array.isArray(data.subtitles)) ? data.subtitles : [];
-      var seen = {};
-      var rows = [];
-      for (var i = 0; i < list.length; i++) {
-        var t = list[i];
-        if (!t || !t.url) continue;
-        var code = CODE_MAP[String(t.lang || "").toLowerCase()] || String(t.lang || "").toLowerCase();
-        if (!code) continue;
-        var dedupeKey = code + "|" + (t.id || t.url);
-        if (seen[dedupeKey]) continue;
-        seen[dedupeKey] = 1;
-        rows.push({
-          url: String(t.url),
-          lang: code,
-          language: code,
-          name: NAME_MAP[code] || (String(t.lang || "subtitle").charAt(0).toUpperCase() + String(t.lang || "subtitle").slice(1))
-        });
-        if (rows.length >= 60) break;
-      }
-      _cache[key] = { t: now, rows: rows };
-      delete _inflight[key];
-      return rows;
-    });
-    return _inflight[key];
-  }
-
-  G.__nvOsv3Subs = {
-    get: function (tmdbId, mediaType, season, episode) {
-      try {
-        return _resolveImdb(tmdbId, mediaType).then(function (imdb) {
-          if (!imdb) return [];
-          return _osv3Rows(imdb, mediaType, season, episode);
-        }).catch(function () { return []; });
-      } catch (e) { return Promise.resolve([]); }
-    }
-  };
-})();
-
-/* ===== nv universal subtitle wrapper v1.0.0 (pack 4.48.0) ==================
-   Re-wraps module.exports.getStreams: runs the provider lane and the OSv3
-   subtitle lane concurrently, then attaches the language tracks to every
-   row that has no subtitles of its own. Provider-specific tracks always
-   win; rows keep their originals untouched. Fail-soft end to end.
-=========================================================================== */
-(function () {
-  var G = typeof globalThis !== "undefined" ? globalThis : this;
-  var lane = G.__nvOsv3Subs;
-  var orig = null;
-  try { orig = module.exports && module.exports.getStreams; } catch (e) { orig = null; }
-  if (!lane || typeof orig !== "function") return;
-  module.exports.getStreams = function (tmdbId, mediaType, season, episode) {
-    var rowsP;
-    try {
-      rowsP = Promise.resolve(orig.apply(this, arguments));
-    } catch (e) {
-      rowsP = Promise.resolve([]);
-    }
-    var subsP = lane.get(tmdbId, mediaType, season, episode).catch(function () { return []; });
-    return Promise.all([rowsP.catch(function () { return []; }), subsP]).then(function (arr) {
-      var rows = Array.isArray(arr[0]) ? arr[0] : [];
-      var subs = Array.isArray(arr[1]) ? arr[1] : [];
-      if (!rows.length || !subs.length) return rows;
-      for (var i = 0; i < rows.length; i++) {
-        var r = rows[i];
-        if (r && (!r.subtitles || !r.subtitles.length)) r.subtitles = subs;
-      }
-      return rows;
-    });
-  };
-})();
-
-// v4.54.3 pack deadline guard (appended): this provider was among the slowest
-// lanes of the pack results screen on mobile networks. The app renders the
-// whole pack together, so every provider must answer even when a fetch chain
-// hangs; the app budget kills the pack at 60s which reads as "very slow".
-(function () {
-  var DEADLINE_MS = 18000;
-  var prev = module.exports.getStreams;
-  if (typeof prev !== "function") return;
-  module.exports.getStreams = function () {
-    var args = arguments;
-    var timer;
-    return Promise.race([
-      Promise.resolve().then(function () { return prev.apply(null, args); })
-        .then(function (v) { clearTimeout(timer); return v; })
-        .catch(function () { clearTimeout(timer); return []; }),
-      new Promise(function (resolve) {
-        timer = setTimeout(function () { resolve([]); }, DEADLINE_MS);
-      })
-    ]);
-  };
-})();
-

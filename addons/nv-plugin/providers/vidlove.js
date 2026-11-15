@@ -134,14 +134,7 @@ var __nvFetch = (function() {
   'use strict';
 
   var WINGS_BASE = 'https://api.speedracelight.com';
-  /* v7.1.1 (pack 4.49.0): gateway-down cooldown — api.speedracelight.com
-   * 502s hard since 2026-10; bench this lane 10 min after a 5xx instead of
-   * re-paying the outage on every call (device log showed 502 storms +
-   * app-level circuit spam). Primary api.vidlove.cc lane unaffected. */
-  var __nvSeedDownUntil = 0;
-  var __nvSeedCooling = function () { return Date.now() < __nvSeedDownUntil; };
-  var __nvMarkSeedDown = function () { __nvSeedDownUntil = Date.now() + 10 * 60 * 1000; };
-  var TMDB_KEY = '6dc830f9624b43261325bed3bf7d0dfa';
+  var TMDB_KEY = '439c478a771f35c05022f9feabcca01c';
   var WINGS_UA =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
   var WINGS_HEADERS = {
@@ -405,12 +398,11 @@ var __nvFetch = (function() {
   function __nvWingsStreams(opts) {
     opts = opts || {};
     var label = opts.label || 'Wings';
-    var timeoutMs = opts.timeoutMs || 12000;
+    var timeoutMs = opts.timeoutMs || 20000;
     try {
       var tmdbId = parseInt(String(opts.tmdbId || '').replace(/\D/g, ''), 10);
       if (!tmdbId) return Promise.resolve([]);
       var mediaType = opts.mediaType === 'tv' || opts.mediaType === 'series' ? 'tv' : 'movie';
-      if (typeof __nvSeedCooling === 'function' && __nvSeedCooling()) return Promise.resolve([]);
       return wingsTmdbMeta(tmdbId, mediaType).then(function(meta) {
         if (!meta || !meta.title) return [];
         return _fetchX(WINGS_BASE + '/seed?mediaId=' + tmdbId, {
@@ -418,7 +410,6 @@ var __nvFetch = (function() {
           })
           .then(function(r) {
             if (r.ok) return r.json();
-            if (typeof __nvMarkSeedDown === 'function' && r.status >= 500) __nvMarkSeedDown();
             if (r.status === 429 || r.status === 503) {
               /* seed endpoint rate-limits bursts; on the serialized device bridge
                  the immediate retry lands past the burst window */
@@ -543,80 +534,32 @@ var __nvFetch = (function() {
 })();
 
 /* ============================================================
- * nv-plugins vidlove.js v7.1.0 (pack 4.48.0 "languages + subtitles")
+ * nv-plugins vidlove.js v7.0.0 (pack 4.40.0 "all providers readable")
  * ------------------------------------------------------------
- * v7.1.0 rebuild of the VidLove native lane against the CURRENT
- * player.vidlove.cc bundle (re-verified live 2026-09-29):
- *   GET api.vidlove.cc/{movie|tv}?id={tmdbId}&mode=json&source={src}
- *     [&season=&episode=]  for src in vidapi/moviebox2/megaknight/
- *     warden/cinefreak/ipc, all six in parallel with a 6.2s partial
- *     collect. Response is {meta, subtitles, source:{url,manifest,label}}
- *     where source.url is a DIRECT mp4 and source.manifest an HLS master.
- * Subtitles: GET api.vidlove.cc/subtitles/{movie}/{id} (or
- *   /subtitles/tv/{id}/{s}/{e}) -> [{label, file(vtt)}] with English,
- *   Filipino, Indonesian, Malay, Chinese, Korean, Japanese, Thai tracks
- *   when available; label->ISO-639-1 mapped and attached to every row.
- *   (4.40's /{src}?sources=...&hevc=1 shape now 404s - that was the
- *   whole provider outage.)
- * Also fixed: the waterfall junk-filter regex /api\?d=/ dropped the new
- *   direct a2.whysosigmabro.cfd/api?d=... links; it now only targets the
- *   genuinely dead tungtungtungsahur.cfd host.
+ * Clean readable rebuild of the VidLove native lane. Machine names
+ * removed; flow identical to the device-verified 4.39 build, plus two
+ * fixes: (1) the 4.39 single-url branch called an undefined
+ * apQualityToStream() -> ReferenceError silently killed every source
+ * that answered {url,quality} without a qualities[] array - now mapped
+ * correctly; (2) URLSearchParams replaced with deterministic manual
+ * query encoding.
+ *
+ * Lane: GET api.vidlove.cc/{src}?id={tmdbId}&mode=json&sources={src}
+ *   &hevc=1[&season=&episode=] for src in vidapi/cinefreak/warden/
+ *   tcloud/megaknight, all five in parallel with a 6.2s partial
+ *   collect; rows below 1080p dropped (MIN_QUALITY), URL-deduped.
+ * Device notes: timer-guarded __nvFetch, zero-width sort tag kept for
+ *   sheet ordering parity, WINGS lane + waterfall + post-filter tail.
  * ============================================================ */
 
 var BASE_URL = "https://api.vidlove.cc";
 var REFERER = "https://player.vidlove.cc/";
 var TMDB_BASE = "https://api.themoviedb.org/3";
-var TMDB_KEY = "6dc830f9624b43261325bed3bf7d0dfa";
+var TMDB_KEY = "307b7b8ef035c6aa336900aef4e203bd";
 var MIN_QUALITY = 1080;
 var DEFAULT_QUALITY = "1080p";
 var USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-var PROVIDERS = ["vidapi", "moviebox2", "megaknight", "warden", "cinefreak", "ipc"];
-
-/* label -> ISO-639-1 (subtitle language). Numeric suffixes stripped. */
-var SUB_LANG_MAP = {
-  english: "en", tagalog: "tl", filipino: "fil", korean: "ko", japanese: "ja",
-  indonesian: "id", malay: "ms", malaysian: "ms", chinese: "zh", "chinese (traditional)": "zh-TW",
-  thai: "th", arabic: "ar", bengali: "bn", hindi: "hi", urdu: "ur", portuguese: "pt",
-  brazilian: "pt-BR", "portuguese (br)": "pt-BR", spanish: "es", french: "fr",
-  german: "de", italian: "it", russian: "ru", turkish: "tr", danish: "da", swedish: "sv",
-  norwegian: "no", finnish: "fi", czech: "cs", greek: "el", hebrew: "he", croatian: "hr",
-  slovenian: "sl", romanian: "ro", hungarian: "hu", polish: "pl", dutch: "nl",
-  vietnamese: "vi", ukrainian: "uk", persian: "fa", farsi: "fa"
-};
-
-function subLangFromLabel(label) {
-  var s = String(label || "").toLowerCase().replace(/\s*\d+\s*$/, "").trim();
-  if (SUB_LANG_MAP[s]) return SUB_LANG_MAP[s];
-  var first = s.split(/[^a-z]+/)[0];
-  return SUB_LANG_MAP[first] || "";
-}
-
-/* Fetch the pack's subtitle tracks for this title (parallel to streams). */
-function fetchVidloveSubtitles(tmdbId, type, season, episode) {
-  var url = type === "tv"
-    ? BASE_URL + "/subtitles/tv/" + encodeURIComponent(tmdbId) + "/" + parseInt(season, 10) + "/" + parseInt(episode, 10)
-    : BASE_URL + "/subtitles/movie/" + encodeURIComponent(tmdbId);
-  return __nvFetch(url, { headers: { "Accept": "application/json", "Referer": REFERER, "User-Agent": USER_AGENT } })
-    .then(function (res) {
-      if (!res.ok) return [];
-      return res.json().then(function (data) {
-        var list = Array.isArray(data) ? data : [];
-        var seen = {};
-        var out = [];
-        for (var i = 0; i < list.length; i++) {
-          var t = list[i];
-          if (!t || !t.file) continue;
-          var code = subLangFromLabel(t.label);
-          var key = code + "|" + t.file;
-          if (seen[key]) continue;
-          seen[key] = 1;
-          out.push({ url: t.file, lang: code || "und", language: code || "und", name: String(t.label || "Subtitle") });
-        }
-        return out;
-      }).catch(function () { return []; });
-    })
-    .catch(function () { return []; });
-}
+var PROVIDERS = ["vidapi", "cinefreak", "warden", "tcloud", "megaknight"];
 var DEFAULT_HEADERS = {
   "accept": "application/json",
   "accept-language": "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -703,19 +646,17 @@ function fetchTmdbMeta(tmdbId, type, season, episode) {
     .catch(function () { return { title: "Unknown", year: null, episodeTitle: "" }; });
 }
 
-function buildEndpointUrl(sourceKey, tmdbId, type, season, episode) {
+function buildEndpointUrl(sourceKey, tmdbId, sourceParam, season, episode) {
   var pairs = [
-    ["id", tmdbId], ["mode", "json"], ["source", sourceKey]
+    ["id", tmdbId], ["mode", "json"], ["sources", sourceParam], ["hevc", "1"]
   ];
-  if (type === "tv") {
-    if (season != null) pairs.push(["season", season]);
-    if (episode != null) pairs.push(["episode", episode]);
-  }
+  if (season != null) pairs.push(["season", season]);
+  if (episode != null) pairs.push(["episode", episode]);
   var query = [];
   for (var i = 0; i < pairs.length; i++) {
     query.push(encodeURIComponent(pairs[i][0]) + "=" + encodeURIComponent(pairs[i][1]));
   }
-  return BASE_URL + "/" + (type === "tv" ? "tv" : "movie") + "?" + query.join("&");
+  return BASE_URL + "/" + sourceKey + "?" + query.join("&");
 }
 
 function mapQualityToStream(entry, sourceLabel, index, ctx) {
@@ -752,29 +693,34 @@ function mapQualityToStream(entry, sourceLabel, index, ctx) {
   };
 }
 
-function fetchProviderStreams(sourceKey, tmdbId, type, season, episode, ctx, subs) {
-  return __nvFetch(buildEndpointUrl(sourceKey, tmdbId, type, season, episode), {
+function fetchProviderStreams(sourceKey, tmdbId, type, season, episode, ctx) {
+  return __nvFetch(buildEndpointUrl(sourceKey, tmdbId, sourceKey, type === "tv" ? season : null, type === "tv" ? episode : null), {
     method: "GET",
     headers: DEFAULT_HEADERS
   }).then(function (res) {
     if (!res.ok) return [];
     return res.json().then(function (data) {
       var source = data && data.source;
-      if (!source || !source.url) return [];
+      if (!source) return [];
       var label = source.label != null ? source.label : sourceKey;
-      var quality = source.quality || "1080p";
-      var row = mapQualityToStream({ url: source.url, quality: quality }, label, 0, ctx);
-      if (subs && subs.length) row.subtitles = subs;
-      var rows = [row];
-      /* secondary HLS lane only when manifest is a real URL
-         (the API sometimes inlines #EXTM3U playlist text here) */
-      var mani = String(source.manifest || "");
-      if (mani.slice(0, 4) === "http" && mani !== source.url) {
-        var h = mapQualityToStream({ url: mani, quality: quality }, label + " HLS", 1, ctx);
-        if (subs && subs.length) h.subtitles = subs;
-        rows.push(h);
+      var qualities = Array.isArray(source.qualities) ? source.qualities : [];
+
+      if (qualities.length > 0) {
+        var rows = [];
+        for (var i = 0; i < qualities.length; i++) {
+          var q = qualities[i];
+          if (q && q.url && isQualityAcceptable(q.quality)) {
+            rows.push(mapQualityToStream(q, label, i, ctx));
+          }
+        }
+        return rows;
       }
-      return rows;
+      if (source.url && isQualityAcceptable(source.quality)) {
+        // 4.39 bugfix: this branch used to call an undefined function and
+        // silently dropped every single-url source
+        return [mapQualityToStream({ url: source.url, quality: source.quality }, label, 0, ctx)];
+      }
+      return [];
     }).catch(function () { return []; });
   }).catch(function () { return []; });
 }
@@ -789,22 +735,9 @@ function getStreams(tmdbId, mediaType, season, episode) {
     meta.season = season;
     meta.episode = episode;
 
-    /* subtitle lane runs in parallel; 6s cap via the same partial collect */
-    var subsP = fetchVidloveSubtitles(tmdbId, type, season, episode)
-      .catch(function () { return []; });
-
     var lanes = [];
     for (var i = 0; i < PROVIDERS.length; i++) {
-      (function (srcKey, laneIdx) {
-      lanes.push(
-        subsP.then(function (subs) {
-          return fetchProviderStreams(srcKey, tmdbId, type, season, episode, meta, subs);
-        }).catch(function () { return []; })
-      );
-      if (laneIdx === 0) {
-        /* keep lanes array aligned: subs lane itself is not a stream lane */
-      }
-    })(PROVIDERS[i], i);
+      lanes.push(fetchProviderStreams(PROVIDERS[i], tmdbId, type, season, episode, meta).catch(function () { return []; }));
     }
 
     // 6.2s partial collect: take whatever resolved by then, never hang
@@ -850,7 +783,7 @@ module.exports = { getStreams: getStreams };
   var __LABEL = 'VidLove';
   var __WINGS_FIRST = true;
   var __ALT_NAME = '__nvWingsStreams';
-  function __junk(u) { return /tungtungtungsahur\.cfd/i.test(String(u || '')); }
+  function __junk(u) { return /tungtungtungsahur\.cfd|\/api\?d=/i.test(String(u || '')); }
   var __orig = null;
   try { __orig = module.exports && module.exports.getStreams; } catch (e) { __orig = null; }
   if (typeof __orig !== 'function') return;
@@ -1106,209 +1039,3 @@ module.exports = { getStreams: getStreams };
     };
   }
 })();
-
-
-/* ===== nv universal subtitle lane v1.0.0 (pack 4.48.0) =====================
-   Every scraper's stream rows now carry multi-language sidecar subtitles:
-   English, Tagalog/Filipino, Korean, Japanese, Indonesian, Malay, Chinese,
-   Thai + all other tracks the source offers.
-
-   Source: Stremio's official keyless OpenSubtitles-v3 addon
-     GET https://opensubtitles-v3.strem.io/subtitles/{movie|series}/{imdbId}[:s:e].json
-     -> { subtitles: [{ url, lang(ISO-639-3), ... }] }
-   The subs5.strem.io URLs serve UTF-8 SRT; NuvioTV's player converts SRT to
-   WebVTT transparently (playerScreenMethods-42.createSubtitleObjectUrl), and
-   the player merges stream.sidecar `subtitles` rows (lang/url/headers) into
-   the subtitle rail - the same path the Pencuri English lane uses.
-
-   Design: ES2020-safe, zero-dependency, fail-soft. The IMDb id is resolved
-   once per title via TMDB external_ids (cached), the subtitle JSON once per
-   (imdb, s, e) (cached 6h). The wrapper runs in PARALLEL with the provider's
-   own lane and only fills rows that have no subtitles of their own, so
-   provider-specific tracks (vidlove/anikoto/megaplay vtt, pencuri en) always
-   win. Never throws; never delays the stream lane by more than the host's
-   own 8s deadline.
-=========================================================================== */
-(function () {
-  var G = typeof globalThis !== "undefined" ? globalThis : this;
-  if (G.__nvOsv3Subs) return;
-
-  var OSV3_BASE = "https://opensubtitles-v3.strem.io/subtitles/";
-  var TMDB_KEY = (typeof TMDB_API_KEY === "string" && TMDB_API_KEY) || "6dc830f9624b43261325bed3bf7d0dfa";
-  var TTL_MS = 6 * 60 * 60 * 1000;
-  var DEADLINE_MS = 8000;
-
-  /* ISO-639-3 -> ISO-639-1 (+ display names) for the pack's languages */
-  var CODE_MAP = {
-    eng: "en", tgl: "tl", fil: "fil", ko: "ko", kor: "ko", jpn: "ja",
-    ind: "id", may: "ms", zho: "zh", zhe: "zh", zht: "zh-TW", tha: "th",
-    hin: "hi", ben: "bn", tam: "ta", tel: "te", spa: "es", por: "pt",
-    pob: "pt-BR", fre: "fr", ger: "de", ita: "it", rus: "ru", ara: "ar",
-    tur: "tr", vie: "vi", pol: "pl", nld: "nl", ukr: "uk", pes: "fa",
-    per: "fa", swe: "sv", nor: "no", dan: "da", fin: "fi", ell: "el",
-    heb: "he", hun: "hu", ces: "cs", cze: "cs", ron: "ro", rum: "ro",
-    hrv: "hr", srp: "sr", bul: "bg", slo: "sk", slv: "sl", bos: "bs",
-    mac: "mk", mkd: "mk", est: "et", lav: "lv", lit: "lt", ind2: "id"
-  };
-  var NAME_MAP = {
-    en: "English", tl: "Tagalog", fil: "Filipino", ko: "Korean", ja: "Japanese",
-    id: "Indonesian", ms: "Malay", zh: "Chinese", "zh-TW": "Chinese (Traditional)",
-    th: "Thai", hi: "Hindi", bn: "Bengali", ta: "Tamil", te: "Telugu",
-    es: "Spanish", pt: "Portuguese", "pt-BR": "Portuguese (BR)", fr: "French",
-    de: "German", it: "Italian", ru: "Russian", ar: "Arabic", tr: "Turkish",
-    vi: "Vietnamese", pl: "Polish", nl: "Dutch", uk: "Ukrainian", fa: "Persian",
-    sv: "Swedish", no: "Norwegian", da: "Danish", fi: "Finnish", el: "Greek",
-    he: "Hebrew", hu: "Hungarian", cs: "Czech", sk: "Slovak", ro: "Romanian",
-    hr: "Croatian", sr: "Serbian", bg: "Bulgarian", sl: "Slovenian",
-    bs: "Bosnian", mk: "Macedonian", et: "Estonian", lv: "Latvian", lt: "Lithuanian"
-  };
-
-  var _cache = {};   /* key -> { t: ms, rows: [...] } */
-  var _imdbCache = {}; /* tmdbKey -> { t: ms, imdb } */
-  var _inflight = {};  /* key -> Promise */
-
-  function _hasTimers() {
-    return typeof setTimeout === "function" && typeof Promise !== "undefined" && Promise.race;
-  }
-  function _withDeadline(p) {
-    if (!_hasTimers()) return p;
-    return Promise.race([p, new Promise(function (res) {
-      var t = setTimeout(function () { res(null); }, DEADLINE_MS);
-      if (t && typeof t.unref === "function") t.unref();
-    })]);
-  }
-  function _normType(mediaType) {
-    var t = String(mediaType || "").toLowerCase();
-    return (t === "series" || t === "show" || t === "tvshow" || t === "tv") ? "series" : "movie";
-  }
-  function _fetchJson(url) {
-    return _withDeadline(
-      (typeof fetch === "function" ? fetch(url) : Promise.reject(new Error("no fetch")))
-        .then(function (res) {
-          if (!res || !res.ok) return null;
-          return res.json().catch(function () { return null; });
-        })
-        .catch(function () { return null; })
-    );
-  }
-  function _resolveImdb(tmdbId, mediaType) {
-    var key = _normType(mediaType) + ":" + String(tmdbId);
-    var now = Date.now();
-    if (_imdbCache[key] && now - _imdbCache[key].t < TTL_MS) {
-      return Promise.resolve(_imdbCache[key].imdb);
-    }
-    if (_inflight["imdb:" + key]) return _inflight["imdb:" + key];
-    var kind = _normType(mediaType) === "series" ? "tv" : "movie";
-    var url = "https://api.themoviedb.org/3/" + kind + "/" + encodeURIComponent(String(tmdbId)) +
-      "/external_ids?api_key=" + TMDB_KEY;
-    _inflight["imdb:" + key] = _fetchJson(url).then(function (data) {
-      var imdb = data && data.imdb_id && /^tt\d+$/.test(String(data.imdb_id)) ? String(data.imdb_id) : null;
-      _imdbCache[key] = { t: now, imdb: imdb };
-      delete _inflight["imdb:" + key];
-      return imdb;
-    });
-    return _inflight["imdb:" + key];
-  }
-  function _osv3Rows(imdbId, mediaType, season, episode) {
-    var isSeries = _normType(mediaType) === "series";
-    var path = isSeries
-      ? "series/" + encodeURIComponent(imdbId) + ":" + (parseInt(season, 10) || 1) + ":" + (parseInt(episode, 10) || 1) + ".json"
-      : "movie/" + encodeURIComponent(imdbId) + ".json";
-    var key = path;
-    var now = Date.now();
-    if (_cache[key] && now - _cache[key].t < TTL_MS) return Promise.resolve(_cache[key].rows);
-    if (_inflight[key]) return _inflight[key];
-    _inflight[key] = _fetchJson(OSV3_BASE + path).then(function (data) {
-      var list = (data && Array.isArray(data.subtitles)) ? data.subtitles : [];
-      var seen = {};
-      var rows = [];
-      for (var i = 0; i < list.length; i++) {
-        var t = list[i];
-        if (!t || !t.url) continue;
-        var code = CODE_MAP[String(t.lang || "").toLowerCase()] || String(t.lang || "").toLowerCase();
-        if (!code) continue;
-        var dedupeKey = code + "|" + (t.id || t.url);
-        if (seen[dedupeKey]) continue;
-        seen[dedupeKey] = 1;
-        rows.push({
-          url: String(t.url),
-          lang: code,
-          language: code,
-          name: NAME_MAP[code] || (String(t.lang || "subtitle").charAt(0).toUpperCase() + String(t.lang || "subtitle").slice(1))
-        });
-        if (rows.length >= 60) break;
-      }
-      _cache[key] = { t: now, rows: rows };
-      delete _inflight[key];
-      return rows;
-    });
-    return _inflight[key];
-  }
-
-  G.__nvOsv3Subs = {
-    get: function (tmdbId, mediaType, season, episode) {
-      try {
-        return _resolveImdb(tmdbId, mediaType).then(function (imdb) {
-          if (!imdb) return [];
-          return _osv3Rows(imdb, mediaType, season, episode);
-        }).catch(function () { return []; });
-      } catch (e) { return Promise.resolve([]); }
-    }
-  };
-})();
-
-/* ===== nv universal subtitle wrapper v1.0.0 (pack 4.48.0) ==================
-   Re-wraps module.exports.getStreams: runs the provider lane and the OSv3
-   subtitle lane concurrently, then attaches the language tracks to every
-   row that has no subtitles of its own. Provider-specific tracks always
-   win; rows keep their originals untouched. Fail-soft end to end.
-=========================================================================== */
-(function () {
-  var G = typeof globalThis !== "undefined" ? globalThis : this;
-  var lane = G.__nvOsv3Subs;
-  var orig = null;
-  try { orig = module.exports && module.exports.getStreams; } catch (e) { orig = null; }
-  if (!lane || typeof orig !== "function") return;
-  module.exports.getStreams = function (tmdbId, mediaType, season, episode) {
-    var rowsP;
-    try {
-      rowsP = Promise.resolve(orig.apply(this, arguments));
-    } catch (e) {
-      rowsP = Promise.resolve([]);
-    }
-    var subsP = lane.get(tmdbId, mediaType, season, episode).catch(function () { return []; });
-    return Promise.all([rowsP.catch(function () { return []; }), subsP]).then(function (arr) {
-      var rows = Array.isArray(arr[0]) ? arr[0] : [];
-      var subs = Array.isArray(arr[1]) ? arr[1] : [];
-      if (!rows.length || !subs.length) return rows;
-      for (var i = 0; i < rows.length; i++) {
-        var r = rows[i];
-        if (r && (!r.subtitles || !r.subtitles.length)) r.subtitles = subs;
-      }
-      return rows;
-    });
-  };
-})();
-
-// v4.54.3 pack deadline guard (appended): this provider was among the slowest
-// lanes of the pack results screen on mobile networks. The app renders the
-// whole pack together, so every provider must answer even when a fetch chain
-// hangs; the app budget kills the pack at 60s which reads as "very slow".
-(function () {
-  var DEADLINE_MS = 18000;
-  var prev = module.exports.getStreams;
-  if (typeof prev !== "function") return;
-  module.exports.getStreams = function () {
-    var args = arguments;
-    var timer;
-    return Promise.race([
-      Promise.resolve().then(function () { return prev.apply(null, args); })
-        .then(function (v) { clearTimeout(timer); return v; })
-        .catch(function () { clearTimeout(timer); return []; }),
-      new Promise(function (resolve) {
-        timer = setTimeout(function () { resolve([]); }, DEADLINE_MS);
-      })
-    ]);
-  };
-})();
-

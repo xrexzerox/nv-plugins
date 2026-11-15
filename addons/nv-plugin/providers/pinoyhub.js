@@ -4,134 +4,9 @@
  * Supports: Movies & TV Shows
  * Language: Filipino / Tagalog / English
  * Author: xrexzerox
- * Version: 5.9.14
+ * Version: 5.8.0
  *
- * v5.9.14 changelog (pack 4.54.19):
- *  - FIX: Byse multi-row results no longer hide the Mixdrop lane.
- *  - PERF: Mixdrop has a bounded 15-second lane deadline.
-
- * v5.9.13 changelog (pack 4.54.18):
- *  - FIX: normalize literal backslash-escaped query separators (`\\&`) in
- *    Byse signed URLs. The CDN returns HTTP 404 when `\\&s=...` reaches the
- *    player instead of a real `&s=...` separator.
-
- * v5.9.12 changelog (pack 4.54.17):
- *  - FIX: cache-bust the Byse playback POST and send no-cache headers so an
- *    upstream cache cannot replay an old JSON response with an already-dead
- *    signed CDN URL.
- *  - FIX: validate Byse's current s=<start>&e=<duration> URL window, while
- *    retaining support for older absolute expiry query formats.
-
- * v5.9.11 changelog (pack 4.54.16):
- *  - FIX: reject stale signed Byse CDN URLs before native playback.
-
- * v5.9.10 changelog (pack 4.54.15):
- *  - FIX: Byse now performs the current server-issued P-256 attestation and
- *    proof-of-work player check before requesting playback, then sends the
- *    returned CAPTCHA token with the playback POST.
- *  - FIX: Byse AES-GCM envelopes use WebCrypto first, with the pure-JS
- *    fallback retained for older Nuvio workers.
- *  - FIX: normalize literal \\u0026 query separators from decrypted Byse URLs.
- *  - FIX: rewrite the confirmed dead Moscow Byse edge to the working Vienna
- *    edge before the native player receives the signed HLS URL.
-
- * v5.9.9 changelog (pack 4.54.14):
- *  - FIX: Dood pass_md5 extraction now normalizes escaped slashes and keeps
- *    the current two-segment token path used by Playmogo/Dood mirrors.
-
- * v5.9.8 changelog (pack 4.54.13):
- *  - FIX: narrow the dead-Byse blacklist to the confirmed
- *    edge1-moscow-sprintcdn.owphbf24.com host. Other Byse CDN edges are
- *    eligible again, preventing the provider from returning zero Byse rows.
-
- * v5.9.7 changelog (pack 4.54.12):
- *  - FIX: Byse now follows the current details -> fingerprinted playback POST
- *    flow and accepts its direct signed sources, instead of relying only on the
- *    retired one-request endpoint that returned stale/404 playback URLs.
- *  - FIX: current Byse AES-GCM key_parts are concatenated directly; the old
- *    version-indexed key selection remains available for legacy mirrors.
- *  - FALLBACK: the legacy /api/videos/{code} endpoint is still attempted when
- *    the current flow is unavailable.
-
- * v5.9.6 changelog (pack 4.54.11):
- *  - FIX: Byse signed rows are rejected when playback.expires_at or the
- *    source URL's exp/expires/expiry value is expired or within 15 seconds of
- *    expiry. This prevents the native player from receiving a stale URL that
- *    returns HTTP 404.
- *  - FIX: an expired/invalid Byse lane now fails closed so the page's Dood or
- *    Mixdrop lane remains the selectable fallback.
- *
- * v5.9.5 changelog (pack 4.54.10):
- *  - FIX: Byse edge1-moscow-sprintcdn.owphbf24.com is unreachable from the
- *    affected TV network. Known-dead Byse edges are rejected before they
- *    become playback rows, while other signed edges remain eligible.
- *  - FIX: HLS connection failures (status 0) are hard-dead during the
- *    lightweight probe and are removed whenever another source survives.
- *  - PERF: Mixdrop/Dood headerless probes are reused by preflight, avoiding a
- *    second ranged request before playback.
- *
- * v5.9.4 changelog (pack 4.54.9):
- *  - FIX: Dood pass_md5 links used an expiry timestamp two hours in the
- *    future. Dood expects the current millisecond timestamp, so those links
- *    were rejected by otherwise-valid players.
- *  - FIX: Byse extraction now keeps up to three signed candidates instead of
- *    only the highest quality URL. A dead CDN edge no longer makes the whole
- *    player unusable when another signed source is available.
- *  - PERF: Smart-TV preflight is now a single bounded ranged probe (with a
- *    403-only retry), not a full HLS master/variant/segment walk. Player
- *    discovery is capped to four lanes and each lane has a 12s deadline.
- *
- * v5.9.3 changelog (pack 4.54.8): DEVICE SCREENSHOT ROUND 14 (BYSE playback error):
- * java.net.SocketTimeoutException: failed to connect to edge1-moscow-sprintcdn.owphbf24.com
- * /185.248.171.94:443 from 192.168.1.25 after 15000ms - the Byse edge never even opens a
- * TCP connection from the user network (DNS resolves, TCP dead). No token/header work can
- * ever fix an unroutable host; ExoPlayer burns 15s proving it each tap.
- * (a) deepProbeHls master-stage: CONNECT failure (status 0) and 404/410 are now HARD-dead
- *     (variant/segment timeouts stay soft).
- * (b) v5.9.3 LOGIC FIX: the v5.9.1/5.9.2 drop rule was DEAD CODE - it gated on !_probe,
- *     but failed rows carry _probe===1, so the condition never matched and NOTHING was
- *     ever dropped (why the device kept reporting "same"). Correct polarity now: failed
- *     rows (truthy _probe) with hard markers are REMOVED from the returned list while
- *     at least one row survives; only when EVERY row is hard-dead do we return the full
- *     list (never empty).
- * (c) NEW deterministic harness (scripts/test-preflight-593.js, stubbed fetch, evals the
- *     shipped source): 7 branch assertions - master-connect-drop, variant-404-drop,
- *     healthy-chain-kept, mp4-404-drop, never-empty, soft-variant-kept, ordering. ALL PASS.
- * v5.9.2 changelog (pack 4.54.7): DEVICE REPORTS ROUND 13 (same symptoms on 4.54.6):
- * Byse 404 persisted because the preflight probed ONLY the master. Evidence: the
- * player walks master->variant->segment; sandbox runs caught the chain dying at the
- * VARIANT (timeout one run, full 200/206 chain minutes later) while the master always
- * 200s. New deepProbeHls walks the real playback path (master 2 attempts, variant
- * +segment ranged GETs, 5s caps) and a hard 404/410 at variant/segment DROPS the row
- * (timeouts/403 stay soft; never-empty guard kept). Where the chain is healthy the
- * row survives; where it dies past the master the user never sees the dead row again.
- * Mixdrop: embed page carries NO dl/download variant (only MDCore.ref/sublangs) - the
- * activation gate latency is CDN-side; notProvisional fresh-token-per-play + preflight
- * warm remains the ceiling. Upstream rexhub 5.8.0 re-verified: same mixdrop unpack,
- * Byse = AES-encrypted signed bearer URLs, no dl variant.
- * v5.9.1 changelog (pack 4.54.6): DEVICE REPORTS ROUND 12 (sisa rows work on 5.7.10; Byse 404s at
- * play with "stream link has expired"; Mixdrop takes 5-10min to start):
- * (a) notProvisional:true on every row — Byse/mxcontent tokens are short-TTL and a
- * cached row replayed minutes later 404s at the player while fresh extraction probes
- * 200 at t0/t0+20s/t0+60s; the client now re-extracts at every play and the preflight
- * warms the fresh token right before the player hits it (also the best lever against
- * the mxcontent first-hit 403 activation gate).
- * (b) preflight now distinguishes HARD-dead rows (HTTP 404/410 on the device own
- * network = expired/removed file) and DROPS them instead of serving an error toast;
- * 403s and timeouts stay (gates can clear, networks hiccup); never returns empty.
- * v5.9.0 changelog (pack 4.54.5): DEVICE-SIDE PLAYABILITY PREFLIGHT — every extracted
- * row gets one ranged GET (row headers included, 4s cap) since extraction runs on the
- * user device; playable rows sort first, dead/unreachable rows are kept but sorted
- * last. Fixes the two device symptoms: Byse rows (owphbf24.com unreachable from PH
- * on both vienna/moscow edges) no longer sit first, and the Mixdrop first-hit 403
- * activation gate is warmed by the probe (the reported ~1min playback start).
- * Baseline order flipped: Mixdrop first, Byse second.
- * v5.8.5 changelog (pack 4.54.4): REBASED on the author-published rexhub 5.8.0
- * (device-tested baseline) after 4.54.1-4.54.3 still produced on-device empty
- * results; the only kept deltas are the user TMDB key. My added deadline
- * machinery (12s fetch caps, 7s lanes, 20s overall, first-paint race) is the
- * only functional difference from the working upstream and returns [] early
- * on slow device networks - reverted wholesale. Previous: v5.8.0 changelog (asian-catalog v5.3.0 pairing):
+ * v5.8.0 changelog (asian-catalog v5.3.0 pairing):
  *  - parseAsianCatalogId now tolerates the TAPPED-EPISODE id shapes
  *    ("asian:pmh-<slug>:<s>:<e>", urlencoded %3A, "/" separators, .json)
  *    that Nuvio passes once the addon serves real detail metas with
@@ -276,7 +151,7 @@
  */
 
 var PROVIDER_NAME = "PinoyMoviesHub";
-var TMDB_API_KEY = "6dc830f9624b43261325bed3bf7d0dfa"; /* user-provided key (2026-11-15) */
+var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 var BASE_URL = "https://pinoymovieshub.win";
 
 /**
@@ -402,7 +277,7 @@ function probeHeaderless(url) {
     method: "GET",
     redirect: "follow",
     headers: { "Range": "bytes=0-1023" }
-  }, DIRECT_PROBE_TIMEOUT_MS).then(function(res) {
+  }, 9000).then(function(res) {
     if (!res || res.status < 200 || res.status >= 300) return false;
     var ct = "";
     try {
@@ -421,206 +296,6 @@ function probeHeaderless(url) {
     if (/text\/html/i.test(ct)) return false; // challenge/soft-404 page
     return true;
   }).catch(function() { return false; });
-}
-
-/**
- * v5.9.0 device-side playability preflight. Extraction runs ON the user's
- * device, so one ranged GET per row (with the row's OWN headers — the
- * Mixdrop rows need their Referer, Byse rows are headerless) answers
- * "can THIS network actually reach this URL?" — something datacenter
- * probes can never know. Used to sort playable rows first; failing rows
- * are kept but sorted last. The probe also warms first-hit-gated CDNs
- * (mxcontent nodes answer 403 once, then activate) which was the reported
- * ~1min playback start delay on Mixdrop rows.
- */
-var PROBE_TIMEOUT_MS = 1800;
-var DIRECT_PROBE_TIMEOUT_MS = 1800;
-
-function probePlayable(url, headers) {
-  var opts = {
-    method: "GET",
-    redirect: "follow",
-    headers: merge(headers || {}, { "Range": "bytes=0-1023" })
-  };
-  // Two attempts: several CDN nodes gate the FIRST hit after token issue
-  // (mxcontent answers 403 once, then activates). A single probe would
-  // wrongly demote rows that play fine; the retry lands post-activation
-  // and doubles as the warmer for the device player's own request.
-  // Returns {ok, status} — the status lets preflightSort distinguish a
-  // hard CDN 404 (file gone / token dead) from a soft failure.
-  function attempt() {
-    return fetchWithTimeout(url, opts, PROBE_TIMEOUT_MS).then(function(res) {
-      var status = res ? res.status : 0;
-      if (!res || status < 200 || status >= 300) return { ok: false, status: status };
-      var ct = "";
-      try {
-        if (res.headers && typeof res.headers.get === "function") {
-          ct = String(res.headers.get("content-type") || "");
-        }
-      } catch (e) { ct = ""; }
-      if (/text\/html/i.test(ct)) return { ok: false, status: status }; // challenge/soft-404
-      return { ok: true, status: status };
-    }).catch(function() { return { ok: false, status: 0 }; });
-  }
-  return attempt().then(function(r) {
-    // A second request is useful for the known one-shot 403 activation gate,
-    // but retrying timeouts makes a slow TV wait twice for the same dead CDN.
-    if (r.ok || r.status !== 403) return r;
-    return attempt();
-  });
-}
-
-var HLS_STAGE_TIMEOUT_MS = 5000;
-
-/**
- * v5.9.2 DEEP HLS PROBE: the shallow master-only probe passed rows whose
- * playback chain is dead past the master. Device evidence (3 straight
- * rounds): Byse master 200s at extraction (row kept), the player then
- * follows the master to the variant playlist and dies with HTTP 404
- * ("stream link has expired or been removed"). Sandbox probes reproduced
- * variant-level death independently (one run: variant GET timed out; a
- * second run minutes later: the full chain 200/206) — the chain's health
- * is per-network, so the probe must walk the player's REAL path:
- *   master  -> up to 2 ranged GETs (403-gate semantics, body captured)
- *   variant -> 1 ranged GET, one extra retry only on 403
- *   segment -> 1 small ranged GET
- * A hard 404/410 at variant/segment = the row WILL fail in the player ->
- * preflightSort drops it (kept only if every row is hard-dead). Timeouts
- * and 403s stay soft (transient networks, gates that can still clear).
- */
-function deepProbeHls(url, headers) {
-  function stageGet(u, rangeEnd, cap, retries403) {
-    function one(left) {
-      return fetchWithTimeout(u, {
-        method: "GET",
-        redirect: "follow",
-        headers: merge(headers || {}, { Range: "bytes=0-" + rangeEnd })
-      }, cap).then(function(res) {
-        if (res && res.status === 403 && left > 0) return one(left - 1);
-        if (!res || res.status < 200 || res.status >= 300) {
-          return { ok: false, status: res ? res.status : 0, body: "" };
-        }
-        var ct = "";
-        try {
-          if (res.headers && typeof res.headers.get === "function") {
-            ct = String(res.headers.get("content-type") || "");
-          }
-        } catch (e) { ct = ""; }
-        if (/text\/html/i.test(ct)) return { ok: false, status: res.status, body: "" };
-        return res.text().then(function(body) {
-          return { ok: true, status: res.status, body: body };
-        }).catch(function() { return { ok: false, status: res.status, body: "" }; });
-      }).catch(function() { return { ok: false, status: 0, body: "" }; });
-    }
-    return one(retries403);
-  }
-
-  function firstPlaylistEntry(body) {
-    var lines = String(body || "").split(/\r?\n/);
-    for (var i = 0; i < lines.length; i++) {
-      var l = lines[i].trim();
-      if (l && l.charAt(0) !== "#") return l;
-    }
-    return "";
-  }
-
-  return stageGet(url, 65535, PROBE_TIMEOUT_MS, 1).then(function(master) {
-    if (!master.ok) {
-      // v5.9.3: a master-stage CONNECT failure (status 0: TCP timeout /
-      // DNS / refused — device screenshot: the Byse edge 185.248.171.94
-      // never opens a socket from the user's PH home network after 15s)
-      // is exactly as dead as a 404: no header/token work can make an
-      // unroutable host play, and ExoPlayer only burns 15s proving it.
-      // Mark hard so the row is dropped. 403 and other HTTP statuses
-      // stay soft (activation gates can still clear).
-      var hard = master.status === 404 || master.status === 410 || master.status === 0;
-      return { ok: false, status: master.status, hard: hard, stage: "master" };
-    }
-    var entry = firstPlaylistEntry(master.body);
-    if (!entry) return { ok: false, status: master.status, hard: false, stage: "master-empty" };
-    var vUrl;
-    try { vUrl = new URL(entry, url).toString(); }
-    catch (e) { return { ok: false, status: 0, hard: false, stage: "variant-resolve" }; }
-    return stageGet(vUrl, 65535, HLS_STAGE_TIMEOUT_MS, 1).then(function(v) {
-      if (!v.ok) {
-        return { ok: false, status: v.status, hard: v.status === 404 || v.status === 410, stage: "variant" };
-      }
-      var seg = firstPlaylistEntry(v.body);
-      if (!seg) return { ok: true, status: v.status, hard: false, stage: "variant" };
-      var sUrl = "";
-      try { sUrl = new URL(seg, vUrl).toString(); } catch (e) { sUrl = ""; }
-      if (!sUrl) return { ok: true, status: v.status, hard: false, stage: "variant" };
-      return stageGet(sUrl, 1023, HLS_STAGE_TIMEOUT_MS, 0).then(function(s) {
-        if (!s.ok) {
-          return { ok: false, status: s.status, hard: s.status === 404 || s.status === 410, stage: "segment" };
-        }
-        return { ok: true, status: s.status, hard: false, stage: "segment" };
-      });
-    });
-  });
-}
-
-function preflightSort(streams) {
-  return Promise.all(streams.map(function(s) {
-    // Do not walk HLS master -> variant -> segment here. That path is useful
-    // for diagnostics, but it adds several sequential network waits before
-    // Nuvio can show any source and some CDNs reject ranged playlist probes
-    // even though the native player can play the URL.
-    var p = s._preflight ? Promise.resolve(s._preflight) : probePlayable(s.url, s.headers);
-    return Promise.resolve(p).then(function(r) {
-      s._probe = r.ok ? 0 : 1;
-      s._probeStatus = r.status;
-      var isHls = /\.m3u8(\?|$)/i.test(s.url);
-      s._probeHard = !r.ok && (!!r.hard || (isHls && (r.status === 0 || r.status === 404 || r.status === 410)));
-      s._probeStage = r.stage || "";
-    });
-  })).then(function() {
-    var i;
-    // v5.9.3 FIX: the v5.9.1/5.9.2 drop rule was DEAD CODE — it gated on
-    // `!_probe`, but failed rows carry _probe === 1 (playable === 0), so
-    // the condition was false for every dead row and nothing ever dropped
-    // (the device kept saying "same"). Correct polarity: failed rows are
-    // truthy. Kept rules:
-    // (a) an mp4 that hard-404s on the device's own network,
-    // (b) any HLS row that hard-fails the lightweight probe — master 404 or
-    //     master CONNECT failure (status 0: the TCP timeout the device
-    //     screenshot proved for the Byse edge).
-    // 403s and variant/segment timeouts STAY (gates clear, networks hiccup;
-    // a master that connects but stalls is worth one player attempt).
-    // Never return empty: if every row is hard-dead, keep them all, sorted
-    // last.
-    var alive = [], dead = [];
-    for (i = 0; i < streams.length; i++) {
-      var st = streams[i]._probeStatus;
-      if (streams[i]._probe && (streams[i]._probeHard || st === 404 || st === 410)) dead.push(streams[i]);
-      else alive.push(streams[i]);
-    }
-    // v5.9.3: drop = REMOVED from the returned list when at least one row
-    // survives; only when EVERY row is hard-dead do we fall back to the
-    // full list (never empty).
-    var keep = alive.length ? alive : streams;
-    keep.sort(function(a, b) {
-      if (a._probe !== b._probe) return a._probe - b._probe; // playable first
-      var pa = a._hostPriority === undefined ? 3 : a._hostPriority;
-      var pb = b._hostPriority === undefined ? 3 : b._hostPriority;
-      return pa - pb;
-    });
-    var playable = 0;
-    for (i = 0; i < keep.length; i++) {
-      if (!keep[i]._probe) playable++;
-      delete keep[i]._probe;
-      delete keep[i]._probeStatus;
-      delete keep[i]._probeHard;
-      delete keep[i]._probeStage;
-      delete keep[i]._preflight;
-      delete keep[i]._hostPriority;
-    }
-    console.log("[PinoyMoviesHub] preflight: " + playable + "/" + keep.length +
-      " row(s) playable on this network" +
-      (dead.length && alive.length ? ", dropped " + dead.length + " hard-dead row(s)" : "") +
-      "; playable first");
-    return keep;
-  });
 }
 
 // WordPress transliterates accented Latin letters in slugs (Filipino titles
@@ -853,12 +528,7 @@ function byseKeyFromParts(playback) {
   var version = parseInt(playback.version, 10);
   var picked = [];
   var i, b;
-  // Current Byse /embed/playback responses use exactly two key parts and
-  // concatenate them directly. Older /api/videos responses used the version
-  // index pair; keep that path for old mirrors only.
-  if (parts.length === 2) {
-    picked = parts;
-  } else if (version >= 1 && version <= 20) {
+  if (version >= 1 && version <= 20) {
     var i1 = version - 1;
     var i2 = 30 - version;
     if (parts[i1]) picked.push(parts[i1]);
@@ -874,249 +544,6 @@ function byseKeyFromParts(playback) {
     bytes = bytes.concat(b);
   }
   return bytes;
-}
-
-function utf8ToB64Url(text) {
-  var bytes = [], i, c;
-  var s = String(text || "");
-  for (i = 0; i < s.length; i++) {
-    c = s.charCodeAt(i);
-    if (c < 0x80) bytes.push(c);
-    else if (c < 0x800) bytes.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
-    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
-      var lo = s.charCodeAt(++i);
-      var cp = 0x10000 + ((c - 0xd800) << 10) + (lo - 0xdc00);
-      bytes.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
-    } else {
-      bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
-    }
-  }
-  var alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  var out = "", acc = 0, bits = 0;
-  for (i = 0; i < bytes.length; i++) {
-    acc = (acc << 8) | bytes[i];
-    bits += 8;
-    while (bits >= 6) {
-      bits -= 6;
-      out += alpha.charAt((acc >> bits) & 63);
-    }
-  }
-  if (bits) out += alpha.charAt((acc << (6 - bits)) & 63);
-  return out.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-// Byse's current player performs a public P-256 device attestation before it
-// asks for playback. Keep this optional: older Nuvio workers do not expose
-// WebCrypto, so those runtimes continue using the legacy mirror path.
-function byseUtf8Bytes(text) {
-  var bytes = [], i, c, lo, cp;
-  var s = String(text || "");
-  for (i = 0; i < s.length; i++) {
-    c = s.charCodeAt(i);
-    if (c < 0x80) bytes.push(c);
-    else if (c < 0x800) bytes.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
-    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
-      lo = s.charCodeAt(++i);
-      cp = 0x10000 + ((c - 0xd800) << 10) + (lo - 0xdc00);
-      bytes.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
-    } else {
-      bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
-    }
-  }
-  return bytes;
-}
-
-function byseBytesToB64Url(bytes) {
-  var alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  var out = "", acc = 0, bits = 0, i;
-  for (i = 0; i < (bytes || []).length; i++) {
-    acc = (acc << 8) | (bytes[i] & 0xff);
-    bits += 8;
-    while (bits >= 6) {
-      bits -= 6;
-      out += alpha.charAt((acc >> bits) & 63);
-    }
-  }
-  if (bits) out += alpha.charAt((acc << (6 - bits)) & 63);
-  return out.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function byseCryptoObject() {
-  try {
-    if (typeof globalThis !== "undefined" && globalThis.crypto && globalThis.crypto.subtle) return globalThis.crypto;
-    if (typeof crypto !== "undefined" && crypto.subtle) return crypto;
-  } catch (e) {}
-  return null;
-}
-
-function byseAttest(host, frame) {
-  var c = byseCryptoObject();
-  if (!c || !c.subtle || typeof c.subtle.generateKey !== "function") return Promise.resolve(null);
-  var origin = "https://" + host;
-  var headers = {
-    "Accept": "application/json",
-    "Referer": frame,
-    "Origin": origin
-  };
-  return c.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]).then(function(keys) {
-    return Promise.all([
-      c.subtle.exportKey("jwk", keys.publicKey),
-      fetchJson(origin + "/api/videos/access/challenge", {
-        method: "POST", headers: headers, timeoutMs: 8000
-      })
-    ]).then(function(pair) {
-      var publicJwk = pair[0], challenge = pair[1];
-      if (!challenge || !challenge.challenge_id || !challenge.nonce) return null;
-      return c.subtle.sign({ name: "ECDSA", hash: { name: "SHA-256" } }, keys.privateKey, new Uint8Array(byseUtf8Bytes(challenge.nonce))).then(function(signature) {
-        var body = {
-          viewer_id: "",
-          device_id: "",
-          challenge_id: challenge.challenge_id,
-          nonce: challenge.nonce,
-          signature: byseBytesToB64Url(new Uint8Array(signature)),
-          public_key: publicJwk,
-          client: {
-            user_agent: HEADERS["User-Agent"],
-            platform: "",
-            pixel_ratio: 1,
-            screen_width: 0,
-            screen_height: 0,
-            color_depth: 0,
-            languages: ["en-US", "en"],
-            timezone: "UTC",
-            hardware_concurrency: 4,
-            touch_points: 0,
-            codecs_hash: "nuvio"
-          },
-          storage: {},
-          attributes: { entropy: "low" }
-        };
-        return fetchJson(origin + "/api/videos/access/attest", {
-          method: "POST",
-          headers: merge(headers, { "Content-Type": "application/json" }),
-          body: JSON.stringify(body),
-          timeoutMs: 8000
-        });
-      });
-    });
-  }).then(function(result) {
-    if (!result || !result.token || !result.viewer_id || !result.device_id) return null;
-    return {
-      token: result.token,
-      viewer_id: result.viewer_id,
-      device_id: result.device_id,
-      confidence: typeof result.confidence === "number" ? result.confidence : 0
-    };
-  }).catch(function() { return null; });
-}
-
-// This is the bounded proof-of-work used by the public Byse player. It is
-// deliberately kept separate from CAPTCHA solving: if proof-of-work fails or
-// times out, the provider returns no fabricated playback URL.
-function bysePowHash(text) {
-  var size = 512, mask = 511, rounds = 2, mulA = 2654435761, mulB = 2246822519;
-  var rotl = function(v, n) { return ((v << n) | (v >>> (32 - n))) >>> 0; };
-  var mul = function(v, n) { return Math.imul ? Math.imul(v, n) >>> 0 : (v * n) >>> 0; };
-  var mix = function(s) {
-    s[0] = (s[0] + s[1]) >>> 0;
-    s[3] = rotl(s[3] ^ s[0], 16);
-    s[2] = (s[2] + s[3]) >>> 0;
-    s[1] = rotl(s[1] ^ s[2], 12);
-    s[0] = (s[0] + s[1]) >>> 0;
-    s[3] = rotl(s[3] ^ s[0], 8);
-    s[2] = (s[2] + s[3]) >>> 0;
-    s[1] = rotl(s[1] ^ s[2], 7);
-  };
-  var s = new Uint32Array([1779033703, 3144134277, 1013904242, 2773480762]);
-  var bytes = byseUtf8Bytes(text), i, j;
-  for (i = 0; i < bytes.length; i++) {
-    s[0] = (s[0] + bytes[i]) >>> 0;
-    s[0] = rotl(s[0], 7);
-    mix(s);
-  }
-  for (i = 0; i < 8; i++) mix(s);
-  var table = new Uint32Array(size);
-  for (i = 0; i < size; i++) { mix(s); table[i] = (s[0] ^ s[2]) >>> 0; }
-  for (i = 0; i < rounds; i++) {
-    for (j = 0; j < size; j++) {
-      var a = table[j] & mask;
-      var c = (table[j] + table[a]) >>> 0;
-      c = rotl(c, 13);
-      c = (c ^ mul(table[(j + 1) & mask], mulA)) >>> 0;
-      table[j] = c;
-      s[0] = (s[0] ^ c) >>> 0;
-      mix(s);
-    }
-  }
-  var out = new Uint32Array(8), word, k, offset;
-  for (i = 0; i < 8; i++) {
-    mix(s);
-    word = s[0];
-    offset = i * (size / 8);
-    for (k = 0; k < size / 8; k++) {
-      j = table[offset + k];
-      word = (word + j) >>> 0;
-      word = rotl(word, 5);
-      word = (word ^ mul(j, mulB)) >>> 0;
-    }
-    out[i] = (word ^ s[2]) >>> 0;
-  }
-  return out;
-}
-
-function bysePowLeadingZeroBits(words) {
-  var bits = 0, i, word, j;
-  for (i = 0; i < words.length; i++) {
-    word = words[i] >>> 0;
-    if (!word) { bits += 32; continue; }
-    for (j = 31; j >= 0; j--) {
-      if ((word & (1 << j)) !== 0) return bits;
-      bits++;
-    }
-  }
-  return bits;
-}
-
-function byseSolvePow(nonce, difficulty, timeoutMs) {
-  var prefix = String(nonce || "") + ":";
-  var end = Date.now() + (timeoutMs || 20000);
-  var solution = 0;
-  return new Promise(function(resolve) {
-    function batch() {
-      var i;
-      for (i = 0; i < 1024; i++, solution++) {
-        if (bysePowLeadingZeroBits(bysePowHash(prefix + solution)) >= difficulty) {
-          resolve(String(solution));
-          return;
-        }
-      }
-      if (Date.now() >= end) { resolve(null); return; }
-      setTimeout(batch, 0);
-    }
-    batch();
-  });
-}
-
-function bysePlaybackToken(host, code, frame, requestHeaders, fingerprint) {
-  var captchaUrl = "https://" + host + "/api/videos/" + code + "/embed/captcha";
-  var verifyUrl = captchaUrl + "/verify";
-  var headers = merge(requestHeaders, { "Content-Type": "application/json" });
-  return fetchJson(captchaUrl, {
-    method: "POST", headers: headers,
-    body: JSON.stringify({ fingerprint: fingerprint }), timeoutMs: 8000
-  }).then(function(challenge) {
-    if (!challenge || !challenge.pow_token || !challenge.pow_nonce) return null;
-    return byseSolvePow(challenge.pow_nonce, parseInt(challenge.pow_difficulty, 10) || 0, 90000).then(function(solution) {
-      if (solution === null) return null;
-      return fetchJson(verifyUrl, {
-        method: "POST", headers: headers,
-        body: JSON.stringify({ pow_token: challenge.pow_token, solution: solution, fingerprint: fingerprint }),
-        timeoutMs: 8000
-      });
-    });
-  }).then(function(verified) {
-    return verified && verified.status === "ok" && verified.token ? verified.token : null;
-  });
 }
 
 // ===== TMDB =====
@@ -1538,8 +965,7 @@ function extractMixdropDirect(embedUrl) {
       return {
         url: wurl,
         headers: headerlessOk ? null : referered,
-        headerless: headerlessOk,
-        preflight: headerlessOk ? { ok: true, status: 206 } : null
+        headerless: headerlessOk
       };
     });
   }).catch(function(e) {
@@ -1550,71 +976,10 @@ function extractMixdropDirect(embedUrl) {
 
 // ===== EXTRACTOR: BYSE (React SPA -> /api/videos/{code} -> AES-GCM payload) =====
 
-var LANE_TIMEOUT_MS = 120000; // attestation + proof-of-work can take ~90s
-var MIXDROP_LANE_TIMEOUT_MS = 15000;
-var MAX_PLAYER_OPTIONS = 4;
-var MAX_STREAM_ROWS = 6;
-var MAX_BYSE_CANDIDATES = 3;
+var LANE_TIMEOUT_MS = 20000; // per-player extraction deadline (v5.2.2)
 
 function isByse(host) {
   return /byse/.test(String(host || "").toLowerCase());
-}
-
-// Device evidence shows ONE sprintcdn Byse edge used by the affected network
-// never completes a TCP handshake. Do not blacklist the whole owphbf24.com
-// CDN: Byse rotates across that domain and the other edges may be playable.
-function isKnownDeadByseHost(host) {
-  var h = String(host || "").toLowerCase();
-  return h === "edge1-moscow-sprintcdn.owphbf24.com";
-}
-
-function byseFailoverUrl(url) {
-  var h = hostOf(url);
-  if (h !== "edge1-moscow-sprintcdn.owphbf24.com") return "";
-  // The signed path/query is accepted by the Vienna edge and the Moscow edge
-  // is the one that times out on the affected network. Keep this narrowly
-  // scoped to the confirmed PMH Byse edge pair; do not rewrite arbitrary CDN
-  // hosts or alter unrelated signed URLs.
-  return String(url).replace(h, "edge1-vienna-sprintcdn.owphbf24.com");
-}
-
-function byseTimestampMs(value) {
-  if (value === undefined || value === null || value === "") return 0;
-  if (typeof value === "string" && /[a-z]/i.test(value)) {
-    var parsed = Date.parse(value);
-    return isNaN(parsed) ? 0 : parsed;
-  }
-  var n = Number(value);
-  if (!isFinite(n) || n < 1000000000) return 0;
-  return n < 1000000000000 ? n * 1000 : n;
-}
-
-function byseSignedUrlExpired(url, playback) {
-  var now = Date.now() + 15000;
-  var values = [playback && playback.expires_at];
-  var text = String(url || "");
-  var q = text.match(/[?&](?:exp|expires|expires_at|expiry)=([^&#]+)/ig) || [];
-  for (var i = 0; i < q.length; i++) values.push(q[i].replace(/^[?&][^=]+=\s*/i, ""));
-  for (i = 0; i < values.length; i++) {
-    var expires = byseTimestampMs(values[i]);
-    if (expires && expires <= now) return true;
-  }
-  // Current Byse CDN URLs use s as the Unix start time and e as the
-  // lifetime in seconds (for example s=1794767190&e=10800). Do not treat
-  // the small duration value as an absolute Unix timestamp.
-  var sm = text.match(/[?&]s=([^&#]+)/i);
-  var em = text.match(/[?&]e=([^&#]+)/i);
-  var startSec = sm ? Number(sm[1]) : 0;
-  var durationSec = em ? Number(em[1]) : 0;
-  if (isFinite(startSec) && startSec >= 1000000000 &&
-      isFinite(durationSec) && durationSec > 0 && durationSec < 1000000000 &&
-      (startSec + durationSec) * 1000 <= now) return true;
-  // A few older mirrors used e as an absolute Unix expiry without s.
-  if (!sm && em) {
-    var absoluteE = byseTimestampMs(em[1]);
-    if (absoluteE && absoluteE <= now) return true;
-  }
-  return false;
 }
 
 /**
@@ -1627,14 +992,10 @@ function byseSignedUrlExpired(url, playback) {
  * domains are randomized edges - with a host-pattern fallback.
  */
 function hostPriority(label, embedHost) {
-  // v5.9.0: Mixdrop outranks Byse. Device reports: Byse rows never played on
-  // the user's network (both the vienna and the moscow owphbf24.com edges
-  // unreachable from PH) while Mixdrop rows play — Byse-first made every
-  // tap start on a dead row.
   var l = String(label || "").toLowerCase();
   var h = String(embedHost || "").toLowerCase();
-  if (/mixdrop|mixdrp|mxdrop|miixdrop|mixdroop/.test(l) || /mixdrop|mixdrp|mxdrop|miixdrop|mixdroop/.test(h)) return 0;
-  if (/byse/.test(l) || /byse/.test(h)) return 1;
+  if (/byse/.test(l) || /byse/.test(h)) return 0;
+  if (/mixdrop|mixdrp|mxdrop|miixdrop|mixdroop/.test(l) || /mixdrop|mixdrp|mxdrop|miixdrop|mixdroop/.test(h)) return 1;
   if (/dood|dsvplay|dooo|playmogo|myvidplay|d000d|ds2play/.test(l) || /dood|dsvplay|dooo|playmogo|myvidplay|d000d|ds2play/.test(h)) return 2;
   return 3;
 }
@@ -1662,176 +1023,62 @@ function withLaneDeadline(promise, ms) {
 
 /**
  * Byse embeds (e.g. https://bysesayeveum.com/e/{code}) are a Vite/React SPA.
- * Current playback is a two-step flow: GET /api/videos/{code}/embed/details,
- * then a fingerprinted POST to /api/videos/{code}/embed/playback. The POST
- * returns direct sources or an AES-GCM playback envelope. The old one-request
- * /api/videos/{code} response is retained as a mirror fallback.
- */
-function byseRowsFromSources(sources, playback) {
-  var valid = [], i, s, u;
-  for (i = 0; i < (sources || []).length; i++) {
-    s = sources[i];
-    u = s && (s.url || s.file || s.src);
-    if (!u || String(u).indexOf("http") !== 0) continue;
-    // Some Byse AES payloads JSON-decode ampersands as the literal text
-    // "\\u0026". Normalize that representation before URL parsing; otherwise
-    // the CDN sees one malformed query parameter and returns a hard failure.
-    var originalUrl = String(u).replace(/\\u0026/gi, "&").replace(/\\&/g, "&").replace(/\\\//g, "/").replace(/&amp;/gi, "&");
-    var candidateUrl = originalUrl;
-    if (isKnownDeadByseHost(hostOf(originalUrl))) candidateUrl = byseFailoverUrl(originalUrl);
-    if (!candidateUrl || byseSignedUrlExpired(candidateUrl, playback || null)) continue;
-    valid.push({ source: s, url: candidateUrl });
-  }
-  if (!valid.length) return null;
-  valid.sort(function(a, b) {
-    return (parseInt(b.source.height, 10) || 0) - (parseInt(a.source.height, 10) || 0);
-  });
-  var picked = [], seenHosts = {};
-  function addCandidate(row) {
-    var h = hostOf(row.url);
-    if (seenHosts[h + "|" + row.url]) return;
-    if (!seenHosts[h]) seenHosts[h] = 1;
-    seenHosts[h + "|" + row.url] = 1;
-    picked.push(row);
-  }
-  for (i = 0; i < valid.length && picked.length < MAX_BYSE_CANDIDATES; i++) {
-    if (!seenHosts[hostOf(valid[i].url)]) addCandidate(valid[i]);
-  }
-  for (i = 0; i < valid.length && picked.length < MAX_BYSE_CANDIDATES; i++) addCandidate(valid[i]);
-  return picked.map(function(row) {
-    var src = row.source;
-    var isHls = /m3u8/i.test(String(src.mime_type || src.mime || "") + row.url);
-    var q = (src.label && src.label !== "x")
-      ? parseQuality(String(src.label))
-      : (parseInt(src.height, 10) ? parseQuality(String(src.height) + "p") : "Auto");
-    return { url: row.url, quality: q, isHls: isHls };
-  });
-}
-
-function byseHexToken(len) {
-  var chars = "0123456789abcdef";
-  var out = "", i;
-  for (i = 0; i < (len || 32); i++) out += chars.charAt(Math.floor(Math.random() * chars.length));
-  return out;
-}
-
-function byseDecryptSources(playback) {
-  if (!playback || !playback.payload || !playback.iv) return null;
-  var keyBytes = byseKeyFromParts(playback);
-  if (!keyBytes || keyBytes.length !== 32) return null;
-  var plain = aesGcmDecryptNoTag(keyBytes, b64urlToBytes(playback.iv), b64urlToBytes(playback.payload));
-  if (!plain.length) return null;
-  try {
-    var info = JSON.parse(bytesToUtf8(plain));
-    return byseRowsFromSources((info && info.sources) || [], playback);
-  } catch (e) { return null; }
-}
-
-function byseDecryptSourcesAsync(playback) {
-  var c = byseCryptoObject();
-  if (!c || !c.subtle || !playback || !playback.payload || !playback.iv) {
-    return Promise.resolve(byseDecryptSources(playback));
-  }
-  var keyBytes = byseKeyFromParts(playback);
-  var ivBytes = b64urlToBytes(playback.iv);
-  var payloadBytes = b64urlToBytes(playback.payload);
-  if (!keyBytes || keyBytes.length !== 32 || !ivBytes.length || !payloadBytes.length) {
-    return Promise.resolve(byseDecryptSources(playback));
-  }
-  return c.subtle.importKey("raw", new Uint8Array(keyBytes), { name: "AES-GCM" }, false, ["decrypt"]).then(function(key) {
-    return c.subtle.decrypt({ name: "AES-GCM", iv: new Uint8Array(ivBytes) }, key, new Uint8Array(payloadBytes));
-  }).then(function(plain) {
-    var info = JSON.parse(bytesToUtf8(new Uint8Array(plain)));
-    return byseRowsFromSources((info && info.sources) || [], playback);
-  }).catch(function() {
-    return byseDecryptSources(playback);
-  });
-}
-
-function extractByseLegacy(host, code) {
-  return fetchJson("https://" + host + "/api/videos/" + code, {
-    headers: {
-      "Accept": "application/json",
-      "Referer": BASE_URL + "/",
-      "Origin": BASE_URL
-    }
-  }).then(function(data) {
-    if (!data || data.error || data.premium_only) return null;
-    if (data.sources) return byseRowsFromSources(data.sources, data.playback || null);
-    return byseDecryptSources(data.playback);
-  });
-}
-
-/**
- * Current Byse flow: details GET -> device attestation -> proof-of-work
- * player check -> fingerprinted playback POST -> direct signed source. The
- * old one-request endpoint remains as a mirror fallback for older mirrors.
+ * The video sources are served by the same origin:
+ *   GET /api/videos/{code}
+ *     -> { playback: { algorithm: "AES-256-GCM", iv, payload, key_parts,
+ *                      version, expires_at }, premium_only, ... }
+ * The plaintext is { sources: [{ url, label, mime_type, height, ... }] } with
+ * signed direct HLS/mp4 URLs (3h validity). Because the whole flow runs at
+ * play time on the user's device, the signed URL is minted for that device.
  */
 function extractByseDirect(embedUrl) {
   var codeMatch = embedUrl.match(/\/e\/([a-z0-9]+)/i);
   if (!codeMatch) return Promise.resolve(null);
   var code = codeMatch[1];
   var host = hostOf(embedUrl);
-  var detailsUrl = "https://" + host + "/api/videos/" + code + "/embed/details";
-  var detailsHeaders = {
-    "Accept": "application/json",
-    "Referer": BASE_URL + "/",
-    "Origin": BASE_URL
-  };
-  return fetchJson(detailsUrl, { headers: detailsHeaders, timeoutMs: 12000 }).then(function(details) {
-    if (!details) return extractByseLegacy(host, code);
-    var frame = details.embed_frame_url || details.embedFrameUrl || details.embed_url || details.frame_url || embedUrl;
-    if (String(frame).indexOf("http") !== 0) frame = "https://" + host + (String(frame).charAt(0) === "/" ? frame : "/" + frame);
-    var embedHost = hostOf(frame) || host;
-    // Cache-bust short-lived Byse playback JSON so stale signed URLs are not replayed.
-    var playbackUrl = "https://" + embedHost + "/api/videos/" + code + "/embed/playback?nv_cache=" + Date.now();
-    var requestHeaders = {
+  var apiUrl = "https://" + host + "/api/videos/" + code;
+  return fetchJson(apiUrl, {
+    headers: {
       "Accept": "application/json",
-      "Content-Type": "application/json",
-      "Referer": frame,
-      "Origin": "https://" + embedHost,
-      "X-Embed-Origin": BASE_URL.replace(/^https?:\/\//, ""),
-      "X-Embed-Parent": "https://" + host + "/e/" + code,
-      "X-Embed-Referer": BASE_URL + "/"
+      "Referer": BASE_URL + "/",
+      "Origin": BASE_URL
+    }
+  }).then(function(data) {
+    if (!data || data.error || !data.playback) return null;
+    if (data.premium_only) return null;
+    var pb = data.playback;
+    if (!pb || !pb.payload || !pb.iv || pb.algorithm !== "AES-256-GCM") return null;
+    var keyBytes = byseKeyFromParts(pb);
+    if (!keyBytes || keyBytes.length !== 32) return null;
+    var plain = aesGcmDecryptNoTag(keyBytes, b64urlToBytes(pb.iv), b64urlToBytes(pb.payload));
+    if (!plain.length) return null;
+    var info;
+    try { info = JSON.parse(bytesToUtf8(plain)); } catch (e) { return null; }
+    var sources = (info && info.sources) || [];
+    var best = null, bestH = -1, i, s, h;
+    for (i = 0; i < sources.length; i++) {
+      s = sources[i];
+      if (!s || !s.url || String(s.url).indexOf("http") !== 0) continue;
+      h = parseInt(s.height, 10) || 0;
+      if (h >= bestH) { bestH = h; best = s; }
+    }
+    if (!best) return null;
+    var isHls = /m3u8/i.test(String(best.mime_type || "") + String(best.url));
+    var q = (best.label && best.label !== "x")
+      ? parseQuality(String(best.label))
+      : (parseInt(best.height, 10) ? parseQuality(String(best.height) + "p") : "Auto");
+    // v5.2.2 TV-SAFE: the signed URL is self-authorizing (bearer-style), so
+    // NO playback headers are attached. webOS can play it directly with the
+    // stock player; ExoPlayer plays it identically. The Referer/Origin used
+    // above stay extraction-only.
+    return {
+      url: String(best.url),
+      quality: q,
+      isHls: isHls
     };
-    return byseAttest(embedHost, frame).then(function(attested) {
-      var viewerId, deviceId, nowSec, fakeToken, fp, tokenPromise;
-      if (attested) {
-        fp = attested;
-        tokenPromise = bysePlaybackToken(embedHost, code, frame, requestHeaders, fp);
-      } else {
-        // Older Nuvio workers may not expose WebCrypto. Keep the pre-attestation
-        // request as a compatibility fallback; current Byse will reject it with
-        // captcha_required and then fall back cleanly to the legacy mirror.
-        viewerId = byseHexToken(32);
-        deviceId = byseHexToken(32);
-        nowSec = Math.floor(Date.now() / 1000);
-        fakeToken = utf8ToB64Url(JSON.stringify({ viewer_id: viewerId, device_id: deviceId, confidence: 0.93, iat: nowSec, exp: nowSec + 600 })) + ".AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-        fp = { token: fakeToken, viewer_id: viewerId, device_id: deviceId, confidence: 0.93 };
-        tokenPromise = Promise.resolve(null);
-      }
-      return tokenPromise.then(function(captchaToken) {
-        var playbackHeaders = merge(requestHeaders, captchaToken ? { "X-Captcha-Token": captchaToken } : {});
-        playbackHeaders["Cache-Control"] = "no-cache, no-store";
-        playbackHeaders["Pragma"] = "no-cache";
-        return fetchJson(playbackUrl, {
-          method: "POST",
-          body: JSON.stringify({ fingerprint: fp }),
-          timeoutMs: 12000,
-          headers: playbackHeaders
-        });
-      });
-    }).then(function(response) {
-      if (!response) return extractByseLegacy(host, code);
-      var rows = byseRowsFromSources(response.sources || [], response.playback || null);
-      if (rows && rows.length) return rows;
-      return byseDecryptSourcesAsync(response.playback).then(function(decryptedRows) {
-        return decryptedRows && decryptedRows.length ? decryptedRows : extractByseLegacy(host, code);
-      });
-    });
   }).catch(function(e) {
-    console.log("[PinoyMoviesHub] modern Byse extract failed:", e.message);
-    return extractByseLegacy(host, code).catch(function() { return null; });
+    console.log("[PinoyMoviesHub] byse extract failed:", e.message);
+    return null;
   });
 }
 
@@ -1862,25 +1109,15 @@ function isMixdrop(host) {
  * variants exist, and some clones packer-pack the player JS.
  */
 function doodFindMd5Path(html) {
-  // Current Dood/Playmogo scripts sometimes escape the slash as \\/ or
-  // \\u002f, and some mirrors build the path as two segments. Normalize before
-  // matching so a valid pass_md5 token is not truncated or missed.
-  var source = String(html || "")
-    .replace(/\\u002f/gi, "/")
-    .replace(/\\\//g, "/");
-  // v4.50.0 accuracy round (port of pencuri.js v1.4.1): the first path
-  // segment now carries DASHES (device-verified 2026-10-18:
-  // '/pass_md5/284165262-47-57-<expiry>-<sig>/<seg>' — the old [a-z0-9]+
-  // matched only the numeric prefix and every /pass_md5 call 404'd).
-  var m = source.match(/['"]\/(pass_md5\/[a-z0-9_-]+(?:\/[a-z0-9_-]+)?)['"]/i);
+  var m = html.match(/['"]\/(pass_md5\/[a-z0-9]+(?:\/[a-z0-9]+)?)['"]/i);
   if (m) return m[1];
-  var unpacked = unpackPacker(source);
+  var unpacked = unpackPacker(html);
   if (unpacked) {
-    m = unpacked.match(/['"]\/(pass_md5\/[a-z0-9_-]+(?:\/[a-z0-9_-]+)?)['"]/i);
+    m = unpacked.match(/['"]\/(pass_md5\/[a-z0-9]+(?:\/[a-z0-9]+)?)['"]/i);
     if (m) return m[1];
   }
-  m = source.match(/\/pass_md5\/([a-z0-9_-]+)(?:\/([a-z0-9_-]+))?/i);
-  return m ? "pass_md5/" + m[1] + (m[2] ? "/" + m[2] : "") : null;
+  m = html.match(/\/pass_md5\/([a-z0-9]+)/i);
+  return m ? "pass_md5/" + m[1] : null;
 }
 
 function doodIsGated(html) {
@@ -1904,10 +1141,7 @@ function doodFetchDirect(host, md5Path, refererUrl, qualityHint) {
     var base = String(body).trim();
     if (base.indexOf("http") !== 0) return null;
     var token = md5Path.split("/")[1] || "";
-    // Dood treats expiry as the timestamp of this signed URL request, not as
-    // a future expiration deadline. Passing a future value produces a URL
-    // that looks valid but is rejected by the CDN.
-    var expiry = Date.now();
+    var expiry = Date.now() + 2 * 60 * 60 * 1000;
     var directUrl = base + randomToken(10) + "?token=" + token + "&expiry=" + expiry;
     // v5.5.0 webOS adaptation: the token IS the authorization on most Dood
     // nodes -> headerless rows play on webOS/Tizen too. Fail-closed to the
@@ -1917,8 +1151,7 @@ function doodFetchDirect(host, md5Path, refererUrl, qualityHint) {
         url: directUrl,
         quality: parseQuality(qualityHint),
         headers: headerlessOk ? null : { Referer: "https://" + host + "/", "User-Agent": HEADERS["User-Agent"] },
-        headerless: headerlessOk,
-        preflight: headerlessOk ? { ok: true, status: 206 } : null
+        headerless: headerlessOk
       };
     });
   }).catch(function() { return null; });
@@ -1929,24 +1162,6 @@ function extractDoodDirect(embedUrl) {
   if (!embedIdMatch) return Promise.resolve(null);
   var embedId = embedIdMatch[1];
   var qualityHint = "";
-
-  // v4.50.0 accuracy round (port of pencuri.js v1.4.1): the Dood nodes
-  // dsvplay.com / d000g.com / dsvtbs.com are NXDOMAIN-dead since 2026-10
-  // (TV + probe logs: getaddrinfo ENOTFOUND / fetch failed on every tap).
-  // The family serves the SAME /e/<id> embed on every sibling and
-  // playmogo.com + d000d.com are live, so rewrite dead hosts onto live
-  // siblings before fetching (live hosts pass through untouched).
-  var DOOD_DEAD_TO_LIVE = {
-    "dsvplay.com": "playmogo.com",
-    "d000g.com": "d000d.com",
-    "dsvtbs.com": "playmogo.com",
-    "dsvplayz.com": "playmogo.com"
-  };
-  embedUrl = String(embedUrl).replace(/^(https?:\/\/)([^\/]+)/i, function(all, proto, host) {
-    var bare = String(host).toLowerCase().replace(/^www\./, "");
-    var live = DOOD_DEAD_TO_LIVE[bare];
-    return live ? proto + live : all;
-  });
 
   return fetchTextFollow(embedUrl, {
     headers: { Referer: BASE_URL + "/" }
@@ -1966,22 +1181,8 @@ function extractDoodDirect(embedUrl) {
       return null;
     }
 
-    // v4.50.0 accuracy round (port of pencuri.js v1.4.1): a spent signed
-    // path answers non-URL ("RELOAD"), so doodFetchDirect returns null and
-    // we refetch the embed page ONCE for a fresh path before giving up.
     var md5Path = doodFindMd5Path(html);
-    if (md5Path) {
-      return doodFetchDirect(host, md5Path, embedFinalUrl, qualityHint).then(function(row) {
-        if (row) return row;
-        return fetchTextFollow(embedUrl, { headers: { Referer: BASE_URL + "/" } }).then(function(page2) {
-          if (!page2 || !page2.text) return null;
-          var md5Path2 = doodFindMd5Path(page2.text);
-          if (!md5Path2 || md5Path2 === md5Path) return null;
-          var host2 = hostOf(page2.url) || host;
-          return doodFetchDirect(host2, md5Path2, "https://" + host2 + "/e/" + embedId, qualityHint);
-        });
-      });
-    }
+    if (md5Path) return doodFetchDirect(host, md5Path, embedFinalUrl, qualityHint);
 
     // Legacy fallback: /d/{id} download page (dref_url cookie set client-side).
     return fetchTextFollow("https://" + host + "/d/" + embedId, {
@@ -2030,20 +1231,12 @@ function buildStream(displayTitle, player, resolved, meta, embedHost) {
     url: resolved.url,
     quality: q,
     behaviorHints: {
-      bingeGroup: "pinoymovieshub-direct",
-      // v5.9.1: Byse/mxcontent tokens are short-TTL. Device report: a cached
-      // row replayed minutes later died at the player with HTTP 404
-      // ("stream link has expired") while a fresh extraction still probes
-      // 200 at t0/t0+20s/t0+60s. notProvisional makes the client re-extract
-      // at every play, so the token is always fresh — and the preflight
-      // warms it right before the player's own request.
-      notProvisional: true
+      bingeGroup: "pinoymovieshub-direct"
     }
   };
   // Headers ONLY when the CDN enforces them. A missing headers field is the
   // TV-safe signal: nothing for a webOS player to choke on.
   if (resolved.headers) stream.headers = resolved.headers;
-  if (resolved.preflight) stream._preflight = resolved.preflight;
   // Internal sort key, stripped in getStreams before returning.
   stream._hostPriority = hostPriority(label, embedHost);
   return stream;
@@ -2131,34 +1324,6 @@ function resolvePageUrlDirect(slug, mediaType, season, episode) {
   }).catch(function() { return null; });
 }
 
-// Return as soon as two direct rows are ready. The remaining lane promises
-// are intentionally allowed to finish in the background; the old all-at-once
-// join made one dead provider hold every usable provider until its deadline.
-function collectFastLaneResults(lanes) {
-  var pending = lanes.slice();
-  var output = [];
-  var hasMixdrop = pending.some(function(lane) { return lane.kind === "mixdrop"; });
-  var mixdropSettled = !hasMixdrop;
-  function step() {
-    if (!pending.length || (mixdropSettled && output.length)) return Promise.resolve(output);
-    return Promise.race(pending.map(function(lane, index) {
-      return Promise.resolve(lane.promise).then(function(value) {
-        return { index: index, lane: lane, value: value };
-      }, function() {
-        return { index: index, lane: lane, value: null };
-      });
-    })).then(function(hit) {
-      pending.splice(hit.index, 1);
-      if (hit.lane.kind === "mixdrop") mixdropSettled = true;
-      if (Array.isArray(hit.value)) {
-        for (var i = 0; i < hit.value.length; i++) if (hit.value[i]) output.push(hit.value[i]);
-      } else if (hit.value) output.push(hit.value);
-      return step();
-    });
-  }
-  return step();
-}
-
 /**
  * Shared tail of getStreams: takes a resolved PMH page and extracts direct
  * streams from its Dooplay player options. Used by BOTH the TMDB-id path
@@ -2183,46 +1348,57 @@ function extractStreamsFromPage(page, displayTitle, meta) {
   }
   var chosen = realOptions.length ? realOptions : trailerOptions;
 
-  var lanes = chosen.slice(0, MAX_PLAYER_OPTIONS).map(function(player) {
-    var label = String(player.label || "").toLowerCase();
-    var kind = /mixdrop|mixdrp|mxdrop|miixdrop|mixdroop/.test(label) ? "mixdrop"
-      : (/byse/.test(label) ? "byse" : "other");
-    var laneTimeout = kind === "mixdrop" ? MIXDROP_LANE_TIMEOUT_MS : LANE_TIMEOUT_MS;
-    return { kind: kind, promise: withLaneDeadline(callDooPlayerAPI(player, page.url).then(function(embedUrl) {
+  return Promise.all(chosen.slice(0, 8).map(function(player) {
+    return withLaneDeadline(callDooPlayerAPI(player, page.url).then(function(embedUrl) {
       if (!embedUrl) return null;
       var host = hostOf(embedUrl);
-      var extractor = isMixdrop(host) ? extractMixdropDirect(embedUrl)
-        : (isByse(host) ? extractByseDirect(embedUrl)
-        : (isDoodFamily(host) ? extractDoodDirect(embedUrl)
-        : extractMixdropDirect(embedUrl).then(function(direct) { return direct || extractByseDirect(embedUrl); })));
-      return extractor.then(function(direct) {
-        var rows = Array.isArray(direct) ? direct : (direct ? [direct] : []);
-        if (!rows.length) return null;
-        return rows.map(function(row) {
-          return row && row.url ? buildStream(displayTitle, player, {
-            url: row.url, headers: row.headers, quality: row.quality, preflight: row.preflight
-          }, meta, host) : null;
-        }).filter(function(row) { return !!row; });
-      });
-    }), laneTimeout) };
-  });
+      var extractor = null;
 
-  return collectFastLaneResults(lanes).then(function(results) {
+      if (isMixdrop(host)) {
+        extractor = extractMixdropDirect(embedUrl);
+      } else if (isByse(host)) {
+        extractor = extractByseDirect(embedUrl);
+      } else if (isDoodFamily(host)) {
+        extractor = extractDoodDirect(embedUrl);
+      } else {
+        // Unknown host: content-sniff for a mixdrop-style player
+        // (auto-covers future mirror domains), then try the Byse API
+        // shape (covers rebranded domains), else give up.
+        extractor = extractMixdropDirect(embedUrl).then(function(direct) {
+          return direct || extractByseDirect(embedUrl);
+        });
+      }
+
+      return extractor.then(function(direct) {
+        if (direct && direct.url) {
+          return buildStream(displayTitle, player, {
+            url: direct.url,
+            headers: direct.headers,
+            quality: direct.quality
+          }, meta, host);
+        }
+        // Extraction unavailable (captcha-gated dood, dead video,
+        // unknown SPA): skip the player. Nuvio has no webview on any
+        // platform, so an embed URL could never play anyway.
+        return null;
+      });
+    }, LANE_TIMEOUT_MS));
+  })).then(function(results) {
     var streams = [];
     var i;
     for (i = 0; i < results.length; i++) {
-      if (Array.isArray(results[i])) {
-        for (var ri = 0; ri < results[i].length; ri++) {
-          if (results[i][ri]) streams.push(results[i][ri]);
-        }
-      } else if (results[i]) {
-        streams.push(results[i]);
-      }
+      if (results[i]) streams.push(results[i]);
     }
-    if (streams.length > MAX_STREAM_ROWS) streams = streams.slice(0, MAX_STREAM_ROWS);
-    // v5.9.0: device-side preflight decides the order — playable rows first
-    // (hostPriority as tie-break), unreachable/dead rows kept but last.
-    return preflightSort(streams);
+    // v5.2.2: Byse first (plays everywhere), then Mixdrop, then Dood.
+    streams.sort(function(a, b) {
+      var pa = a._hostPriority === undefined ? 3 : a._hostPriority;
+      var pb = b._hostPriority === undefined ? 3 : b._hostPriority;
+      if (pa !== pb) return pa - pb;
+      return 0;
+    });
+    for (i = 0; i < streams.length; i++) delete streams[i]._hostPriority;
+    console.log("[PinoyMoviesHub] Returning", streams.length, "stream(s)");
+    return streams;
   });
 }
 
@@ -2409,187 +1585,3 @@ if (typeof module !== "undefined" && module.exports) {
 } else {
   global.getStreams = getStreams;
 }
-
-
-/* ===== nv universal subtitle lane v1.0.0 (pack 4.48.0) =====================
-   Every scraper's stream rows now carry multi-language sidecar subtitles:
-   English, Tagalog/Filipino, Korean, Japanese, Indonesian, Malay, Chinese,
-   Thai + all other tracks the source offers.
-
-   Source: Stremio's official keyless OpenSubtitles-v3 addon
-     GET https://opensubtitles-v3.strem.io/subtitles/{movie|series}/{imdbId}[:s:e].json
-     -> { subtitles: [{ url, lang(ISO-639-3), ... }] }
-   The subs5.strem.io URLs serve UTF-8 SRT; NuvioTV's player converts SRT to
-   WebVTT transparently (playerScreenMethods-42.createSubtitleObjectUrl), and
-   the player merges stream.sidecar `subtitles` rows (lang/url/headers) into
-   the subtitle rail - the same path the Pencuri English lane uses.
-
-   Design: ES2020-safe, zero-dependency, fail-soft. The IMDb id is resolved
-   once per title via TMDB external_ids (cached), the subtitle JSON once per
-   (imdb, s, e) (cached 6h). The wrapper runs in PARALLEL with the provider's
-   own lane and only fills rows that have no subtitles of their own, so
-   provider-specific tracks (vidlove/anikoto/megaplay vtt, pencuri en) always
-   win. Never throws; never delays the stream lane by more than the host's
-   own 8s deadline.
-=========================================================================== */
-(function () {
-  var G = typeof globalThis !== "undefined" ? globalThis : this;
-  if (G.__nvOsv3Subs) return;
-
-  var OSV3_BASE = "https://opensubtitles-v3.strem.io/subtitles/";
-  var TMDB_KEY = (typeof TMDB_API_KEY === "string" && TMDB_API_KEY) || "307b7b8ef035c6aa336900aef4e203bd";
-  var TTL_MS = 6 * 60 * 60 * 1000;
-  var DEADLINE_MS = 8000;
-
-  /* ISO-639-3 -> ISO-639-1 (+ display names) for the pack's languages */
-  var CODE_MAP = {
-    eng: "en", tgl: "tl", fil: "fil", ko: "ko", kor: "ko", jpn: "ja",
-    ind: "id", may: "ms", zho: "zh", zhe: "zh", zht: "zh-TW", tha: "th",
-    hin: "hi", ben: "bn", tam: "ta", tel: "te", spa: "es", por: "pt",
-    pob: "pt-BR", fre: "fr", ger: "de", ita: "it", rus: "ru", ara: "ar",
-    tur: "tr", vie: "vi", pol: "pl", nld: "nl", ukr: "uk", pes: "fa",
-    per: "fa", swe: "sv", nor: "no", dan: "da", fin: "fi", ell: "el",
-    heb: "he", hun: "hu", ces: "cs", cze: "cs", ron: "ro", rum: "ro",
-    hrv: "hr", srp: "sr", bul: "bg", slo: "sk", slv: "sl", bos: "bs",
-    mac: "mk", mkd: "mk", est: "et", lav: "lv", lit: "lt", ind2: "id"
-  };
-  var NAME_MAP = {
-    en: "English", tl: "Tagalog", fil: "Filipino", ko: "Korean", ja: "Japanese",
-    id: "Indonesian", ms: "Malay", zh: "Chinese", "zh-TW": "Chinese (Traditional)",
-    th: "Thai", hi: "Hindi", bn: "Bengali", ta: "Tamil", te: "Telugu",
-    es: "Spanish", pt: "Portuguese", "pt-BR": "Portuguese (BR)", fr: "French",
-    de: "German", it: "Italian", ru: "Russian", ar: "Arabic", tr: "Turkish",
-    vi: "Vietnamese", pl: "Polish", nl: "Dutch", uk: "Ukrainian", fa: "Persian",
-    sv: "Swedish", no: "Norwegian", da: "Danish", fi: "Finnish", el: "Greek",
-    he: "Hebrew", hu: "Hungarian", cs: "Czech", sk: "Slovak", ro: "Romanian",
-    hr: "Croatian", sr: "Serbian", bg: "Bulgarian", sl: "Slovenian",
-    bs: "Bosnian", mk: "Macedonian", et: "Estonian", lv: "Latvian", lt: "Lithuanian"
-  };
-
-  var _cache = {};   /* key -> { t: ms, rows: [...] } */
-  var _imdbCache = {}; /* tmdbKey -> { t: ms, imdb } */
-  var _inflight = {};  /* key -> Promise */
-
-  function _hasTimers() {
-    return typeof setTimeout === "function" && typeof Promise !== "undefined" && Promise.race;
-  }
-  function _withDeadline(p) {
-    if (!_hasTimers()) return p;
-    return Promise.race([p, new Promise(function (res) {
-      var t = setTimeout(function () { res(null); }, DEADLINE_MS);
-      if (t && typeof t.unref === "function") t.unref();
-    })]);
-  }
-  function _normType(mediaType) {
-    var t = String(mediaType || "").toLowerCase();
-    return (t === "series" || t === "show" || t === "tvshow" || t === "tv") ? "series" : "movie";
-  }
-  function _fetchJson(url) {
-    return _withDeadline(
-      (typeof fetch === "function" ? fetch(url) : Promise.reject(new Error("no fetch")))
-        .then(function (res) {
-          if (!res || !res.ok) return null;
-          return res.json().catch(function () { return null; });
-        })
-        .catch(function () { return null; })
-    );
-  }
-  function _resolveImdb(tmdbId, mediaType) {
-    var key = _normType(mediaType) + ":" + String(tmdbId);
-    var now = Date.now();
-    if (_imdbCache[key] && now - _imdbCache[key].t < TTL_MS) {
-      return Promise.resolve(_imdbCache[key].imdb);
-    }
-    if (_inflight["imdb:" + key]) return _inflight["imdb:" + key];
-    var kind = _normType(mediaType) === "series" ? "tv" : "movie";
-    var url = "https://api.themoviedb.org/3/" + kind + "/" + encodeURIComponent(String(tmdbId)) +
-      "/external_ids?api_key=" + TMDB_KEY;
-    _inflight["imdb:" + key] = _fetchJson(url).then(function (data) {
-      var imdb = data && data.imdb_id && /^tt\d+$/.test(String(data.imdb_id)) ? String(data.imdb_id) : null;
-      _imdbCache[key] = { t: now, imdb: imdb };
-      delete _inflight["imdb:" + key];
-      return imdb;
-    });
-    return _inflight["imdb:" + key];
-  }
-  function _osv3Rows(imdbId, mediaType, season, episode) {
-    var isSeries = _normType(mediaType) === "series";
-    var path = isSeries
-      ? "series/" + encodeURIComponent(imdbId) + ":" + (parseInt(season, 10) || 1) + ":" + (parseInt(episode, 10) || 1) + ".json"
-      : "movie/" + encodeURIComponent(imdbId) + ".json";
-    var key = path;
-    var now = Date.now();
-    if (_cache[key] && now - _cache[key].t < TTL_MS) return Promise.resolve(_cache[key].rows);
-    if (_inflight[key]) return _inflight[key];
-    _inflight[key] = _fetchJson(OSV3_BASE + path).then(function (data) {
-      var list = (data && Array.isArray(data.subtitles)) ? data.subtitles : [];
-      var seen = {};
-      var rows = [];
-      for (var i = 0; i < list.length; i++) {
-        var t = list[i];
-        if (!t || !t.url) continue;
-        var code = CODE_MAP[String(t.lang || "").toLowerCase()] || String(t.lang || "").toLowerCase();
-        if (!code) continue;
-        var dedupeKey = code + "|" + (t.id || t.url);
-        if (seen[dedupeKey]) continue;
-        seen[dedupeKey] = 1;
-        rows.push({
-          url: String(t.url),
-          lang: code,
-          language: code,
-          name: NAME_MAP[code] || (String(t.lang || "subtitle").charAt(0).toUpperCase() + String(t.lang || "subtitle").slice(1))
-        });
-        if (rows.length >= 60) break;
-      }
-      _cache[key] = { t: now, rows: rows };
-      delete _inflight[key];
-      return rows;
-    });
-    return _inflight[key];
-  }
-
-  G.__nvOsv3Subs = {
-    get: function (tmdbId, mediaType, season, episode) {
-      try {
-        return _resolveImdb(tmdbId, mediaType).then(function (imdb) {
-          if (!imdb) return [];
-          return _osv3Rows(imdb, mediaType, season, episode);
-        }).catch(function () { return []; });
-      } catch (e) { return Promise.resolve([]); }
-    }
-  };
-})();
-
-/* ===== nv universal subtitle wrapper v1.0.0 (pack 4.48.0) ==================
-   Re-wraps module.exports.getStreams: runs the provider lane and the OSv3
-   subtitle lane concurrently, then attaches the language tracks to every
-   row that has no subtitles of its own. Provider-specific tracks always
-   win; rows keep their originals untouched. Fail-soft end to end.
-=========================================================================== */
-(function () {
-  var G = typeof globalThis !== "undefined" ? globalThis : this;
-  var lane = G.__nvOsv3Subs;
-  var orig = null;
-  try { orig = module.exports && module.exports.getStreams; } catch (e) { orig = null; }
-  if (!lane || typeof orig !== "function") return;
-  module.exports.getStreams = function (tmdbId, mediaType, season, episode) {
-    var rowsP;
-    try {
-      rowsP = Promise.resolve(orig.apply(this, arguments));
-    } catch (e) {
-      rowsP = Promise.resolve([]);
-    }
-    var subsP = lane.get(tmdbId, mediaType, season, episode).catch(function () { return []; });
-    return Promise.all([rowsP.catch(function () { return []; }), subsP]).then(function (arr) {
-      var rows = Array.isArray(arr[0]) ? arr[0] : [];
-      var subs = Array.isArray(arr[1]) ? arr[1] : [];
-      if (!rows.length || !subs.length) return rows;
-      for (var i = 0; i < rows.length; i++) {
-        var r = rows[i];
-        if (r && (!r.subtitles || !r.subtitles.length)) r.subtitles = subs;
-      }
-      return rows;
-    });
-  };
-})();
-
