@@ -4,12 +4,17 @@
  * Supports: Movies & TV Shows
  * Language: Filipino / Tagalog / English
  * Author: xrexzerox
- * Version: 5.9.11
+ * Version: 5.9.12
  *
+ * v5.9.12 changelog (pack 4.54.17):
+ *  - FIX: cache-bust the Byse playback POST and send no-cache headers so an
+ *    upstream cache cannot replay an old JSON response with an already-dead
+ *    signed CDN URL.
+ *  - FIX: validate Byse's current s=<start>&e=<duration> URL window, while
+ *    retaining support for older absolute expiry query formats.
+
  * v5.9.11 changelog (pack 4.54.16):
- *  - FIX: reject Byse CDN URLs whose bare `e=<unix timestamp>` expiry has
- *    passed. Byse uses `e`, not only `exp`/`expires`, and stale URLs return
- *    HTTP 404 "stream link has expired" in the native player.
+ *  - FIX: reject stale signed Byse CDN URLs before native playback.
 
  * v5.9.10 changelog (pack 4.54.15):
  *  - FIX: Byse now performs the current server-issued P-256 attestation and
@@ -1577,11 +1582,27 @@ function byseTimestampMs(value) {
 function byseSignedUrlExpired(url, playback) {
   var now = Date.now() + 15000;
   var values = [playback && playback.expires_at];
-  // Byse's current CDN format uses the short bare `e` query parameter for\n  // expiry (for example `...?t=...&s=...&e=1794766409`). Keep the longer\n  // spellings for older mirrors, but never emit a URL whose `e` is stale.\n  var q = String(url || "").match(/[?&](?:e|exp|expires|expires_at|expiry)=([^&#]+)/ig) || [];
+  var text = String(url || "");
+  var q = text.match(/[?&](?:exp|expires|expires_at|expiry)=([^&#]+)/ig) || [];
   for (var i = 0; i < q.length; i++) values.push(q[i].replace(/^[?&][^=]+=\s*/i, ""));
   for (i = 0; i < values.length; i++) {
     var expires = byseTimestampMs(values[i]);
     if (expires && expires <= now) return true;
+  }
+  // Current Byse CDN URLs use s as the Unix start time and e as the
+  // lifetime in seconds (for example s=1794767190&e=10800). Do not treat
+  // the small duration value as an absolute Unix timestamp.
+  var sm = text.match(/[?&]s=([^&#]+)/i);
+  var em = text.match(/[?&]e=([^&#]+)/i);
+  var startSec = sm ? Number(sm[1]) : 0;
+  var durationSec = em ? Number(em[1]) : 0;
+  if (isFinite(startSec) && startSec >= 1000000000 &&
+      isFinite(durationSec) && durationSec > 0 && durationSec < 1000000000 &&
+      (startSec + durationSec) * 1000 <= now) return true;
+  // A few older mirrors used e as an absolute Unix expiry without s.
+  if (!sm && em) {
+    var absoluteE = byseTimestampMs(em[1]);
+    if (absoluteE && absoluteE <= now) return true;
   }
   return false;
 }
@@ -1752,7 +1773,8 @@ function extractByseDirect(embedUrl) {
     var frame = details.embed_frame_url || details.embedFrameUrl || details.embed_url || details.frame_url || embedUrl;
     if (String(frame).indexOf("http") !== 0) frame = "https://" + host + (String(frame).charAt(0) === "/" ? frame : "/" + frame);
     var embedHost = hostOf(frame) || host;
-    var playbackUrl = "https://" + embedHost + "/api/videos/" + code + "/embed/playback";
+    // Cache-bust short-lived Byse playback JSON so stale signed URLs are not replayed.
+    var playbackUrl = "https://" + embedHost + "/api/videos/" + code + "/embed/playback?nv_cache=" + Date.now();
     var requestHeaders = {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -1780,6 +1802,8 @@ function extractByseDirect(embedUrl) {
       }
       return tokenPromise.then(function(captchaToken) {
         var playbackHeaders = merge(requestHeaders, captchaToken ? { "X-Captcha-Token": captchaToken } : {});
+        playbackHeaders["Cache-Control"] = "no-cache, no-store";
+        playbackHeaders["Pragma"] = "no-cache";
         return fetchJson(playbackUrl, {
           method: "POST",
           body: JSON.stringify({ fingerprint: fp }),
