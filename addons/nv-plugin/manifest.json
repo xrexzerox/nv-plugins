@@ -1,14 +1,14 @@
 {
   "name": "NV Plugins",
-  "version": "4.54.19",
-  "description": "v4.54.19 MIXDROP VISIBILITY FIX: pinoyhub v5.9.14 waits for the Mixdrop lane instead of stopping after Byse returns multiple rows; bounded Mixdrop timeout and prior Byse fixes retained.",
+  "version": "4.54.20",
+  "description": "v4.54.20 MIXDROP FALLBACK FIX: pinoyhub v5.9.15 keeps a freshly extracted Mixdrop row visible when device preflight is inconclusive, and restores the previous 20-second Mixdrop extraction window.",
   "author": "xrexzerox",
   "scrapers": [
     {
       "id": "pinoymovieshub",
       "name": "PinoyMoviesHub",
       "description": "Pinoy movies & series from pinoymovieshub.win: direct pmh- slug lanes, and headerless-probe emission for Mixdrop/Dood direct links (TV-safe when the CDN allows; Byse stays first). v5.8.0: tolerant catalog-id parsing for the addon's new episode ids (asian:pmh-<slug>:<s>:<e>) so every pmh series episode tap keeps its season/episode even when the app passes no args.",
-      "version": "5.9.14",
+      "version": "5.9.15",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
