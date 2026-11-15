@@ -4,8 +4,13 @@
  * Supports: Movies & TV Shows
  * Language: Filipino / Tagalog / English
  * Author: xrexzerox
- * Version: 5.9.12
+ * Version: 5.9.13
  *
+ * v5.9.13 changelog (pack 4.54.18):
+ *  - FIX: normalize literal backslash-escaped query separators (`\\&`) in
+ *    Byse signed URLs. The CDN returns HTTP 404 when `\\&s=...` reaches the
+ *    player instead of a real `&s=...` separator.
+
  * v5.9.12 changelog (pack 4.54.17):
  *  - FIX: cache-bust the Byse playback POST and send no-cache headers so an
  *    upstream cache cannot replay an old JSON response with an already-dead
@@ -1666,7 +1671,7 @@ function byseRowsFromSources(sources, playback) {
     // Some Byse AES payloads JSON-decode ampersands as the literal text
     // "\\u0026". Normalize that representation before URL parsing; otherwise
     // the CDN sees one malformed query parameter and returns a hard failure.
-    var originalUrl = String(u).replace(/\\u0026/gi, "&").replace(/\\\//g, "/").replace(/&amp;/gi, "&");
+    var originalUrl = String(u).replace(/\\u0026/gi, "&").replace(/\\&/g, "&").replace(/\\\//g, "/").replace(/&amp;/gi, "&");
     var candidateUrl = originalUrl;
     if (isKnownDeadByseHost(hostOf(originalUrl))) candidateUrl = byseFailoverUrl(originalUrl);
     if (!candidateUrl || byseSignedUrlExpired(candidateUrl, playback || null)) continue;
