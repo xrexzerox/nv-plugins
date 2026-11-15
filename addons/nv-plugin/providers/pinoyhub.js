@@ -4,8 +4,12 @@
  * Supports: Movies & TV Shows
  * Language: Filipino / Tagalog / English
  * Author: xrexzerox
- * Version: 5.9.13
+ * Version: 5.9.14
  *
+ * v5.9.14 changelog (pack 4.54.19):
+ *  - FIX: Byse multi-row results no longer hide the Mixdrop lane.
+ *  - PERF: Mixdrop has a bounded 15-second lane deadline.
+
  * v5.9.13 changelog (pack 4.54.18):
  *  - FIX: normalize literal backslash-escaped query separators (`\\&`) in
  *    Byse signed URLs. The CDN returns HTTP 404 when `\\&s=...` reaches the
@@ -1547,6 +1551,7 @@ function extractMixdropDirect(embedUrl) {
 // ===== EXTRACTOR: BYSE (React SPA -> /api/videos/{code} -> AES-GCM payload) =====
 
 var LANE_TIMEOUT_MS = 120000; // attestation + proof-of-work can take ~90s
+var MIXDROP_LANE_TIMEOUT_MS = 15000;
 var MAX_PLAYER_OPTIONS = 4;
 var MAX_STREAM_ROWS = 6;
 var MAX_BYSE_CANDIDATES = 3;
@@ -2132,23 +2137,22 @@ function resolvePageUrlDirect(slug, mediaType, season, episode) {
 function collectFastLaneResults(lanes) {
   var pending = lanes.slice();
   var output = [];
+  var hasMixdrop = pending.some(function(lane) { return lane.kind === "mixdrop"; });
+  var mixdropSettled = !hasMixdrop;
   function step() {
-    if (!pending.length || output.length >= 2) return Promise.resolve(output);
-    return Promise.race(pending.map(function(p, index) {
-      return Promise.resolve(p).then(function(value) {
-        return { index: index, value: value };
+    if (!pending.length || (mixdropSettled && output.length)) return Promise.resolve(output);
+    return Promise.race(pending.map(function(lane, index) {
+      return Promise.resolve(lane.promise).then(function(value) {
+        return { index: index, lane: lane, value: value };
       }, function() {
-        return { index: index, value: null };
+        return { index: index, lane: lane, value: null };
       });
     })).then(function(hit) {
       pending.splice(hit.index, 1);
+      if (hit.lane.kind === "mixdrop") mixdropSettled = true;
       if (Array.isArray(hit.value)) {
-        for (var i = 0; i < hit.value.length; i++) {
-          if (hit.value[i]) output.push(hit.value[i]);
-        }
-      } else if (hit.value) {
-        output.push(hit.value);
-      }
+        for (var i = 0; i < hit.value.length; i++) if (hit.value[i]) output.push(hit.value[i]);
+      } else if (hit.value) output.push(hit.value);
       return step();
     });
   }
@@ -2180,44 +2184,27 @@ function extractStreamsFromPage(page, displayTitle, meta) {
   var chosen = realOptions.length ? realOptions : trailerOptions;
 
   var lanes = chosen.slice(0, MAX_PLAYER_OPTIONS).map(function(player) {
-    return withLaneDeadline(callDooPlayerAPI(player, page.url).then(function(embedUrl) {
+    var label = String(player.label || "").toLowerCase();
+    var kind = /mixdrop|mixdrp|mxdrop|miixdrop|mixdroop/.test(label) ? "mixdrop"
+      : (/byse/.test(label) ? "byse" : "other");
+    var laneTimeout = kind === "mixdrop" ? MIXDROP_LANE_TIMEOUT_MS : LANE_TIMEOUT_MS;
+    return { kind: kind, promise: withLaneDeadline(callDooPlayerAPI(player, page.url).then(function(embedUrl) {
       if (!embedUrl) return null;
       var host = hostOf(embedUrl);
-      var extractor = null;
-
-      if (isMixdrop(host)) {
-        extractor = extractMixdropDirect(embedUrl);
-      } else if (isByse(host)) {
-        extractor = extractByseDirect(embedUrl);
-      } else if (isDoodFamily(host)) {
-        extractor = extractDoodDirect(embedUrl);
-      } else {
-        // Unknown host: content-sniff for a mixdrop-style player
-        // (auto-covers future mirror domains), then try the Byse API
-        // shape (covers rebranded domains), else give up.
-        extractor = extractMixdropDirect(embedUrl).then(function(direct) {
-          return direct || extractByseDirect(embedUrl);
-        });
-      }
-
+      var extractor = isMixdrop(host) ? extractMixdropDirect(embedUrl)
+        : (isByse(host) ? extractByseDirect(embedUrl)
+        : (isDoodFamily(host) ? extractDoodDirect(embedUrl)
+        : extractMixdropDirect(embedUrl).then(function(direct) { return direct || extractByseDirect(embedUrl); })));
       return extractor.then(function(direct) {
         var rows = Array.isArray(direct) ? direct : (direct ? [direct] : []);
-        if (rows.length) {
-          return rows.map(function(row) {
-            return row && row.url ? buildStream(displayTitle, player, {
-              url: row.url,
-              headers: row.headers,
-              quality: row.quality,
-              preflight: row.preflight
-            }, meta, host) : null;
-          }).filter(function(row) { return !!row; });
-        }
-        // Extraction unavailable (captcha-gated dood, dead video,
-        // unknown SPA): skip the player. Nuvio has no webview on any
-        // platform, so an embed URL could never play anyway.
-        return null;
+        if (!rows.length) return null;
+        return rows.map(function(row) {
+          return row && row.url ? buildStream(displayTitle, player, {
+            url: row.url, headers: row.headers, quality: row.quality, preflight: row.preflight
+          }, meta, host) : null;
+        }).filter(function(row) { return !!row; });
       });
-    }, LANE_TIMEOUT_MS));
+    }), laneTimeout) };
   });
 
   return collectFastLaneResults(lanes).then(function(results) {
