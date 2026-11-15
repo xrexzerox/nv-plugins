@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "4.54.21",
-  "description": "v4.54.21 PINOYHUB ALL-SERVER FIX: pinoyhub v5.9.16 keeps Mixdrop visible and allows Byse a short post-Mixdrop grace window so both valid sources can be returned without the old full timeout.",
+  "version": "4.54.22",
+  "description": "v4.54.22 ANIME ROUTING FIX: anime providers are declared with anime capability so non-anime plugins are filtered before launch and anime results appear faster.",
   "author": "xrexzerox",
   "scrapers": [
     {
@@ -218,7 +218,8 @@
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
-        "tv"
+        "tv",
+        "anime"
       ],
       "filename": "providers/miruro.js",
       "enabled": true,
@@ -606,7 +607,8 @@
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
-        "tv"
+        "tv",
+        "anime"
       ],
       "filename": "providers/animotvslash.js",
       "enabled": true,
@@ -729,7 +731,8 @@
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
-        "tv"
+        "tv",
+        "anime"
       ],
       "filename": "providers/reanime.js",
       "enabled": true,
@@ -751,7 +754,8 @@
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
-        "tv"
+        "tv",
+        "anime"
       ],
       "filename": "providers/animeworld.js",
       "enabled": true,
@@ -795,7 +799,8 @@
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",
-        "tv"
+        "tv",
+        "anime"
       ],
       "filename": "providers/animesalt.js",
       "enabled": true,
