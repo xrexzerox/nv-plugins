@@ -1,5 +1,18 @@
 # NV Plugins
 
+## TMDB key and non-anime provider maintenance
+
+Update the TMDB key through [TMDB-KEY-UPDATE.md](TMDB-KEY-UPDATE.md). The
+maintenance source is `config/tmdb-key.local.txt`; run
+`node tools/update-tmdb-key.js` from this folder before packaging. Never upload
+that local key file.
+
+Pack 4.54.24 adds a shared boundary to the 32 providers that do not advertise
+anime support. It normalizes movie/TV arguments, routes direct Asian catalog
+ids only to their owning provider, stops a hung provider after 22 seconds, and
+removes malformed or duplicate stream rows. Anime providers are intentionally
+not changed by this boundary pass.
+
 ## 4.46.0 - device-speed round (pack files revalidated; the slowness is fixed in the host + server builds)
 
 Report: "plugin still slow when producing streams it took so much time to show all available stream" on NuvioTV (webOS, budget panel), while streams do resolve outside asian-catalog.

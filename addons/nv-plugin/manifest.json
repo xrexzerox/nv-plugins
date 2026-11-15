@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "4.54.22",
-  "description": "v4.54.22 ANIME ROUTING FIX: anime providers are declared with anime capability so non-anime plugins are filtered before launch and anime results appear faster.",
+  "version": "4.54.24",
+  "description": "v4.54.24 NON-ANIME PROVIDER BOUNDARY: centralized TMDB key update workflow, 22s fail-soft provider deadline, direct catalog-id ownership routing, malformed stream filtering, and duplicate-row suppression; anime providers remain unchanged.",
   "author": "xrexzerox",
   "scrapers": [
     {
