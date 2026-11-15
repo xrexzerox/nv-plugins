@@ -1,0 +1,32 @@
+{
+  "name": "NV PinoyMoviesHub",
+  "version": "4.54.15",
+  "description": "PinoyMoviesHub direct-stream addon. Byse attestation/proof-of-work, AES-GCM playback decoding, Vienna edge failover, Mixdrop extraction, and Dood parser fixes.",
+  "author": "xrexzerox",
+  "scrapers": [
+    {
+      "id": "pinoymovieshub",
+      "name": "PinoyMoviesHub",
+      "description": "Pinoy movies & series from pinoymovieshub.win: direct pmh- slug lanes, and headerless-probe emission for Mixdrop/Dood direct links (TV-safe when the CDN allows; Byse stays first). v5.8.0: tolerant catalog-id parsing for the addon's new episode ids (asian:pmh-<slug>:<s>:<e>) so every pmh series episode tap keeps its season/episode even when the app passes no args.",
+      "version": "5.9.10",
+      "author": "xrexzerox",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/pinoyhub.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8",
+        "mkv",
+        "webm"
+      ],
+      "contentLanguage": [
+        "tl",
+        "fil",
+        "en"
+      ]
+    }
+  ]
+}
