@@ -1,14 +1,14 @@
 {
   "name": "NV Plugins",
-  "version": "4.54.15",
-  "description": "v4.54.15 BYSE PLAYBACK FIX: pinoyhub v5.9.10 performs the current Byse attestation/proof-of-work flow, decrypts AES-GCM playback, normalizes escaped query separators, and fails over the confirmed dead Moscow edge to Vienna; Dood/Mixdrop fixes retained.",
+  "version": "4.54.16",
+  "description": "v4.54.16 BYSE EXPIRY FIX: pinoyhub v5.9.11 rejects stale Byse CDN URLs using the current bare e= expiry parameter before they reach the native player; attestation, AES-GCM, edge failover, Dood, and Mixdrop fixes retained.",
   "author": "xrexzerox",
   "scrapers": [
     {
       "id": "pinoymovieshub",
       "name": "PinoyMoviesHub",
       "description": "Pinoy movies & series from pinoymovieshub.win: direct pmh- slug lanes, and headerless-probe emission for Mixdrop/Dood direct links (TV-safe when the CDN allows; Byse stays first). v5.8.0: tolerant catalog-id parsing for the addon's new episode ids (asian:pmh-<slug>:<s>:<e>) so every pmh series episode tap keeps its season/episode even when the app passes no args.",
-      "version": "5.9.10",
+      "version": "5.9.11",
       "author": "xrexzerox",
       "supportedTypes": [
         "movie",

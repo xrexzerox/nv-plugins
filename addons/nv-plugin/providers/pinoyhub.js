@@ -4,8 +4,13 @@
  * Supports: Movies & TV Shows
  * Language: Filipino / Tagalog / English
  * Author: xrexzerox
- * Version: 5.9.10
+ * Version: 5.9.11
  *
+ * v5.9.11 changelog (pack 4.54.16):
+ *  - FIX: reject Byse CDN URLs whose bare `e=<unix timestamp>` expiry has
+ *    passed. Byse uses `e`, not only `exp`/`expires`, and stale URLs return
+ *    HTTP 404 "stream link has expired" in the native player.
+
  * v5.9.10 changelog (pack 4.54.15):
  *  - FIX: Byse now performs the current server-issued P-256 attestation and
  *    proof-of-work player check before requesting playback, then sends the
@@ -1572,7 +1577,7 @@ function byseTimestampMs(value) {
 function byseSignedUrlExpired(url, playback) {
   var now = Date.now() + 15000;
   var values = [playback && playback.expires_at];
-  var q = String(url || "").match(/[?&](?:exp|expires|expires_at|expiry)=([^&#]+)/ig) || [];
+  // Byse's current CDN format uses the short bare `e` query parameter for\n  // expiry (for example `...?t=...&s=...&e=1794766409`). Keep the longer\n  // spellings for older mirrors, but never emit a URL whose `e` is stale.\n  var q = String(url || "").match(/[?&](?:e|exp|expires|expires_at|expiry)=([^&#]+)/ig) || [];
   for (var i = 0; i < q.length; i++) values.push(q[i].replace(/^[?&][^=]+=\s*/i, ""));
   for (i = 0; i < values.length; i++) {
     var expires = byseTimestampMs(values[i]);
