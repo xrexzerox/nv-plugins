@@ -7,11 +7,19 @@ maintenance source is `config/tmdb-key.local.txt`; run
 `node tools/update-tmdb-key.js` from this folder before packaging. Never upload
 that local key file.
 
-Pack 4.54.24 adds a shared boundary to the 32 providers that do not advertise
-anime support. It normalizes movie/TV arguments, routes direct Asian catalog
-ids only to their owning provider, stops a hung provider after 22 seconds, and
-removes malformed or duplicate stream rows. Anime providers are intentionally
-not changed by this boundary pass.
+Pack 4.54.25 adds a shared boundary to the 32 providers that do not advertise
+anime support. It normalizes TMDB/IMDb movie and TV arguments, routes direct
+Asian catalog ids only to their owning provider, stops a hung provider after
+12 seconds, returns streams without waiting on slow subtitle services, and
+removes malformed or duplicate stream rows. Bingr and VidRock also have
+bounded upstream requests. Anime providers are intentionally not changed by
+this boundary pass.
+
+Run `node tools/audit-catalog-provider-map.js` to audit the paired
+`asian-catalog` package against this manifest. The audit checks all 28 catalog
+ids, provider filenames, movie/TV compatibility, source-scoped direct-id
+ownership (`pmh`, `pen`, `ks`, `va`, `kh`, `an`), and the anime/non-anime
+boundary without printing the local TMDB key.
 
 ## 4.46.0 - device-speed round (pack files revalidated; the slowness is fixed in the host + server builds)
 

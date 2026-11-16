@@ -745,7 +745,26 @@ if (typeof module !== "undefined" && module.exports) module.exports = { getStrea
       rowsP = Promise.resolve([]);
     }
     var subsP = lane.get(tmdbId, mediaType, season, episode).catch(function () { return []; });
-    return Promise.all([rowsP.catch(function () { return []; }), subsP]).then(function (arr) {
+    // Captions are optional. Give OSV3 a short head start, then return the
+    // provider's playable rows even if the subtitle service is unavailable.
+    var subsFastP;
+    if (typeof setTimeout === "function" && typeof Promise !== "undefined" && Promise.race) {
+      var subsTimer = null;
+      var subsFallback = new Promise(function (resolve) {
+        subsTimer = setTimeout(function () { resolve([]); }, 1200);
+        if (subsTimer && typeof subsTimer.unref === "function") subsTimer.unref();
+      });
+      subsFastP = Promise.race([subsP, subsFallback]).then(function (value) {
+        if (subsTimer != null && typeof clearTimeout === "function") clearTimeout(subsTimer);
+        return value;
+      }, function () {
+        if (subsTimer != null && typeof clearTimeout === "function") clearTimeout(subsTimer);
+        return [];
+      });
+    } else {
+      subsFastP = Promise.resolve([]);
+    }
+    return Promise.all([rowsP.catch(function () { return []; }), subsFastP]).then(function (arr) {
       var rows = Array.isArray(arr[0]) ? arr[0] : [];
       var subs = Array.isArray(arr[1]) ? arr[1] : [];
       if (!rows.length || !subs.length) return rows;
@@ -765,7 +784,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = { getStrea
   try { original = module.exports && module.exports.getStreams; } catch (e) { original = null; }
   if (typeof original !== 'function') return;
   var PROVIDER_ID = "topcartoons";
-  var MAX_MS = 22000;
+  var MAX_MS = 12000;
 
   function number(raw) {
     return raw != null && /^\d+$/.test(String(raw).trim()) ? Number(raw) : null;

@@ -65,6 +65,18 @@ const HEADERS = {
   "Origin": "https://vidrock.net"
 };
 
+function withTimeout(promise, ms) {
+  if (typeof setTimeout !== "function" || typeof Promise === "undefined" || !Promise.race) return promise;
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("VidRock request timeout")), ms);
+    if (timer && typeof timer.unref === "function") timer.unref();
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer != null && typeof clearTimeout === "function") clearTimeout(timer);
+  });
+}
+
 const AES_SBOX = new Uint8Array([
   0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
   0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
@@ -346,15 +358,15 @@ function formatStreamTitle(quality, meta) {
 async function fetchMediaMeta(tmdbId, mediaType, season, episode) {
   try {
     const type = mediaType === "tv" ? "tv" : "movie";
-    const res = await fetch(`${TMDB_API_URL}/${type}/${tmdbId}?api_key=${TMDB_API_KEY}`);
+    const res = await withTimeout(fetch(`${TMDB_API_URL}/${type}/${tmdbId}?api_key=${TMDB_API_KEY}`), 6000);
     if (!res.ok) return { title: "Unknown", year: "N/A", runtime: "90 Minutes" };
     const data = await res.json();
     let runtime = data.runtime;
     if (mediaType === "tv") {
       try {
-        const epRes = await fetch(
+        const epRes = await withTimeout(fetch(
           `${TMDB_API_URL}/tv/${tmdbId}/season/${season || 1}/episode/${episode || 1}?api_key=${TMDB_API_KEY}`
-        );
+        ), 6000);
         if (epRes.ok) {
           const epData = await epRes.json();
           if (epData.runtime) runtime = epData.runtime;
@@ -375,7 +387,7 @@ async function resolveStream(serverName, entry, meta) {
   try {
     const masterUrl = decryptAesGcm(entry.url);
     if (!/^https?:\/\//i.test(masterUrl)) return null;
-    const res = await fetch(masterUrl, { headers: HEADERS });
+    const res = await withTimeout(fetch(masterUrl, { headers: HEADERS }), 7000);
     if (!res.ok) return null;
     const variant = extractTopVariant(await res.text(), masterUrl);
     if (!variant) return null;
@@ -418,7 +430,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       ? `tv/${id}/${season}/${episode}`
       : `movie/${id}`;
 
-    const res = await fetch(`${BASE_URL}/api/${path}`, { headers: HEADERS });
+    const res = await withTimeout(fetch(`${BASE_URL}/api/${path}`, { headers: HEADERS }), 7000);
     if (!res.ok) return [];
 
     let data;
@@ -633,7 +645,26 @@ module.exports = { getStreams };
       rowsP = Promise.resolve([]);
     }
     var subsP = lane.get(tmdbId, mediaType, season, episode).catch(function () { return []; });
-    return Promise.all([rowsP.catch(function () { return []; }), subsP]).then(function (arr) {
+    // Captions are optional. Give OSV3 a short head start, then return the
+    // provider's playable rows even if the subtitle service is unavailable.
+    var subsFastP;
+    if (typeof setTimeout === "function" && typeof Promise !== "undefined" && Promise.race) {
+      var subsTimer = null;
+      var subsFallback = new Promise(function (resolve) {
+        subsTimer = setTimeout(function () { resolve([]); }, 1200);
+        if (subsTimer && typeof subsTimer.unref === "function") subsTimer.unref();
+      });
+      subsFastP = Promise.race([subsP, subsFallback]).then(function (value) {
+        if (subsTimer != null && typeof clearTimeout === "function") clearTimeout(subsTimer);
+        return value;
+      }, function () {
+        if (subsTimer != null && typeof clearTimeout === "function") clearTimeout(subsTimer);
+        return [];
+      });
+    } else {
+      subsFastP = Promise.resolve([]);
+    }
+    return Promise.all([rowsP.catch(function () { return []; }), subsFastP]).then(function (arr) {
       var rows = Array.isArray(arr[0]) ? arr[0] : [];
       var subs = Array.isArray(arr[1]) ? arr[1] : [];
       if (!rows.length || !subs.length) return rows;
@@ -653,7 +684,7 @@ module.exports = { getStreams };
   try { original = module.exports && module.exports.getStreams; } catch (e) { original = null; }
   if (typeof original !== 'function') return;
   var PROVIDER_ID = "vidrock";
-  var MAX_MS = 22000;
+  var MAX_MS = 12000;
 
   function number(raw) {
     return raw != null && /^\d+$/.test(String(raw).trim()) ? Number(raw) : null;

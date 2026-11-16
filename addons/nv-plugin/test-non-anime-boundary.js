@@ -14,14 +14,17 @@ const finish = source.indexOf(end) + end.length;
 assert(start >= 0 && finish > start, 'boundary marker missing');
 const boundary = source.slice(start, finish);
 
-function load(original, immediateTimers) {
+function load(original, immediateTimers, imdbId) {
   const context = vm.createContext({
     module: { exports: { getStreams: original } },
     Promise,
+    TMDB_API_KEY: imdbId ? 'test-key' : '',
     console: { log() {}, warn() {}, error() {} },
-    fetch: async () => ({ ok: false, json: async () => ({}) }),
+    fetch: async (url) => imdbId && String(url).includes('/find/tt')
+      ? { ok: true, json: async () => ({ movie_results: [{ id: imdbId }] }) }
+      : { ok: false, json: async () => ({}) },
     setTimeout: immediateTimers
-      ? (fn, delay) => { if (delay >= 22000) fn(); return 1; }
+      ? (fn, delay) => { if (delay >= 12000) fn(); return 1; }
       : setTimeout,
     clearTimeout: () => {}
   });
@@ -50,7 +53,16 @@ function load(original, immediateTimers) {
 
   const timed = load(() => new Promise(() => {}), true);
   assert.equal(JSON.stringify(await timed('123', 'movie')), '[]');
-  console.log('[non-anime-boundary] 3 checks passed');
+
+  calls = [];
+  const imdb = load(function () {
+    calls.push(Array.from(arguments));
+    return [{ url: 'https://media.fixture.test/imdb.m3u8' }];
+  }, false, 987);
+  const imdbRows = await imdb('tt1234567', 'movie');
+  assert.equal(imdbRows.length, 1);
+  assert.deepEqual(calls[0], ['987', 'movie', null, null]);
+  console.log('[non-anime-boundary] 4 checks passed');
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
