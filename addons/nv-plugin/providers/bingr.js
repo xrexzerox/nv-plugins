@@ -20,8 +20,12 @@ function withTimeout(promise, ms) {
         timer = setTimeout(() => reject(new Error("Bingr request timeout")), ms);
         if (timer && typeof timer.unref === "function") timer.unref();
     });
-    return Promise.race([promise, timeout]).finally(() => {
+    return Promise.race([promise, timeout]).then((value) => {
         if (timer != null && typeof clearTimeout === "function") clearTimeout(timer);
+        return value;
+    }, (error) => {
+        if (timer != null && typeof clearTimeout === "function") clearTimeout(timer);
+        throw error;
     });
 }
 
@@ -343,7 +347,7 @@ module.exports = { getStreams };
   try { original = module.exports && module.exports.getStreams; } catch (e) { original = null; }
   if (typeof original !== 'function') return;
   var PROVIDER_ID = "bingr";
-  var MAX_MS = 12000;
+  var MAX_MS = 22000;
 
   function number(raw) {
     return raw != null && /^\d+$/.test(String(raw).trim()) ? Number(raw) : null;

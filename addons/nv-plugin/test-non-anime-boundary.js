@@ -24,7 +24,7 @@ function load(original, immediateTimers, imdbId) {
       ? { ok: true, json: async () => ({ movie_results: [{ id: imdbId }] }) }
       : { ok: false, json: async () => ({}) },
     setTimeout: immediateTimers
-      ? (fn, delay) => { if (delay >= 12000) fn(); return 1; }
+      ? (fn, delay) => { if (delay >= 22000) fn(); return 1; }
       : setTimeout,
     clearTimeout: () => {}
   });

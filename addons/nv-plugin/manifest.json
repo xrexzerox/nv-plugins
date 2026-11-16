@@ -1,7 +1,7 @@
 {
   "name": "NV Plugins",
-  "version": "4.54.25",
-  "description": "v4.54.25 NON-ANIME FAST STREAM PASS: TMDB/IMDb input normalization, direct catalog-id ownership routing, 1.2s best-effort subtitle window, 12s fail-soft provider deadline, provider request timeouts, malformed stream filtering, and duplicate-row suppression; anime providers remain unchanged.",
+  "version": "4.54.26",
+  "description": "v4.54.26 NON-ANIME FAST STREAM PASS: TMDB/IMDb input normalization, direct catalog-id ownership routing, 1.2s best-effort subtitle window, 22s device-safe fail-soft provider deadline, provider request timeouts, malformed stream filtering, and duplicate-row suppression; anime providers remain unchanged.",
   "author": "xrexzerox",
   "scrapers": [
     {

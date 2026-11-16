@@ -799,7 +799,7 @@ module.exports = { getStreams: getStreams };
   try { original = module.exports && module.exports.getStreams; } catch (e) { original = null; }
   if (typeof original !== 'function') return;
   var PROVIDER_ID = "fibwatch";
-  var MAX_MS = 12000;
+  var MAX_MS = 22000;
 
   function number(raw) {
     return raw != null && /^\d+$/.test(String(raw).trim()) ? Number(raw) : null;
